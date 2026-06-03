@@ -63,12 +63,18 @@
 
   {# ───────── Dashboard ───────── #}
   <div class="tab-panel active" data-panel="dashboard">
+    {% if ember_live %}
+    <div class="row wrap" style="gap:8px;margin-bottom:14px;align-items:center;">
+      <span class="badge good">● Live from Ember</span>
+      <span class="subtle" style="font-size:12px;">Operating revenues{% if ember_asof %} · as of {{ ember_asof }}{% endif %} · other tabs show modeled data</span>
+    </div>
+    {% endif %}
     <div class="grid grid-4 mb-24">{% for it in dashboard_kpis %}{{ kpicard(it) }}{% endfor %}</div>
     <div class="card">
-      <div class="card-head"><div><div class="card-title">Performance Overview</div>
-        <div class="card-sub">Key metrics — actuals through {{ base_year }}, projections dashed.</div></div>
-        <label class="row" style="gap:7px;font-size:12px;cursor:pointer;color:var(--mq-muted);">
-          <input type="checkbox" data-projtoggle="chart-dashboard" data-cat="all" checked style="accent-color:var(--mq-accent);"> Show projections</label>
+      <div class="card-head"><div><div class="card-title">{{ 'Operating Revenue by Category' if ember_live else 'Performance Overview' }}</div>
+        <div class="card-sub">{% if ember_live %}Live Ember fees, {{ chart.years[0] }}–{{ chart.years[-1] }} (USD).{% else %}Key metrics — actuals through {{ base_year }}, projections dashed.{% endif %}</div></div>
+        {% if not ember_live %}<label class="row" style="gap:7px;font-size:12px;cursor:pointer;color:var(--mq-muted);">
+          <input type="checkbox" data-projtoggle="chart-dashboard" data-cat="all" checked style="accent-color:var(--mq-accent);"> Show projections</label>{% endif %}
       </div>
       <div class="chart-wrap" style="height:320px;"><canvas id="chart-dashboard"></canvas></div>
     </div>

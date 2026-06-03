@@ -513,6 +513,33 @@ def strategy():
     return render_template("strategy.html", phases=phases, comps=comp_list, base_year=BASE_YEAR)
 
 
+def fetch_ember_operations():
+    """Latest Ember operations report as {years, rows{label:[vals]}, totals, kpis, as_of}.
+    Raw USD. Returns None on any problem so the caller falls back to seeded data."""
+    try:
+        econn = db.get_ember_db()
+        if not econn:
+            return None
+        ecur = econn.cursor()
+        ecur.execute("SELECT data FROM reports WHERE report_type = 'operations' "
+                     "ORDER BY uploaded_at DESC LIMIT 1")
+        row = ecur.fetchone()
+        ecur.close(); econn.close()
+        if not row or not row.get("data"):
+            return None
+        d = row["data"]
+        yr = d.get("yearly_rollup") or {}
+        years, totals = yr.get("years") or [], yr.get("totals") or []
+        if not years or not totals:
+            return None
+        rows = {r["label"]: r["values"] for r in (yr.get("rows") or []) if isinstance(r, dict)}
+        kpis = {k.get("label"): k.get("value") for k in (d.get("kpis") or []) if isinstance(k, dict)}
+        return {"years": years, "rows": rows, "totals": totals, "kpis": kpis, "as_of": d.get("date")}
+    except Exception as e:  # pragma: no cover
+        app.logger.warning("Ember operations fetch failed: %s", e)
+        return None
+
+
 @app.route("/company/<slug>")
 @login_required
 def company(slug):
@@ -521,10 +548,34 @@ def company(slug):
         abort(404)
     items = load_company_items(c["id"])
     dashboard_kpis = [it for it in items if it["is_dashboard"]]
+    chart = chart_series_for(items)
 
     by_category = {"Commercial": [], "Operations": [], "Finance": []}
     for it in items:
         by_category.setdefault(it["category"], []).append(it)
+
+    # Live Ember overlay — real operating revenues from the Ember DB (seed fallback).
+    ember_live, ember_asof = False, None
+    if c["slug"] == "ember":
+        op = fetch_ember_operations()
+        if op and op["totals"]:
+            ember_live, ember_asof = True, op["as_of"]
+            yrs, rows, totals = op["years"], op["rows"], op["totals"]
+            yr0 = str(yrs[0])
+            first = lambda lbl: (rows.get(lbl) or [None])[0]
+            pp0 = (rows.get("Project Personnel") or [0])[0]
+            dashboard_kpis = [
+                dict(name="Corporate Revenues", current=totals[0], unit="currency", unit_label=yr0, trend=None),
+                dict(name="Development Fees", current=first("Development Fees"), unit="currency", unit_label=yr0, trend=None),
+                dict(name="Bookkeeping Fee", current=first("Bookkeeping"), unit="currency", unit_label=yr0, trend=None),
+                dict(name="Corporate Cashflow", current=(totals[0] - pp0), unit="currency",
+                     unit_label="net of personnel · " + yr0, trend=None),
+            ]
+            chart = dict(years=yrs, base_year=yrs[-1],
+                         series=[dict(label=lbl, color_idx=i, category="Finance",
+                                      actual=vals, projection=[None] * len(yrs),
+                                      unit="currency", unit_label="USD")
+                                 for i, (lbl, vals) in enumerate(rows.items())])
 
     # strategy tab data
     conn = db.get_db()
@@ -546,9 +597,10 @@ def company(slug):
     return render_template(
         "company.html",
         c=c, items=items, dashboard_kpis=dashboard_kpis, by_category=by_category,
-        chart=chart_series_for(items), risk=risk, strategies=strategies,
+        chart=chart, risk=risk, strategies=strategies,
         phase_hist=phase_hist, base_year=BASE_YEAR,
         years=list(range(HIST_START, PROJ_END + 1)),
+        ember_live=ember_live, ember_asof=ember_asof,
     )
 
 
