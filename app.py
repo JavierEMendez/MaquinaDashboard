@@ -563,13 +563,14 @@ def company(slug):
             yrs, rows, totals = op["years"], op["rows"], op["totals"]
             yr0 = str(yrs[0])
             first = lambda lbl: (rows.get(lbl) or [None])[0]
-            pp0 = (rows.get("Project Personnel") or [0])[0]
+            # Overhead proxy until Ember uploads full overhead: Project Personnel + 10%.
+            overhead0 = (rows.get("Project Personnel") or [0])[0] * 1.10
             dashboard_kpis = [
                 dict(name="Corporate Revenues", current=totals[0], unit="currency", unit_label=yr0, trend=None),
                 dict(name="Development Fees", current=first("Development Fees"), unit="currency", unit_label=yr0, trend=None),
                 dict(name="Bookkeeping Fee", current=first("Bookkeeping"), unit="currency", unit_label=yr0, trend=None),
-                dict(name="Corporate Cashflow", current=(totals[0] - pp0), unit="currency",
-                     unit_label="net of personnel · " + yr0, trend=None),
+                dict(name="Corporate Cashflow", current=(totals[0] - overhead0), unit="currency",
+                     unit_label="net of est. overhead · " + yr0, trend=None),
             ]
             chart = dict(years=yrs, base_year=yrs[-1],
                          series=[dict(label=lbl, color_idx=i, category="Finance",
