@@ -162,7 +162,7 @@ h1, h2, h3, h4 { font-family: var(--font-display); color: var(--mq-ink-2); margi
 }
 .sidebar-brand {
   padding: 20px 20px 16px;
-  display: flex; align-items: center; gap: 10px;
+  display: flex; align-items: center; justify-content: center; gap: 10px;
   border-bottom: 1px solid var(--mq-side-line);
 }
 .sidebar-brand img { height: 26px; width: auto; display: block; }

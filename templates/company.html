@@ -63,7 +63,6 @@
     <button class="tab" data-tab="operations">Operations</button>
     <button class="tab" data-tab="finance">Finance</button>
     <button class="tab" data-tab="strategy">Strategy</button>
-    <button class="tab" data-tab="planning">Planning</button>
   </div>
 
   {# ───────── Dashboard ───────── #}
@@ -270,38 +269,6 @@
     </div>
   </div>
 
-  {# ───────── Planning ───────── #}
-  <div class="tab-panel" data-panel="planning">
-    <div class="card">
-      <div class="card-head">
-        <div><div class="card-title">Data Matrix</div><div class="card-sub">All KPIs by year — {{ c.name }}.</div></div>
-        <div class="pillgroup" id="planToggleCo">
-          <button class="pill is-active" data-plan="actual">Actuals</button>
-          <button class="pill" data-plan="projection">Projections</button>
-        </div>
-      </div>
-      <div class="table-scroll">
-        <table class="data-table">
-          <thead><tr><th>KPI</th>
-            {% for y in years %}<th class="plan-col {{ 'plan-proj' if y > base_year }}" {% if y > base_year %}style="display:none;"{% endif %}>{{ y }}</th>{% endfor %}
-          </tr></thead>
-          <tbody>
-            {% for it in items %}
-            <tr>
-              <td>{{ it.name }} <span class="subtle" style="font-size:10px;">{{ it.unit_label }}</span></td>
-              {% for y in years %}
-                {% set v = it.actual.get(y) if y <= base_year else it.projection.get(y) %}
-                <td class="plan-col {{ 'plan-proj' if y > base_year }}" {% if y > base_year %}style="display:none;"{% endif %}>
-                  {{ v | kpi(it.unit, it.unit_label) if v is not none else '—' }}
-                </td>
-              {% endfor %}
-            </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  </div>
 </div>
 {% endblock %}
 
@@ -341,15 +308,5 @@
     cb.addEventListener('change', ()=>{ const id=cb.dataset.projtoggle; showProj[id]=cb.checked; buildLine(id, seriesFor(cb.dataset.cat)); });
   });
 
-  document.getElementById('planToggleCo').addEventListener('click', function(e){
-    var b=e.target.closest('.pill[data-plan]'); if(!b) return;
-    this.querySelectorAll('.pill').forEach(p=>p.classList.toggle('is-active', p===b));
-    var showP = b.dataset.plan==='projection';
-    document.querySelectorAll('#planToggleCo').forEach(()=>{});
-    document.querySelector('[data-panel="planning"]').querySelectorAll('.plan-col').forEach(function(td){
-      var isProj=td.classList.contains('plan-proj');
-      td.style.display = (showP ? isProj : !isProj) ? '' : 'none';
-    });
-  });
 </script>
 {% endblock %}
