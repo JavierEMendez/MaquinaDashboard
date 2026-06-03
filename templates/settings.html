@@ -69,6 +69,7 @@
 
 <div class="card">
   <div class="card-title mb-16">Team</div>
+  <p class="subtle" style="font-size:12px;margin-top:-8px;margin-bottom:16px;">Administrators can manage the team, companies, and platform settings. Every member can view all dashboards.</p>
   <div class="table-scroll" style="max-height:none;">
     <table class="data-table">
       <thead><tr><th style="text-align:left;">Member</th><th style="text-align:left;">Email</th><th>Role</th><th></th></tr></thead>
@@ -89,9 +90,15 @@
           <td>{% if u.is_admin %}<span class="badge accent">Admin</span>{% else %}<span class="badge">Member</span>{% endif %}</td>
           <td>
             {% if u.id != cur_user_id %}
-            <form method="POST" action="{{ url_for('delete_user', uid=u.id) }}" style="display:inline;" onsubmit="return confirm('Remove {{ u.username }}?');">
-              <button class="btn btn-sm btn-ghost" type="submit">Remove</button>
-            </form>
+            <div class="row" style="gap:6px;justify-content:flex-end;">
+              <form method="POST" action="{{ url_for('set_user_role', uid=u.id) }}" style="display:inline;">
+                <input type="hidden" name="make_admin" value="{{ '0' if u.is_admin else '1' }}">
+                <button class="btn btn-sm btn-ghost" type="submit">{{ 'Make member' if u.is_admin else 'Make admin' }}</button>
+              </form>
+              <form method="POST" action="{{ url_for('delete_user', uid=u.id) }}" style="display:inline;" onsubmit="return confirm('Remove {{ u.username }}?');">
+                <button class="btn btn-sm btn-ghost" type="submit">Remove</button>
+              </form>
+            </div>
             {% else %}<span class="subtle">You</span>{% endif %}
           </td>
         </tr>

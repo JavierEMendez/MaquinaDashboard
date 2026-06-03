@@ -714,6 +714,24 @@ def delete_user(uid):
     return redirect(url_for("settings"))
 
 
+@app.route("/settings/users/<int:uid>/role", methods=["POST"])
+@login_required
+def set_user_role(uid):
+    if not session.get("is_admin"):
+        abort(403)
+    # Block changing your own role so there's always at least one admin
+    # (you) and no one can accidentally lock themselves out.
+    if uid == session.get("user_id"):
+        flash("You can’t change your own role.", "error")
+        return redirect(url_for("settings"))
+    make_admin = request.form.get("make_admin") == "1"
+    conn = db.get_db(); cur = conn.cursor()
+    cur.execute("UPDATE users SET is_admin = %s WHERE id = %s", (make_admin, uid))
+    conn.commit(); cur.close(); conn.close()
+    flash(f"Role updated to {'administrator' if make_admin else 'member'}.", "ok")
+    return redirect(url_for("settings"))
+
+
 @app.route("/account/avatar", methods=["POST"])
 @login_required
 def account_avatar():
