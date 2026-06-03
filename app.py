@@ -326,7 +326,7 @@ def chart_series_for(items):
     series = []
     ci = 0
     for it in items:
-        if not it["in_chart"]:
+        if not it["in_chart"] or it.get("coming_soon"):
             continue
         color_idx = ci % len(palette)
         ci += 1
@@ -591,6 +591,12 @@ def company(slug):
     if not c or c["archived"]:
         abort(404)
     items = load_company_items(c["id"])
+    # Ember Units Closed / Lots Delivered aren't on the Ember dashboard yet —
+    # show a "coming soon" placeholder instead of seeded figures.
+    if c["slug"] == "ember":
+        for it in items:
+            if it["name"] in ("Units Closed", "Lots Delivered"):
+                it["coming_soon"] = True
     dashboard_kpis = [it for it in items if it["is_dashboard"]]
     chart = chart_series_for(items)
 
@@ -824,8 +830,7 @@ def ember_diagnostics():
     Never writes. Returns connection status, available report types, and the
     shape of the latest 'operations' report so we can map KPIs precisely."""
     info = {"configured": bool(os.environ.get("EMBER_DATABASE_URL", "").strip()),
-            "connected": False, "error": None, "report_types": [],
-            "operations": None, "returns": None, "loans": None, "community": {}}
+            "connected": False, "error": None, "report_types": []}
     if not info["configured"]:
         return info
     try:
@@ -839,56 +844,6 @@ def ember_diagnostics():
             (r["report_type"], r["n"], r["last"].strftime("%Y-%m-%d") if r["last"] else "—")
             for r in ecur.fetchall()
         ]
-        ecur.execute("SELECT data FROM reports WHERE report_type = 'operations' "
-                     "ORDER BY uploaded_at DESC LIMIT 1")
-        op = ecur.fetchone()
-        if op and op.get("data"):
-            d = op["data"]
-            info["operations"] = {
-                "fields": sorted(d.keys()),
-                "kpis": [(k.get("label"), k.get("value")) for k in (d.get("kpis") or []) if isinstance(k, dict)],
-                "raw": json.dumps({"yearly_rollup": d.get("yearly_rollup")}, default=str, ensure_ascii=False)[:2800],
-            }
-        for rt in ("returns", "loans"):
-            ecur.execute("SELECT data FROM reports WHERE report_type = %s "
-                         "ORDER BY uploaded_at DESC LIMIT 1", (rt,))
-            rr = ecur.fetchone()
-            if rr and rr.get("data"):
-                dd = rr["data"]
-                if rt == "returns":
-                    projs = dd.get("projects") or []
-                    p0 = projs[0] if projs and isinstance(projs[0], dict) else {}
-                    preview = {"summary_labels": [m.get("label") for m in (dd.get("summary") or []) if isinstance(m, dict)],
-                               "projects": [p.get("name") for p in projs if isinstance(p, dict)],
-                               "project0_metric_labels": [m.get("label") for m in (p0.get("metrics") or []) if isinstance(m, dict)]}
-                elif rt == "loans":
-                    ds = dd.get("debt_schedules")
-                    preview = {"mpc_count": len((dd.get("mpc_loans") or {}).get("rows") or []),
-                               "vertical0": ((dd.get("vertical_loans") or {}).get("rows") or [None])[0],
-                               "debt_schedules": (sorted(ds.keys()) if isinstance(ds, dict)
-                                                  else ("list[%d]" % len(ds) if isinstance(ds, list) else type(ds).__name__))}
-                else:
-                    preview = dd
-                info[rt] = {
-                    "fields": sorted(dd.keys()) if isinstance(dd, dict) else "(type: %s)" % type(dd).__name__,
-                    "raw": json.dumps(preview, default=str, ensure_ascii=False)[:2800],
-                }
-        # Community sales/permit reports — reveal aggregatable shape (units/lots).
-        for rt in ("sales", "bohlke", "hpermits", "waller_monthly"):
-            ecur.execute("SELECT data FROM reports WHERE report_type = %s ORDER BY uploaded_at DESC LIMIT 1", (rt,))
-            rr = ecur.fetchone()
-            if not (rr and rr.get("data")):
-                continue
-            dd = rr["data"]
-            if isinstance(dd, dict):
-                shape = {"keys": sorted(dd.keys())}
-                for k, v in dd.items():
-                    if isinstance(v, list) and v:
-                        shape[k + "[]"] = {"len": len(v),
-                                           "item0_keys": sorted(v[0].keys()) if isinstance(v[0], dict) else type(v[0]).__name__}
-            else:
-                shape = ("list[%d]" % len(dd)) if isinstance(dd, list) else type(dd).__name__
-            info["community"][rt] = json.dumps(shape, default=str, ensure_ascii=False)[:1400]
         info["connected"] = True
         ecur.close(); econn.close()
     except Exception as e:

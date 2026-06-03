@@ -6,6 +6,10 @@
 {% macro kpicard(it) %}
 <div class="kpi">
   <div class="kpi-top"><span class="kpi-label">{{ it.name }}</span></div>
+  {% if it.coming_soon %}
+    <div class="kpi-value" style="font-size:16px;color:var(--mq-subtle);font-weight:600;">Coming soon</div>
+    <div class="kpi-foot"><span class="kpi-sub">via the Ember dashboard</span></div>
+  {% else %}
   <div class="kpi-value">{{ it.current | kpi(it.unit, it.unit_label) }}</div>
   <div class="kpi-foot">
     {% if it.trend is not none %}
@@ -16,12 +20,13 @@
       <span class="kpi-sub">{{ it.unit_label or it.category }}</span>
     {% endif %}
   </div>
+  {% endif %}
 </div>
 {% endmacro %}
 
 {% macro category_panel(cat) %}
   {% set kpis = by_category.get(cat, []) %}
-  {% set has_chart = kpis | selectattr('in_chart') | list | length > 0 %}
+  {% set has_chart = kpis | rejectattr('coming_soon') | selectattr('in_chart') | list | length > 0 %}
   {% if kpis %}
     <div class="grid grid-4 mb-24">{% for it in kpis %}{{ kpicard(it) }}{% endfor %}</div>
     {% if has_chart %}
