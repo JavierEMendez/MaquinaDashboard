@@ -39,11 +39,35 @@
 
     <div class="divider"></div>
     <div class="card-title mb-16" style="font-size:14px;">Ember Data Connection</div>
-    <div class="row between" style="font-size:12.5px;">
-      <span class="muted">Live Ember database</span>
-      <span class="badge">Seeded (configure EMBER_DATABASE_URL)</span>
-    </div>
-    <p class="subtle" style="font-size:12px;margin-top:10px;">Ember currently shows seeded figures. Point <code>EMBER_DATABASE_URL</code> at the Ember dashboard's Postgres to pull live numbers.</p>
+    {% if ember %}
+      {% set lbl = 'font-size:10px;letter-spacing:0.14em;text-transform:uppercase;color:var(--mq-subtle);font-weight:700;margin:12px 0 6px;' %}
+      <div class="row between" style="font-size:12.5px;margin-bottom:8px;">
+        <span class="muted">EMBER_DATABASE_URL</span>
+        <span class="badge {{ 'good' if ember.configured }}">{{ 'Set' if ember.configured else 'Not set' }}</span>
+      </div>
+      <div class="row between" style="font-size:12.5px;">
+        <span class="muted">Connection</span>
+        <span class="badge {{ 'good' if ember.connected else ('bad' if ember.configured else '') }}">{{ 'Connected' if ember.connected else ('Failed' if ember.configured else '—') }}</span>
+      </div>
+      {% if ember.error %}<p style="font-size:11.5px;color:var(--mq-bad);word-break:break-word;margin-top:8px;">{{ ember.error }}</p>{% endif %}
+      {% if ember.report_types %}
+        <div style="{{ lbl }}">Reports found</div>
+        <div class="row wrap" style="gap:6px;">
+          {% for rt, n, last in ember.report_types %}<span class="badge" title="last upload {{ last }}">{{ rt }} · {{ n }}</span>{% endfor %}
+        </div>
+      {% endif %}
+      {% if ember.operations %}
+        <div style="{{ lbl }}">Latest operations report</div>
+        <p class="subtle" style="font-size:11.5px;">keys: {{ ember.operations.keys|join(', ') }}</p>
+        {% if ember.operations.yearly_years %}<p class="subtle" style="font-size:11.5px;">years: {{ ember.operations.yearly_years|join(', ') }}</p>{% endif %}
+        {% if ember.operations.yearly_labels %}<p class="subtle" style="font-size:11.5px;">categories: {{ ember.operations.yearly_labels|join(', ') }}</p>{% endif %}
+        {% if ember.operations.kpis %}<p class="subtle" style="font-size:11.5px;">KPIs: {% for l, v in ember.operations.kpis %}{{ l }}={{ v }}{{ '; ' if not loop.last }}{% endfor %}</p>{% endif %}
+      {% elif ember.connected %}
+        <p class="subtle" style="font-size:11.5px;margin-top:8px;">Connected — no <code>operations</code> report found yet.</p>
+      {% endif %}
+    {% else %}
+      <p class="subtle" style="font-size:12px;">Ember data status is visible to administrators.</p>
+    {% endif %}
   </div>
 </div>
 

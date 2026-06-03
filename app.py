@@ -581,6 +581,44 @@ def archive_company(cid):
     return redirect(url_for("manage_companies"))
 
 
+def ember_diagnostics():
+    """Read-only probe of the Ember Postgres for the admin diagnostic card.
+    Never writes. Returns connection status, available report types, and the
+    shape of the latest 'operations' report so we can map KPIs precisely."""
+    info = {"configured": bool(os.environ.get("EMBER_DATABASE_URL", "").strip()),
+            "connected": False, "error": None, "report_types": [], "operations": None}
+    if not info["configured"]:
+        return info
+    try:
+        econn = db.get_ember_db()
+        if not econn:
+            return info
+        ecur = econn.cursor()
+        ecur.execute("SELECT report_type, COUNT(*) AS n, MAX(uploaded_at) AS last "
+                     "FROM reports GROUP BY report_type ORDER BY report_type")
+        info["report_types"] = [
+            (r["report_type"], r["n"], r["last"].strftime("%Y-%m-%d") if r["last"] else "—")
+            for r in ecur.fetchall()
+        ]
+        ecur.execute("SELECT data FROM reports WHERE report_type = 'operations' "
+                     "ORDER BY uploaded_at DESC LIMIT 1")
+        op = ecur.fetchone()
+        if op and op.get("data"):
+            d = op["data"]
+            yearly = d.get("yearly_rows") or []
+            info["operations"] = {
+                "keys": sorted(d.keys()),
+                "yearly_years": d.get("yearly_years"),
+                "yearly_labels": [r.get("label") for r in yearly if isinstance(r, dict)],
+                "kpis": [(k.get("label"), k.get("value")) for k in (d.get("kpis") or []) if isinstance(k, dict)],
+            }
+        info["connected"] = True
+        ecur.close(); econn.close()
+    except Exception as e:
+        info["error"] = str(e)[:300]
+    return info
+
+
 @app.route("/settings", methods=["GET", "POST"])
 @login_required
 def settings():
@@ -605,9 +643,10 @@ def settings():
         users = cur.fetchall()
     cur.close()
     conn.close()
+    ember = ember_diagnostics() if session.get("is_admin") else None
     return render_template("settings.html",
                            usd_mxn_rate=row["value"] if row else "17.3328",
-                           live_rate=usd_mxn_rate(), users=users,
+                           live_rate=usd_mxn_rate(), users=users, ember=ember,
                            banxico_on=bool(os.environ.get("BANXICO_TOKEN", "").strip()))
 
 
