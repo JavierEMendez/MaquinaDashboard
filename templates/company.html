@@ -82,7 +82,47 @@
 
   <div class="tab-panel" data-panel="commercial">{{ category_panel('Commercial') }}</div>
   <div class="tab-panel" data-panel="operations">{{ category_panel('Operations') }}</div>
-  <div class="tab-panel" data-panel="finance">{{ category_panel('Finance') }}</div>
+  <div class="tab-panel" data-panel="finance">
+    {{ category_panel('Finance') }}
+    {% if ember_loans %}
+    <div class="card mt-24">
+      <div class="row wrap between" style="gap:8px;align-items:center;margin-bottom:16px;">
+        <div class="card-title">Loans &amp; Debt Schedule</div>
+        <span class="row" style="gap:8px;align-items:center;"><span class="badge good">● Live from Ember</span>
+          <span class="subtle" style="font-size:12px;">{% if ember_loans.as_of %}as of {{ ember_loans.as_of }}{% endif %}</span></span>
+      </div>
+      <div class="grid grid-4 mb-24">
+        <div class="summary-card"><div class="lbl">Total Facility</div><div class="val">{{ ember_loans.totals.amount | money }}</div></div>
+        <div class="summary-card"><div class="lbl">Outstanding Balance</div><div class="val">{{ ember_loans.totals.balance | money }}</div></div>
+        <div class="summary-card"><div class="lbl">Remaining Capacity</div><div class="val">{{ ember_loans.totals.remaining | money }}</div></div>
+        <div class="summary-card"><div class="lbl">Wtd Avg Rate</div><div class="val">{{ '%.2f'|format(ember_loans.totals.wrate * 100) }}%</div></div>
+      </div>
+      <div class="table-scroll">
+        <table class="data-table">
+          <thead><tr>
+            <th style="text-align:left;">Lender</th><th style="text-align:left;">Community</th>
+            <th>Facility</th><th>Drawn</th><th>Balance</th><th>Rate</th><th>Maturity</th><th style="text-align:left;">Recourse</th>
+          </tr></thead>
+          <tbody>
+            {% for l in ember_loans.loans %}
+            <tr>
+              <td style="text-align:left;">{{ l['Lender'] }} <span class="subtle" style="font-size:10px;">{{ l.group }}</span></td>
+              <td style="text-align:left;">{{ l['Community'] }}</td>
+              <td>{{ l['Loan Amount'] | money }}</td>
+              <td>{{ l['Drawn'] | money }}</td>
+              <td>{{ l['Balance'] | money }}</td>
+              <td>{{ '%.2f'|format((l["Today's Rate"] or 0) * 100) }}%</td>
+              <td>{{ l['Loan Term Date'] }}</td>
+              <td style="text-align:left;">{{ l['Recourse'] }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <div class="subtle" style="font-size:12px;margin-top:12px;">{{ ember_loans.totals.count }} facilities · monthly interest burn {{ ember_loans.totals.burn | money }}</div>
+    </div>
+    {% endif %}
+  </div>
 
   {# ───────── Strategy ───────── #}
   <div class="tab-panel" data-panel="strategy">

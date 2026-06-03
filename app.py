@@ -540,6 +540,50 @@ def fetch_ember_operations():
         return None
 
 
+def fetch_ember_loans():
+    """Latest Ember loans report → {loans:[...], totals:{...}, as_of}. Raw USD.
+    Returns None on any problem (caller falls back to seeded data)."""
+    try:
+        econn = db.get_ember_db()
+        if not econn:
+            return None
+        ecur = econn.cursor()
+        ecur.execute("SELECT data FROM reports WHERE report_type = 'loans' "
+                     "ORDER BY uploaded_at DESC LIMIT 1")
+        row = ecur.fetchone()
+        ecur.close(); econn.close()
+        if not row or not row.get("data"):
+            return None
+        d = row["data"]
+        loans = []
+        for grp, label in (("mpc_loans", "MPC"), ("vertical_loans", "Vertical")):
+            for r in ((d.get(grp) or {}).get("rows") or []):
+                if isinstance(r, dict):
+                    loans.append({"group": label, **r})
+        if not loans:
+            return None
+
+        def num(r, k):
+            try:
+                return float(r.get(k) or 0)
+            except (TypeError, ValueError):
+                return 0.0
+        bal = sum(num(r, "Balance") for r in loans)
+        totals = {
+            "amount": sum(num(r, "Loan Amount") for r in loans),
+            "drawn": sum(num(r, "Drawn") for r in loans),
+            "balance": bal,
+            "remaining": sum(num(r, "Remaining") for r in loans),
+            "burn": sum(num(r, "Monthly Interest Burn") for r in loans),
+            "wrate": (sum(num(r, "Today's Rate") * num(r, "Balance") for r in loans) / bal) if bal else 0.0,
+            "count": len(loans),
+        }
+        return {"loans": loans, "totals": totals, "as_of": d.get("date")}
+    except Exception as e:  # pragma: no cover
+        app.logger.warning("Ember loans fetch failed: %s", e)
+        return None
+
+
 @app.route("/company/<slug>")
 @login_required
 def company(slug):
@@ -555,8 +599,9 @@ def company(slug):
         by_category.setdefault(it["category"], []).append(it)
 
     # Live Ember overlay — real operating revenues from the Ember DB (seed fallback).
-    ember_live, ember_asof = False, None
+    ember_live, ember_asof, ember_loans = False, None, None
     if c["slug"] == "ember":
+        ember_loans = fetch_ember_loans()
         op = fetch_ember_operations()
         if op and op["totals"]:
             ember_live, ember_asof = True, op["as_of"]
@@ -603,7 +648,7 @@ def company(slug):
         chart=chart, risk=risk, strategies=strategies,
         phase_hist=phase_hist, phases_all=phases_all, base_year=BASE_YEAR,
         years=list(range(HIST_START, PROJ_END + 1)),
-        ember_live=ember_live, ember_asof=ember_asof,
+        ember_live=ember_live, ember_asof=ember_asof, ember_loans=ember_loans,
     )
 
 
@@ -811,9 +856,11 @@ def ember_diagnostics():
             if rr and rr.get("data"):
                 dd = rr["data"]
                 if rt == "returns":
-                    preview = {"summary": dd.get("summary"),
-                               "projects_count": len(dd.get("projects") or []),
-                               "project0": (dd.get("projects") or [None])[0]}
+                    projs = dd.get("projects") or []
+                    p0 = projs[0] if projs and isinstance(projs[0], dict) else {}
+                    preview = {"summary_labels": [m.get("label") for m in (dd.get("summary") or []) if isinstance(m, dict)],
+                               "projects": [p.get("name") for p in projs if isinstance(p, dict)],
+                               "project0_metric_labels": [m.get("label") for m in (p0.get("metrics") or []) if isinstance(m, dict)]}
                 elif rt == "loans":
                     ds = dd.get("debt_schedules")
                     preview = {"mpc_count": len((dd.get("mpc_loans") or {}).get("rows") or []),
