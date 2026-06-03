@@ -607,7 +607,7 @@ def ember_diagnostics():
             d = op["data"]
             yearly = d.get("yearly_rows") or []
             info["operations"] = {
-                "keys": sorted(d.keys()),
+                "fields": sorted(d.keys()),
                 "yearly_years": d.get("yearly_years"),
                 "yearly_labels": [r.get("label") for r in yearly if isinstance(r, dict)],
                 "kpis": [(k.get("label"), k.get("value")) for k in (d.get("kpis") or []) if isinstance(k, dict)],

@@ -58,7 +58,7 @@
       {% endif %}
       {% if ember.operations %}
         <div style="{{ lbl }}">Latest operations report</div>
-        <p class="subtle" style="font-size:11.5px;">keys: {{ ember.operations.keys|join(', ') }}</p>
+        <p class="subtle" style="font-size:11.5px;">fields: {{ ember.operations.fields|join(', ') }}</p>
         {% if ember.operations.yearly_years %}<p class="subtle" style="font-size:11.5px;">years: {{ ember.operations.yearly_years|join(', ') }}</p>{% endif %}
         {% if ember.operations.yearly_labels %}<p class="subtle" style="font-size:11.5px;">categories: {{ ember.operations.yearly_labels|join(', ') }}</p>{% endif %}
         {% if ember.operations.kpis %}<p class="subtle" style="font-size:11.5px;">KPIs: {% for l, v in ember.operations.kpis %}{{ l }}={{ v }}{{ '; ' if not loop.last }}{% endfor %}</p>{% endif %}
