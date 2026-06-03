@@ -141,6 +141,13 @@ CREATE TABLE IF NOT EXISTS app_settings (
     key TEXT PRIMARY KEY,
     value TEXT
 );
+
+-- Uploaded images live in Postgres (Railway's filesystem is ephemeral).
+-- Stored as small processed thumbnails; served via dedicated routes.
+ALTER TABLE users     ADD COLUMN IF NOT EXISTS avatar BYTEA;
+ALTER TABLE users     ADD COLUMN IF NOT EXISTS avatar_mime TEXT;
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS logo BYTEA;
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS logo_mime TEXT;
 """
 
 

@@ -1,4 +1,5 @@
 {# Account settings modal — opened from the topbar user chip #}
+{% import "_partials/_avatars.html" as av %}
 <div class="modal" id="account-modal">
   <div class="modal-box">
     <div class="modal-head">
@@ -7,12 +8,20 @@
     </div>
 
     <div class="row" style="gap:12px;">
-      <span class="company-avatar" style="width:42px;height:42px;font-size:15px;background:var(--mq-accent);">{{ (display_name or 'U')|initials }}</span>
+      {{ av.user_avatar(cur_user_id, display_name or 'U', cur_has_avatar, cur_avatar_ver, 42) }}
       <div>
         <div style="font-weight:700;color:var(--mq-ink-2);">{{ display_name }}</div>
         <div class="subtle" style="font-size:12px;">{{ 'Administrator' if is_admin else 'Member' }}</div>
       </div>
     </div>
+
+    <form method="POST" action="{{ url_for('account_avatar') }}" enctype="multipart/form-data" class="mt-16">
+      <label class="fld-label">Profile picture</label>
+      <div class="row" style="gap:10px;">
+        <input class="input" type="file" name="avatar" accept="image/*" required style="padding:7px;font-size:12px;">
+        <button class="btn" type="submit">Upload</button>
+      </div>
+    </form>
 
     <div class="modal-section">
       <div class="acct-theme-row row between">

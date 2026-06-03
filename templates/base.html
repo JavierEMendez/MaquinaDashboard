@@ -18,6 +18,7 @@
 {% block head %}{% endblock %}
 </head>
 <body>
+{% import "_partials/_avatars.html" as av %}
 <div class="app-shell">
   {% include "_partials/_sidebar.html" %}
   <div class="main">
@@ -34,7 +35,7 @@
           <svg id="theme-icon" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
         </button>
         <button class="sidebar-toggle" onclick="openAccount()" title="Account" aria-label="Account" style="gap:8px;padding:5px 10px;display:flex;align-items:center;">
-          <span class="company-avatar" style="width:26px;height:26px;font-size:10px;background:var(--mq-accent);">{{ (display_name or 'U')|initials }}</span>
+          {{ av.user_avatar(cur_user_id, display_name or 'U', cur_has_avatar, cur_avatar_ver, 26) }}
           <span style="font-size:13px;color:var(--mq-ink);font-weight:600;">{{ display_name }}</span>
         </button>
       </div>

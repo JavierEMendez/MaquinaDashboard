@@ -1,0 +1,15 @@
+{# Reusable icon macros: render an uploaded image if present, else initials. #}
+
+{% macro user_avatar(uid, name, has_avatar, ver=0, size=28) -%}
+<span class="company-avatar" style="width:{{ size }}px;height:{{ size }}px;font-size:{{ (size * 0.4)|round|int }}px;background:var(--mq-accent);">
+  {%- if has_avatar -%}<img class="av-img cover" src="{{ url_for('avatar', uid=uid) }}?v={{ ver }}" alt="{{ name }}">
+  {%- else -%}{{ name|initials }}{%- endif -%}
+</span>
+{%- endmacro %}
+
+{% macro company_avatar(cid, name, accent, has_logo, ver=0, size=28) -%}
+<span class="company-avatar{{ ' logo' if has_logo }}" style="width:{{ size }}px;height:{{ size }}px;font-size:{{ (size * 0.4)|round|int }}px;background:{{ '#FFFFFF' if has_logo else accent }};">
+  {%- if has_logo -%}<img class="av-img contain" src="{{ url_for('company_logo', cid=cid) }}?v={{ ver }}" alt="{{ name }}">
+  {%- else -%}{{ name|initials }}{%- endif -%}
+</span>
+{%- endmacro %}

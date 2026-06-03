@@ -7,11 +7,14 @@ hand fully-shaped data to Jinja templates (charts are rendered client-side
 with Chart.js from embedded JSON).
 """
 import os
+import io
 import functools
 
 import requests
+import psycopg2
+from PIL import Image, ImageOps
 from flask import (Flask, render_template, request, redirect, url_for,
-                   session, flash, jsonify, abort)
+                   session, flash, jsonify, abort, Response)
 from werkzeug.security import check_password_hash, generate_password_hash
 
 import db
@@ -19,6 +22,36 @@ import seed_data
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "maquina-dev-secret-change-me")
+# Cap uploads; processed down to <=256px thumbnails before storage.
+app.config["MAX_CONTENT_LENGTH"] = 8 * 1024 * 1024
+
+
+@app.errorhandler(413)
+def _too_large(e):
+    flash("That file is too large (max 8 MB).", "error")
+    return redirect(request.referrer or url_for("settings"))
+
+
+def process_image(file_storage, mode="cover", size=256):
+    """Normalize an upload to a small thumbnail.
+
+    mode='cover'   -> square center-crop (profile pictures) as JPEG
+    mode='contain' -> fit within size, keep aspect + transparency (logos) as PNG
+    Raises on anything Pillow can't open.
+    """
+    img = Image.open(file_storage.stream)
+    img = ImageOps.exif_transpose(img)
+    if mode == "cover":
+        img = img.convert("RGB")
+        img = ImageOps.fit(img, (size, size), Image.LANCZOS)
+        buf = io.BytesIO()
+        img.save(buf, "JPEG", quality=85, optimize=True)
+        return buf.getvalue(), "image/jpeg"
+    img = img.convert("RGBA")
+    img.thumbnail((size, size), Image.LANCZOS)
+    buf = io.BytesIO()
+    img.save(buf, "PNG", optimize=True)
+    return buf.getvalue(), "image/png"
 
 BASE_YEAR = seed_data.BASE_YEAR
 HIST_START = seed_data.HIST_START
@@ -78,6 +111,8 @@ def login():
             fn = (user.get("first_name") or "").strip()
             ln = (user.get("last_name") or "").strip()
             session["display_name"] = f"{fn} {ln}".strip() or user["username"]
+            session["has_avatar"] = user.get("avatar") is not None
+            session["avatar_ver"] = len(user["avatar"]) if user.get("avatar") else 0
             nxt = request.args.get("next") or url_for("dashboard")
             return redirect(nxt)
         error = "Invalid username or password."
@@ -176,7 +211,9 @@ def usd_mxn_rate():
 def all_companies(include_archived=False):
     conn = db.get_db()
     cur = conn.cursor()
-    q = "SELECT * FROM companies"
+    q = ("SELECT id, slug, name, industry, country, country_code, currency, "
+         "value_unit, accent, description, takeover_year, display_order, archived, "
+         "(logo IS NOT NULL) AS has_logo, octet_length(logo) AS logo_ver FROM companies")
     if not include_archived:
         q += " WHERE archived = FALSE"
     q += " ORDER BY display_order, name"
@@ -190,7 +227,11 @@ def all_companies(include_archived=False):
 def company_by_slug(slug):
     conn = db.get_db()
     cur = conn.cursor()
-    cur.execute("SELECT * FROM companies WHERE slug = %s", (slug,))
+    cur.execute(
+        "SELECT id, slug, name, industry, country, country_code, currency, value_unit, "
+        "accent, description, takeover_year, display_order, archived, "
+        "(logo IS NOT NULL) AS has_logo, octet_length(logo) AS logo_ver "
+        "FROM companies WHERE slug = %s", (slug,))
     row = cur.fetchone()
     cur.close()
     conn.close()
@@ -204,6 +245,7 @@ def company_cashflow_totals():
     cur.execute("""
         SELECT c.id, c.slug, c.name, c.industry, c.country, c.country_code,
                c.currency, c.accent,
+               (c.logo IS NOT NULL) AS has_logo, octet_length(c.logo) AS logo_ver,
                pc.year, pc.investment, pc.distribution
         FROM companies c
         LEFT JOIN portfolio_cashflows pc ON pc.company_id = c.id
@@ -222,6 +264,7 @@ def company_cashflow_totals():
                 id=cid, slug=r["slug"], name=r["name"], industry=r["industry"],
                 country=r["country"], country_code=r["country_code"],
                 currency=r["currency"], accent=r["accent"],
+                has_logo=r["has_logo"], logo_ver=r["logo_ver"],
                 investment=0.0, distribution=0.0, series={},
             )
         if r["year"] is not None:
@@ -317,6 +360,9 @@ def inject_nav():
         current_path=request.path,
         display_name=session.get("display_name"),
         is_admin=session.get("is_admin"),
+        cur_user_id=session.get("user_id"),
+        cur_has_avatar=session.get("has_avatar"),
+        cur_avatar_ver=session.get("avatar_ver", 0),
     )
 
 
@@ -425,6 +471,7 @@ def strategy():
     phases = cur.fetchall()
     cur.execute("""
         SELECT c.id, c.slug, c.name, c.accent, c.industry, c.takeover_year,
+               (c.logo IS NOT NULL) AS has_logo, octet_length(c.logo) AS logo_ver,
                r.internal_risk, r.external_risk
         FROM companies c LEFT JOIN company_risks r ON r.company_id = c.id
         WHERE c.archived = FALSE ORDER BY c.display_order
@@ -447,7 +494,8 @@ def strategy():
     for c in comps:
         cp = cur_phase.get(c["id"])
         comp_list.append(dict(
-            slug=c["slug"], name=c["name"], accent=c["accent"], industry=c["industry"],
+            id=c["id"], slug=c["slug"], name=c["name"], accent=c["accent"], industry=c["industry"],
+            has_logo=c["has_logo"], logo_ver=c["logo_ver"],
             takeover_year=c["takeover_year"],
             internal=c["internal_risk"] or 5, external=c["external_risk"] or 5,
             phase_name=cp["name"] if cp else "—",
@@ -551,7 +599,9 @@ def settings():
     # users for admin
     users = []
     if session.get("is_admin"):
-        cur.execute("SELECT id, username, first_name, last_name, email, is_admin FROM users ORDER BY id")
+        cur.execute("SELECT id, username, first_name, last_name, email, is_admin, "
+                    "(avatar IS NOT NULL) AS has_avatar, octet_length(avatar) AS avatar_ver "
+                    "FROM users ORDER BY id")
         users = cur.fetchall()
     cur.close()
     conn.close()
@@ -580,6 +630,132 @@ def change_password():
     cur.close()
     conn.close()
     return redirect(url_for("settings"))
+
+
+# ─── IMAGES: serve + upload ────────────────────────────────────────
+@app.route("/avatar/<int:uid>")
+@login_required
+def avatar(uid):
+    conn = db.get_db(); cur = conn.cursor()
+    cur.execute("SELECT avatar, avatar_mime FROM users WHERE id = %s", (uid,))
+    row = cur.fetchone(); cur.close(); conn.close()
+    if not row or not row["avatar"]:
+        abort(404)
+    return Response(bytes(row["avatar"]), mimetype=row["avatar_mime"] or "image/jpeg",
+                    headers={"Cache-Control": "public, max-age=300"})
+
+
+@app.route("/company-logo/<int:cid>")
+@login_required
+def company_logo(cid):
+    conn = db.get_db(); cur = conn.cursor()
+    cur.execute("SELECT logo, logo_mime FROM companies WHERE id = %s", (cid,))
+    row = cur.fetchone(); cur.close(); conn.close()
+    if not row or not row["logo"]:
+        abort(404)
+    return Response(bytes(row["logo"]), mimetype=row["logo_mime"] or "image/png",
+                    headers={"Cache-Control": "public, max-age=300"})
+
+
+@app.route("/settings/users", methods=["POST"])
+@login_required
+def create_user():
+    if not session.get("is_admin"):
+        abort(403)
+    username = request.form.get("username", "").strip()
+    pw = request.form.get("password", "")
+    first = request.form.get("first_name", "").strip()
+    last = request.form.get("last_name", "").strip()
+    email = request.form.get("email", "").strip() or None
+    is_admin = request.form.get("is_admin") == "1"
+    if not username or len(pw) < 6:
+        flash("A username and a password of at least 6 characters are required.", "error")
+        return redirect(url_for("settings"))
+
+    avatar = avatar_mime = None
+    f = request.files.get("avatar")
+    if f and f.filename:
+        try:
+            avatar, avatar_mime = process_image(f, "cover")
+        except Exception:
+            flash("Could not read that image — use a JPG or PNG.", "error")
+            return redirect(url_for("settings"))
+
+    conn = db.get_db(); cur = conn.cursor()
+    try:
+        cur.execute(
+            "INSERT INTO users (username, password_hash, is_admin, first_name, last_name, email, avatar, avatar_mime) "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
+            (username, generate_password_hash(pw), is_admin, first, last, email,
+             psycopg2.Binary(avatar) if avatar else None, avatar_mime),
+        )
+        conn.commit()
+        flash(f"Added team member “{username}”.", "ok")
+    except psycopg2.errors.UniqueViolation:
+        conn.rollback()
+        flash("That username is already taken.", "error")
+    finally:
+        cur.close(); conn.close()
+    return redirect(url_for("settings"))
+
+
+@app.route("/settings/users/<int:uid>/delete", methods=["POST"])
+@login_required
+def delete_user(uid):
+    if not session.get("is_admin"):
+        abort(403)
+    if uid == session.get("user_id"):
+        flash("You can’t remove your own account.", "error")
+        return redirect(url_for("settings"))
+    conn = db.get_db(); cur = conn.cursor()
+    cur.execute("DELETE FROM users WHERE id = %s", (uid,))
+    conn.commit(); cur.close(); conn.close()
+    flash("Team member removed.", "ok")
+    return redirect(url_for("settings"))
+
+
+@app.route("/account/avatar", methods=["POST"])
+@login_required
+def account_avatar():
+    f = request.files.get("avatar")
+    if not f or not f.filename:
+        flash("Choose an image first.", "error")
+        return redirect(request.referrer or url_for("settings"))
+    try:
+        data, mime = process_image(f, "cover")
+    except Exception:
+        flash("Could not read that image — use a JPG or PNG.", "error")
+        return redirect(request.referrer or url_for("settings"))
+    conn = db.get_db(); cur = conn.cursor()
+    cur.execute("UPDATE users SET avatar = %s, avatar_mime = %s WHERE id = %s",
+                (psycopg2.Binary(data), mime, session["user_id"]))
+    conn.commit(); cur.close(); conn.close()
+    session["has_avatar"] = True
+    session["avatar_ver"] = len(data)
+    flash("Profile picture updated.", "ok")
+    return redirect(request.referrer or url_for("settings"))
+
+
+@app.route("/manage-companies/<int:cid>/logo", methods=["POST"])
+@login_required
+def upload_company_logo(cid):
+    if not session.get("is_admin"):
+        abort(403)
+    f = request.files.get("logo")
+    if not f or not f.filename:
+        flash("Choose an image first.", "error")
+        return redirect(url_for("manage_companies"))
+    try:
+        data, mime = process_image(f, "contain")
+    except Exception:
+        flash("Could not read that image — use a JPG or PNG.", "error")
+        return redirect(url_for("manage_companies"))
+    conn = db.get_db(); cur = conn.cursor()
+    cur.execute("UPDATE companies SET logo = %s, logo_mime = %s WHERE id = %s",
+                (psycopg2.Binary(data), mime, cid))
+    conn.commit(); cur.close(); conn.close()
+    flash("Company logo updated.", "ok")
+    return redirect(url_for("manage_companies"))
 
 
 if __name__ == "__main__":

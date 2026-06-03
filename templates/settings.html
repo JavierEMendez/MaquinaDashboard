@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% block title %}Settings — Maquina{% endblock %}
+{% import "_partials/_avatars.html" as av %}
 
 {% block content %}
 <div class="page-head">
@@ -47,24 +48,57 @@
 </div>
 
 {% if is_admin %}
+<div class="card mb-24">
+  <div class="card-title mb-16">Add team member</div>
+  <form method="POST" action="{{ url_for('create_user') }}" enctype="multipart/form-data">
+    <div class="grid grid-3" style="gap:14px;">
+      <div><label class="fld-label">First name</label><input class="input" name="first_name"></div>
+      <div><label class="fld-label">Last name</label><input class="input" name="last_name"></div>
+      <div><label class="fld-label">Email</label><input class="input" type="email" name="email"></div>
+      <div><label class="fld-label">Username *</label><input class="input" name="username" required autocomplete="off"></div>
+      <div><label class="fld-label">Password *</label><input class="input" type="password" name="password" minlength="6" required autocomplete="new-password"></div>
+      <div><label class="fld-label">Profile picture</label><input class="input" type="file" name="avatar" accept="image/*" style="padding:7px;font-size:12px;"></div>
+    </div>
+    <div class="row between mt-16 wrap" style="gap:12px;">
+      <label class="row" style="gap:8px;font-size:13px;color:var(--mq-muted);cursor:pointer;">
+        <input type="checkbox" name="is_admin" value="1" style="accent-color:var(--mq-accent);"> Administrator (full access)</label>
+      <button class="btn btn-primary" type="submit">Add member</button>
+    </div>
+  </form>
+</div>
+
 <div class="card">
   <div class="card-title mb-16">Team</div>
   <div class="table-scroll" style="max-height:none;">
     <table class="data-table">
-      <thead><tr><th style="text-align:left;">Username</th><th style="text-align:left;">Name</th><th style="text-align:left;">Email</th><th>Role</th></tr></thead>
+      <thead><tr><th style="text-align:left;">Member</th><th style="text-align:left;">Email</th><th>Role</th><th></th></tr></thead>
       <tbody>
         {% for u in users %}
+        {% set fullname = ((u.first_name or '') ~ ' ' ~ (u.last_name or ''))|trim %}
         <tr>
-          <td style="text-align:left;font-weight:600;color:var(--mq-ink-2);">{{ u.username }}</td>
-          <td style="text-align:left;">{{ (u.first_name or '') ~ ' ' ~ (u.last_name or '') }}</td>
+          <td style="text-align:left;">
+            <span class="row" style="gap:10px;">
+              {{ av.user_avatar(u.id, fullname or u.username, u.has_avatar, u.avatar_ver, 32) }}
+              <span>
+                <span style="font-weight:600;color:var(--mq-ink-2);">{{ fullname or '—' }}</span>
+                <span class="subtle" style="display:block;font-size:11px;">@{{ u.username }}</span>
+              </span>
+            </span>
+          </td>
           <td style="text-align:left;">{{ u.email or '—' }}</td>
           <td>{% if u.is_admin %}<span class="badge accent">Admin</span>{% else %}<span class="badge">Member</span>{% endif %}</td>
+          <td>
+            {% if u.id != cur_user_id %}
+            <form method="POST" action="{{ url_for('delete_user', uid=u.id) }}" style="display:inline;" onsubmit="return confirm('Remove {{ u.username }}?');">
+              <button class="btn btn-sm btn-ghost" type="submit">Remove</button>
+            </form>
+            {% else %}<span class="subtle">You</span>{% endif %}
+          </td>
         </tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
-  <p class="subtle" style="font-size:12px;margin-top:12px;">User creation &amp; permissions management can be wired to a modal next, mirroring the Ember admin panel.</p>
 </div>
 {% endif %}
 {% endblock %}

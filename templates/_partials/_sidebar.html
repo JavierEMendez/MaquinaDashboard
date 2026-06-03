@@ -1,4 +1,5 @@
 {# Permanent left sidebar — Navigation / Industries / Portfolio Companies #}
+{% import "_partials/_avatars.html" as av %}
 <aside class="sidebar">
   <div class="sidebar-brand">
     <a href="{{ url_for('dashboard') }}" style="display:flex;align-items:center;">
@@ -40,7 +41,7 @@
       <div class="nav-label">Portfolio Companies ({{ nav_companies|length }})</div>
       {% for c in nav_companies %}
       <a class="company-item {{ 'active' if current_path == '/company/' ~ c.slug }}" href="{{ url_for('company', slug=c.slug) }}">
-        <span class="company-avatar" style="background:{{ c.accent }};">{{ c.name|initials }}</span>
+        {{ av.company_avatar(c.id, c.name, c.accent, c.has_logo, c.logo_ver, 28) }}
         <span class="company-meta">
           <span class="nm">{{ c.name }}</span>
           <span class="ind">{{ c.industry }}</span>

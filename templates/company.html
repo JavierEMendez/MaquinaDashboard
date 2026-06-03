@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block title %}{{ c.name }} — Maquina{% endblock %}
 {% set flags = {'US': '🇺🇸', 'MX': '🇲🇽'} %}
+{% import "_partials/_avatars.html" as av %}
 
 {% macro kpicard(it) %}
 <div class="kpi">
@@ -41,7 +42,7 @@
 {% block content %}
 <div class="page-head">
   <div class="row" style="gap:14px;">
-    <span class="company-avatar" style="width:44px;height:44px;font-size:15px;background:{{ c.accent }};">{{ c.name|initials }}</span>
+    {{ av.company_avatar(c.id, c.name, c.accent, c.has_logo, c.logo_ver, 44) }}
     <div>
       <div class="page-eyebrow" style="color:var(--mq-subtle);margin-bottom:4px;">{{ c.industry }} · {{ flags[c.country_code] }} {{ c.country }}</div>
       <h1 class="page-title" style="font-size:26px;">{{ c.name }}</h1>

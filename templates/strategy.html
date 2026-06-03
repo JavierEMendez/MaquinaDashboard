@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% block title %}Maquina Strategy{% endblock %}
+{% import "_partials/_avatars.html" as av %}
 
 {% block content %}
 <div class="page-head">
@@ -24,7 +25,7 @@
         {% if p._companies %}
           {% for c in p._companies %}
           <a href="{{ url_for('company', slug=c.slug) }}" class="row" style="gap:7px;text-decoration:none;background:var(--mq-surface-2);border:1px solid var(--mq-line);border-radius:999px;padding:4px 10px 4px 4px;">
-            <span class="company-avatar" style="width:22px;height:22px;font-size:9px;background:{{ c.accent }};">{{ c.name|initials }}</span>
+            {{ av.company_avatar(c.id, c.name, c.accent, c.has_logo, c.logo_ver, 22) }}
             <span style="font-size:12px;font-weight:600;color:var(--mq-ink);">{{ c.name }}</span>
           </a>
           {% endfor %}
@@ -41,7 +42,7 @@
   {% for c in comps %}
   <a href="{{ url_for('company', slug=c.slug) }}" class="card" style="padding:18px;text-decoration:none;">
     <div class="row" style="gap:10px;">
-      <span class="company-avatar" style="background:{{ c.accent }};">{{ c.name|initials }}</span>
+      {{ av.company_avatar(c.id, c.name, c.accent, c.has_logo, c.logo_ver, 36) }}
       <div><div style="font-weight:700;color:var(--mq-ink-2);">{{ c.name }}</div><div class="subtle" style="font-size:11.5px;">{{ c.industry }}</div></div>
     </div>
     <div class="divider"></div>

@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Manage Companies — Maquina{% endblock %}
 {% set flags = {'US': '🇺🇸', 'MX': '🇲🇽'} %}
+{% import "_partials/_avatars.html" as av %}
 
 {% block content %}
 <div class="page-head">
@@ -29,7 +30,7 @@
         <tr style="{{ 'opacity:.55;' if c.archived }}">
           <td>
             <a href="{{ url_for('company', slug=c.slug) }}" class="row" style="gap:10px;text-decoration:none;">
-              <span class="company-avatar" style="width:28px;height:28px;font-size:10px;background:{{ c.accent }};">{{ c.name|initials }}</span>
+              {{ av.company_avatar(c.id, c.name, c.accent, c.has_logo, c.logo_ver, 30) }}
               <span style="font-weight:600;color:var(--mq-ink-2);">{{ c.name }}</span>
             </a>
           </td>
@@ -40,10 +41,17 @@
           <td>{% if c.archived %}<span class="badge">Archived</span>{% else %}<span class="badge good">Active</span>{% endif %}</td>
           <td>
             {% if is_admin %}
-            <form method="POST" action="{{ url_for('archive_company', cid=c.id) }}" style="display:inline;">
-              <input type="hidden" name="archived" value="{{ '0' if c.archived else '1' }}">
-              <button class="btn btn-sm btn-ghost" type="submit">{{ 'Restore' if c.archived else 'Archive' }}</button>
-            </form>
+            <div class="row" style="gap:6px;justify-content:flex-end;">
+              <form method="POST" action="{{ url_for('upload_company_logo', cid=c.id) }}" enctype="multipart/form-data" style="display:inline;">
+                <label class="btn btn-sm btn-ghost" style="margin:0;cursor:pointer;">{{ 'Replace logo' if c.has_logo else 'Upload logo' }}
+                  <input type="file" name="logo" accept="image/*" hidden onchange="this.form.submit()">
+                </label>
+              </form>
+              <form method="POST" action="{{ url_for('archive_company', cid=c.id) }}" style="display:inline;">
+                <input type="hidden" name="archived" value="{{ '0' if c.archived else '1' }}">
+                <button class="btn btn-sm btn-ghost" type="submit">{{ 'Restore' if c.archived else 'Archive' }}</button>
+              </form>
+            </div>
             {% else %}<span class="subtle">—</span>{% endif %}
           </td>
         </tr>
