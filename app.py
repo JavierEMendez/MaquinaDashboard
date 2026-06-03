@@ -609,7 +609,7 @@ def ember_diagnostics():
             info["operations"] = {
                 "fields": sorted(d.keys()),
                 "kpis": [(k.get("label"), k.get("value")) for k in (d.get("kpis") or []) if isinstance(k, dict)],
-                "raw": json.dumps(d, default=str, ensure_ascii=False)[:2400],
+                "raw": json.dumps({"yearly_rollup": d.get("yearly_rollup")}, default=str, ensure_ascii=False)[:2800],
             }
         info["connected"] = True
         ecur.close(); econn.close()
