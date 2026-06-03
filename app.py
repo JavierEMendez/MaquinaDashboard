@@ -779,7 +779,8 @@ def ember_diagnostics():
     Never writes. Returns connection status, available report types, and the
     shape of the latest 'operations' report so we can map KPIs precisely."""
     info = {"configured": bool(os.environ.get("EMBER_DATABASE_URL", "").strip()),
-            "connected": False, "error": None, "report_types": [], "operations": None}
+            "connected": False, "error": None, "report_types": [],
+            "operations": None, "returns": None, "loans": None}
     if not info["configured"]:
         return info
     try:
@@ -803,6 +804,16 @@ def ember_diagnostics():
                 "kpis": [(k.get("label"), k.get("value")) for k in (d.get("kpis") or []) if isinstance(k, dict)],
                 "raw": json.dumps({"yearly_rollup": d.get("yearly_rollup")}, default=str, ensure_ascii=False)[:2800],
             }
+        for rt in ("returns", "loans"):
+            ecur.execute("SELECT data FROM reports WHERE report_type = %s "
+                         "ORDER BY uploaded_at DESC LIMIT 1", (rt,))
+            rr = ecur.fetchone()
+            if rr and rr.get("data"):
+                dd = rr["data"]
+                info[rt] = {
+                    "fields": sorted(dd.keys()) if isinstance(dd, dict) else "(type: %s)" % type(dd).__name__,
+                    "raw": json.dumps(dd, default=str, ensure_ascii=False)[:2600],
+                }
         info["connected"] = True
         ecur.close(); econn.close()
     except Exception as e:
