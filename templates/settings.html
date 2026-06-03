@@ -59,9 +59,8 @@
       {% if ember.operations %}
         <div style="{{ lbl }}">Latest operations report</div>
         <p class="subtle" style="font-size:11.5px;">fields: {{ ember.operations.fields|join(', ') }}</p>
-        {% if ember.operations.yearly_years %}<p class="subtle" style="font-size:11.5px;">years: {{ ember.operations.yearly_years|join(', ') }}</p>{% endif %}
-        {% if ember.operations.yearly_labels %}<p class="subtle" style="font-size:11.5px;">categories: {{ ember.operations.yearly_labels|join(', ') }}</p>{% endif %}
         {% if ember.operations.kpis %}<p class="subtle" style="font-size:11.5px;">KPIs: {% for l, v in ember.operations.kpis %}{{ l }}={{ v }}{{ '; ' if not loop.last }}{% endfor %}</p>{% endif %}
+        {% if ember.operations.raw %}<pre style="font-size:10px;line-height:1.4;background:var(--mq-bg-2);border:1px solid var(--mq-line);border-radius:8px;padding:10px;max-height:220px;overflow:auto;white-space:pre-wrap;word-break:break-word;color:var(--mq-muted);">{{ ember.operations.raw }}</pre>{% endif %}
       {% elif ember.connected %}
         <p class="subtle" style="font-size:11.5px;margin-top:8px;">Connected — no <code>operations</code> report found yet.</p>
       {% endif %}

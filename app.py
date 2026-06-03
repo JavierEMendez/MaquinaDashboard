@@ -8,6 +8,7 @@ with Chart.js from embedded JSON).
 """
 import os
 import io
+import json
 import functools
 
 import requests
@@ -605,12 +606,10 @@ def ember_diagnostics():
         op = ecur.fetchone()
         if op and op.get("data"):
             d = op["data"]
-            yearly = d.get("yearly_rows") or []
             info["operations"] = {
                 "fields": sorted(d.keys()),
-                "yearly_years": d.get("yearly_years"),
-                "yearly_labels": [r.get("label") for r in yearly if isinstance(r, dict)],
                 "kpis": [(k.get("label"), k.get("value")) for k in (d.get("kpis") or []) if isinstance(k, dict)],
+                "raw": json.dumps(d, default=str, ensure_ascii=False)[:2400],
             }
         info["connected"] = True
         ecur.close(); econn.close()
