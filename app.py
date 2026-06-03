@@ -810,9 +810,21 @@ def ember_diagnostics():
             rr = ecur.fetchone()
             if rr and rr.get("data"):
                 dd = rr["data"]
+                if rt == "returns":
+                    preview = {"summary": dd.get("summary"),
+                               "projects_count": len(dd.get("projects") or []),
+                               "project0": (dd.get("projects") or [None])[0]}
+                elif rt == "loans":
+                    ds = dd.get("debt_schedules")
+                    preview = {"mpc_count": len((dd.get("mpc_loans") or {}).get("rows") or []),
+                               "vertical0": ((dd.get("vertical_loans") or {}).get("rows") or [None])[0],
+                               "debt_schedules": (sorted(ds.keys()) if isinstance(ds, dict)
+                                                  else ("list[%d]" % len(ds) if isinstance(ds, list) else type(ds).__name__))}
+                else:
+                    preview = dd
                 info[rt] = {
                     "fields": sorted(dd.keys()) if isinstance(dd, dict) else "(type: %s)" % type(dd).__name__,
-                    "raw": json.dumps(dd, default=str, ensure_ascii=False)[:2600],
+                    "raw": json.dumps(preview, default=str, ensure_ascii=False)[:2800],
                 }
         info["connected"] = True
         ecur.close(); econn.close()
