@@ -147,7 +147,9 @@ def _kpi_series(current, cagr, seed, integer=False, allow_negative=False):
     actual, proj = [], []
     for y in range(HIST_START, PROJ_END + 1):
         base = current * ((1 + cagr) ** (y - BASE_YEAR))
-        v = base * (1 + (r.random() * 2 - 1) * 0.05)
+        # Anchor the current-year value exactly so headline KPIs match the
+        # reference figures; only history/projection years get the ±5% wiggle.
+        v = current if y == BASE_YEAR else base * (1 + (r.random() * 2 - 1) * 0.05)
         if not allow_negative:
             v = max(0, v)
         if integer:
