@@ -1,0 +1,195 @@
+{% extends "base.html" %}
+{% block title %}Maquina Portfolio{% endblock %}
+{% set flags = {'US': '🇺🇸', 'MX': '🇲🇽'} %}
+
+{% block content %}
+<div class="page-head">
+  <div class="page-eyebrow">Portfolio</div>
+  <h1 class="page-title">Maquina Portfolio</h1>
+  <div class="page-sub">Track investments and distributions by portfolio company.</div>
+</div>
+
+<div data-tabgroup>
+  <div class="tabs">
+    <button class="tab active" data-tab="portfolio">Portfolio</button>
+    <button class="tab" data-tab="planning">Planning</button>
+  </div>
+
+  {# ───────── Portfolio tab ───────── #}
+  <div class="tab-panel active" data-panel="portfolio">
+    <div class="grid grid-4 mb-24">
+      <div class="kpi">
+        <div class="kpi-top"><span class="kpi-label">Total Investment</span>
+          <span class="kpi-icon"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></span></div>
+        <div class="kpi-value">{{ total_inv | money }}</div>
+        <div class="kpi-foot"><span class="kpi-sub">All companies (USD)</span></div>
+        <div class="kpi-sub">{{ base_year }} Investment {{ year_inv | money }}</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-top"><span class="kpi-label">Total Distributions</span>
+          <span class="kpi-icon"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg></span></div>
+        <div class="kpi-value">{{ total_dist | money }}</div>
+        <div class="kpi-foot"><span class="kpi-sub">Cumulative (USD)</span></div>
+        <div class="kpi-sub">{{ base_year }} Distribution {{ year_dist | money }}</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-top"><span class="kpi-label">Net Position</span>
+          <span class="kpi-icon"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg></span></div>
+        <div class="kpi-value {{ 'pos' if net >= 0 else 'neg' }}">{{ net | smoney }}</div>
+        <div class="kpi-foot"><span class="kpi-sub">Distributions − Investments</span></div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-top"><span class="kpi-label">ROI</span>
+          <span class="kpi-icon"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21.21 15.89A10 10 0 1 1 8 2.83"/><path d="M22 12A10 10 0 0 0 12 2v10z"/></svg></span></div>
+        <div class="kpi-value {{ 'pos' if roi >= 100 else '' }}">{{ '%.1f'|format(roi) }}%</div>
+        <div class="kpi-foot"><span class="kpi-sub">Total return on investment</span></div>
+      </div>
+    </div>
+
+    <div class="grid grid-4 mb-24">
+      {% for c in comps %}
+      <div class="card" style="padding:18px;">
+        <div class="row between mb-16">
+          <div class="row" style="gap:8px;"><span class="flag">{{ flags[c.country_code] }}</span><strong style="color:var(--mq-ink-2);">{{ c.name }}</strong></div>
+          <span class="badge">{{ c.industry }}</span>
+        </div>
+        <div class="row between" style="font-size:13px;margin-bottom:6px;"><span class="muted">Investment</span><span class="tnum" style="font-weight:600;">{{ c.investment | money }}</span></div>
+        <div class="row between" style="font-size:13px;"><span class="muted">Distributions</span><span class="tnum" style="font-weight:600;">{{ c.distribution | money }}</span></div>
+        <div class="divider" style="margin:12px 0;"></div>
+        <div class="row between" style="font-size:13px;"><span class="muted">Net</span><span class="tnum {{ 'pos' if c.net >= 0 else 'neg' }}" style="font-weight:700;">{{ c.net | smoney }}</span></div>
+        <svg class="spark" data-slug="{{ c.slug }}" viewBox="0 0 120 30" preserveAspectRatio="none" style="width:100%;height:30px;margin-top:12px;overflow:visible;">
+          <polyline fill="none" stroke-width="2" points=""></polyline>
+        </svg>
+      </div>
+      {% endfor %}
+    </div>
+
+    <div class="card mb-24">
+      <div class="card-head"><div><div class="card-title">Portfolio Timeline</div><div class="card-sub">Cumulative investment &amp; distributions — actuals through {{ base_year }}, projections after.</div></div></div>
+      <div class="chart-wrap" style="height:300px;"><canvas id="timelineChart"></canvas></div>
+      <div class="row" style="gap:20px;margin-top:14px;font-size:12.5px;">
+        <span class="legend-left"><span class="legend-dot" style="background:var(--mq-c5);"></span>Investment</span>
+        <span class="legend-left"><span class="legend-dot" style="background:var(--mq-c3);"></span>Distributions</span>
+      </div>
+    </div>
+
+    <div class="grid grid-3">
+      <div class="card">
+        <div class="card-title mb-16">By Industry</div>
+        <div class="chart-wrap" style="height:170px;"><canvas id="indChart"></canvas></div>
+      </div>
+      <div class="card">
+        <div class="card-title mb-16">By Country</div>
+        <div class="chart-wrap" style="height:170px;"><canvas id="ctyChart"></canvas></div>
+      </div>
+      <div class="card">
+        <div class="card-title mb-16">Investment by Company</div>
+        <div class="chart-wrap" style="height:170px;"><canvas id="coChart"></canvas></div>
+      </div>
+    </div>
+  </div>
+
+  {# ───────── Planning tab ───────── #}
+  <div class="tab-panel" data-panel="planning">
+    <div class="card">
+      <div class="card-head">
+        <div><div class="card-title">Cashflow Planning Matrix</div><div class="card-sub">Per-company net cashflow (distributions − investments), USD, by year.</div></div>
+        <div class="pillgroup" id="planToggle">
+          <button class="pill is-active" data-plan="actual">Actuals</button>
+          <button class="pill" data-plan="projection">Projections</button>
+        </div>
+      </div>
+      <div class="table-scroll">
+        <table class="data-table">
+          <thead>
+            <tr><th>Company</th>
+              {% for y in years %}<th class="plan-col plan-actual {{ 'plan-proj' if y > base_year }}" {% if y > base_year %}style="display:none;"{% endif %}>{{ y }}</th>{% endfor %}
+            </tr>
+          </thead>
+          <tbody>
+            {% for c in comps %}
+            <tr>
+              <td>{{ flags[c.country_code] }} {{ c.name }}</td>
+              {% for y in years %}
+                {% set s = c.series.get(y) %}
+                {% set v = (s.dist - s.inv) if s else None %}
+                <td class="plan-col {{ 'plan-proj' if y > base_year }}" {% if y > base_year %}style="display:none;"{% endif %}>
+                  <span class="{{ 'pos' if (v or 0) >= 0 else 'neg' }}">{{ v | smoney if v is not none else '—' }}</span>
+                </td>
+              {% endfor %}
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const TL = {{ timeline | tojson }};
+  const SPARKS = {{ comps | map(attribute='spark') | list | tojson }};
+  const SPARK_SLUGS = {{ comps | map(attribute='slug') | list | tojson }};
+  const IND = {{ by_industry | tojson }};
+  const CTY = {{ by_country | tojson }};
+  const CO = {{ comps | map(attribute='name') | list | tojson }};
+  const CO_INV = {{ comps | map(attribute='investment') | list | tojson }};
+  const CO_ACCENT = {{ comps | map(attribute='accent') | list | tojson }};
+
+  function timelineChart(){
+    const ctx=document.getElementById('timelineChart'); if(!ctx) return null;
+    const baseIdx = TL.years.indexOf(TL.base_year);
+    const dash = (c)=> c.p0DataIndex >= baseIdx ? [6,4] : undefined;
+    const mk = (data,color)=>({
+      data:data.map(v=>v/1e6), borderColor:color, backgroundColor:MQ.hexA(color,0.08),
+      borderWidth:2.5, tension:0.3, pointRadius:0, fill:true,
+      segment:{ borderDash: dash }
+    });
+    return new Chart(ctx,{ type:'line',
+      data:{ labels:TL.years, datasets:[ mk(TL.inv, MQ.palette(4)), mk(TL.dist, MQ.palette(2)) ] },
+      options:{ responsive:true, maintainAspectRatio:false, interaction:{mode:'index',intersect:false},
+        scales:{ x:{ grid:{display:false}, ticks:{color:MQ.muted()} },
+          y:{ grid:{color:MQ.grid()}, ticks:{color:MQ.muted(), callback:v=>'$'+v+'M'} } },
+        plugins:{ tooltip:{ callbacks:{ label:c=>(c.datasetIndex===0?'Investment':'Distributions')+': $'+c.parsed.y.toFixed(1)+'M' } } } }
+    });
+  }
+  function donut(id,labels,data,colors){
+    const ctx=document.getElementById(id); if(!ctx) return null;
+    return new Chart(ctx,{ type:'doughnut',
+      data:{ labels:labels, datasets:[{ data:data.map(v=>v/1e6), backgroundColor:colors, borderColor:MQ.surface(), borderWidth:2 }] },
+      options:{ cutout:'62%', responsive:true, maintainAspectRatio:false,
+        plugins:{ legend:{ display:true, position:'bottom', labels:{ color:MQ.muted(), boxWidth:10, font:{size:11} } },
+          tooltip:{ callbacks:{ label:c=>' $'+c.parsed.toFixed(1)+'M' } } } }
+    });
+  }
+  function paintSparks(){
+    SPARK_SLUGS.forEach(function(slug,i){
+      const svg=document.querySelector('.spark[data-slug="'+slug+'"] polyline'); if(!svg) return;
+      const d=SPARKS[i]; const mn=Math.min(...d), mx=Math.max(...d), rng=(mx-mn)||1;
+      const pts=d.map((v,j)=>(j/(d.length-1)*120).toFixed(1)+','+(28-((v-mn)/rng)*26).toFixed(1)).join(' ');
+      svg.setAttribute('points',pts);
+      svg.setAttribute('stroke', d[d.length-1] >= 0 ? MQ.good() : MQ.bad());
+    });
+  }
+
+  MQ.register(timelineChart);
+  MQ.register(()=>donut('indChart', IND.map(x=>x.k), IND.map(x=>x.v), IND.map((_,i)=>MQ.palette([0,2,3,1][i]||i))));
+  MQ.register(()=>donut('ctyChart', CTY.map(x=>x.k), CTY.map(x=>x.v), CTY.map((_,i)=>MQ.palette([0,2][i]||i))));
+  MQ.register(()=>donut('coChart', CO, CO_INV, CO_ACCENT));
+  paintSparks();
+  document.querySelector('[onclick="toggleTheme()"]').addEventListener('click', paintSparks);
+
+  // planning actual/projection toggle
+  document.getElementById('planToggle').addEventListener('click', function(e){
+    var b=e.target.closest('.pill[data-plan]'); if(!b) return;
+    this.querySelectorAll('.pill').forEach(p=>p.classList.toggle('is-active', p===b));
+    var showProj = b.dataset.plan==='projection';
+    document.querySelectorAll('.plan-col').forEach(function(td){
+      var isProj=td.classList.contains('plan-proj');
+      td.style.display = (showProj ? isProj : !isProj) ? '' : 'none';
+    });
+  });
+</script>
+{% endblock %}

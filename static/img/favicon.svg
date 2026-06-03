@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Maquina">
+  <rect width="64" height="64" rx="14" fill="#15191E"/>
+  <!-- Twin forward-slash motif echoing the Maquina wordmark accents -->
+  <path d="M28 16 L40 16 L24 48 L12 48 Z" fill="#8A9199"/>
+  <path d="M44 16 L54 16 L38 48 L28 48 Z" fill="#0568B3"/>
+</svg>

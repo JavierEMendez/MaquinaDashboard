@@ -1,0 +1,53 @@
+{# Account settings modal — opened from the topbar user chip #}
+<div class="modal" id="account-modal">
+  <div class="modal-box">
+    <div class="modal-head">
+      <h3>Account</h3>
+      <button class="modal-close" onclick="closeAccount()" aria-label="Close">&times;</button>
+    </div>
+
+    <div class="row" style="gap:12px;">
+      <span class="company-avatar" style="width:42px;height:42px;font-size:15px;background:var(--mq-accent);">{{ (display_name or 'U')|initials }}</span>
+      <div>
+        <div style="font-weight:700;color:var(--mq-ink-2);">{{ display_name }}</div>
+        <div class="subtle" style="font-size:12px;">{{ 'Administrator' if is_admin else 'Member' }}</div>
+      </div>
+    </div>
+
+    <div class="modal-section">
+      <div class="acct-theme-row row between">
+        <span class="muted" style="font-size:13px;">Appearance</span>
+        <div class="pillgroup">
+          <button class="pill" data-theme-pill="light" onclick="setTheme('light');syncThemePills();">Light</button>
+          <button class="pill" data-theme-pill="dark" onclick="setTheme('dark');syncThemePills();">Dark</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal-section">
+      <form method="POST" action="{{ url_for('change_password') }}">
+        <label class="fld-label">Current password</label>
+        <input class="input" type="password" name="current_password" required style="margin-bottom:12px;">
+        <label class="fld-label">New password</label>
+        <input class="input" type="password" name="new_password" minlength="6" required style="margin-bottom:14px;">
+        <button class="btn btn-primary" type="submit" style="width:100%;justify-content:center;">Update password</button>
+      </form>
+    </div>
+
+    <div class="modal-section">
+      <a class="btn btn-ghost" href="{{ url_for('logout') }}" style="width:100%;justify-content:center;">Sign out</a>
+    </div>
+  </div>
+</div>
+<script>
+  function syncThemePills(){
+    var t=document.documentElement.getAttribute('data-theme')||'light';
+    document.querySelectorAll('[data-theme-pill]').forEach(function(b){
+      b.classList.toggle('is-active', b.getAttribute('data-theme-pill')===t);
+    });
+  }
+  document.addEventListener('DOMContentLoaded', syncThemePills);
+  document.getElementById('account-modal').addEventListener('click', function(e){
+    if(e.target===this) closeAccount();
+  });
+</script>

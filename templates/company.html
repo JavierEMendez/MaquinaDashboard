@@ -1,0 +1,209 @@
+{% extends "base.html" %}
+{% block title %}{{ c.name }} — Maquina{% endblock %}
+{% set flags = {'US': '🇺🇸', 'MX': '🇲🇽'} %}
+
+{% macro kpicard(it) %}
+<div class="kpi">
+  <div class="kpi-top"><span class="kpi-label">{{ it.name }}</span></div>
+  <div class="kpi-value">{{ it.current | kpi(it.unit, it.unit_label) }}</div>
+  <div class="kpi-foot">
+    {% if it.trend is not none %}
+      <span class="trend {{ 'up' if it.trend > 0 else 'down' if it.trend < 0 else 'flat' }}">
+        {{ '↑' if it.trend > 0 else '↓' if it.trend < 0 else '→' }} {{ '%.1f'|format(it.trend|abs) }}%</span>
+      <span class="kpi-sub">vs {{ base_year - 1 }}</span>
+    {% else %}
+      <span class="kpi-sub">{{ it.unit_label or it.category }}</span>
+    {% endif %}
+  </div>
+</div>
+{% endmacro %}
+
+{% macro category_panel(cat) %}
+  {% set kpis = by_category.get(cat, []) %}
+  {% set has_chart = kpis | selectattr('in_chart') | list | length > 0 %}
+  {% if kpis %}
+    <div class="grid grid-4 mb-24">{% for it in kpis %}{{ kpicard(it) }}{% endfor %}</div>
+    {% if has_chart %}
+    <div class="card">
+      <div class="card-head"><div><div class="card-title">{{ cat }} Trend</div>
+        <div class="card-sub">Actuals through {{ base_year }}, projections dashed.</div></div>
+        <label class="row" style="gap:7px;font-size:12px;cursor:pointer;color:var(--mq-muted);">
+          <input type="checkbox" data-projtoggle="chart-{{ cat }}" data-cat="{{ cat }}" checked style="accent-color:var(--mq-accent);"> Show projections</label>
+      </div>
+      <div class="chart-wrap" style="height:300px;"><canvas id="chart-{{ cat }}"></canvas></div>
+    </div>
+    {% endif %}
+  {% else %}
+    <div class="card"><span class="subtle">No {{ cat }} KPIs yet.</span></div>
+  {% endif %}
+{% endmacro %}
+
+{% block content %}
+<div class="page-head">
+  <div class="row" style="gap:14px;">
+    <span class="company-avatar" style="width:44px;height:44px;font-size:15px;background:{{ c.accent }};">{{ c.name|initials }}</span>
+    <div>
+      <div class="page-eyebrow" style="color:var(--mq-subtle);margin-bottom:4px;">{{ c.industry }} · {{ flags[c.country_code] }} {{ c.country }}</div>
+      <h1 class="page-title" style="font-size:26px;">{{ c.name }}</h1>
+    </div>
+  </div>
+  {% if c.description %}<div class="page-sub" style="margin-top:10px;">{{ c.description }}</div>{% endif %}
+</div>
+
+<div data-tabgroup>
+  <div class="tabs">
+    <button class="tab active" data-tab="dashboard">Dashboard</button>
+    <button class="tab" data-tab="commercial">Commercial</button>
+    <button class="tab" data-tab="operations">Operations</button>
+    <button class="tab" data-tab="finance">Finance</button>
+    <button class="tab" data-tab="strategy">Strategy</button>
+    <button class="tab" data-tab="planning">Planning</button>
+  </div>
+
+  {# ───────── Dashboard ───────── #}
+  <div class="tab-panel active" data-panel="dashboard">
+    <div class="grid grid-4 mb-24">{% for it in dashboard_kpis %}{{ kpicard(it) }}{% endfor %}</div>
+    <div class="card">
+      <div class="card-head"><div><div class="card-title">Performance Overview</div>
+        <div class="card-sub">Key metrics — actuals through {{ base_year }}, projections dashed.</div></div>
+        <label class="row" style="gap:7px;font-size:12px;cursor:pointer;color:var(--mq-muted);">
+          <input type="checkbox" data-projtoggle="chart-dashboard" data-cat="all" checked style="accent-color:var(--mq-accent);"> Show projections</label>
+      </div>
+      <div class="chart-wrap" style="height:320px;"><canvas id="chart-dashboard"></canvas></div>
+    </div>
+  </div>
+
+  <div class="tab-panel" data-panel="commercial">{{ category_panel('Commercial') }}</div>
+  <div class="tab-panel" data-panel="operations">{{ category_panel('Operations') }}</div>
+  <div class="tab-panel" data-panel="finance">{{ category_panel('Finance') }}</div>
+
+  {# ───────── Strategy ───────── #}
+  <div class="tab-panel" data-panel="strategy">
+    <div class="grid grid-2 mb-24">
+      <div class="card">
+        <div class="card-title mb-16">Lifecycle Timeline</div>
+        {% for p in phase_hist %}
+        <div class="row" style="gap:12px;padding:10px 0;border-bottom:1px solid var(--mq-line);">
+          <span style="width:10px;height:10px;border-radius:50%;background:{{ p.color }};flex-shrink:0;"></span>
+          <div style="flex:1;">
+            <div style="font-weight:600;color:var(--mq-ink-2);font-size:13.5px;">Phase {{ p.phase_order }} · {{ p.name }}
+              {% if p.is_projected %}<span class="badge" style="margin-left:6px;">projected</span>{% endif %}</div>
+            <div class="subtle" style="font-size:12px;">{{ p.start_year }}–{{ p.end_year }} · {{ p.team_expectation }} focus</div>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      <div class="card">
+        <div class="card-title mb-16">Risk Ratings</div>
+        {% if risk %}
+        {% for label, val in [('Market', risk.market_risk), ('Team', risk.team_risk), ('Finance', risk.finance_risk), ('Product', risk.product_risk)] %}
+        <div class="risk-slider">
+          <span class="rl">{{ label }}</span>
+          <span class="risk-track"><span class="risk-fill" style="width:{{ (val/10*100)|round }}%;background:{{ '#1F9D6B' if val<=3 else '#C98A00' if val<=6 else '#D2452F' }};"></span></span>
+          <span class="risk-val">{{ val }}</span>
+        </div>
+        {% endfor %}
+        {% else %}<span class="subtle">No risk data.</span>{% endif %}
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title mb-16">Strategic Initiatives</div>
+      {% for s in strategies %}
+      <div class="row between wrap" style="padding:12px 0;border-bottom:1px solid var(--mq-line);gap:12px;">
+        <div style="flex:1;min-width:200px;">
+          <div style="font-weight:600;color:var(--mq-ink-2);">{{ s.name }}
+            <span class="badge {{ 'accent' if s.approach=='different' }}" style="margin-left:6px;">{{ s.approach|capitalize }}</span></div>
+          <div class="subtle" style="font-size:12px;">{{ s.start_year }}–{{ s.end_year }}</div>
+        </div>
+        <div class="row" style="gap:18px;">
+          <div style="text-align:center;"><div class="subtle" style="font-size:10px;text-transform:uppercase;letter-spacing:0.08em;">Formulation</div><div style="font-family:var(--font-display);font-weight:700;color:var(--mq-ink-2);">{{ s.formulation_rating }}/10</div></div>
+          <div style="text-align:center;"><div class="subtle" style="font-size:10px;text-transform:uppercase;letter-spacing:0.08em;">Execution</div><div style="font-family:var(--font-display);font-weight:700;color:var(--mq-ink-2);">{{ s.execution_rating }}/10</div></div>
+        </div>
+      </div>
+      {% else %}<span class="subtle">No strategies defined.</span>{% endfor %}
+    </div>
+  </div>
+
+  {# ───────── Planning ───────── #}
+  <div class="tab-panel" data-panel="planning">
+    <div class="card">
+      <div class="card-head">
+        <div><div class="card-title">Data Matrix</div><div class="card-sub">All KPIs by year — {{ c.name }}.</div></div>
+        <div class="pillgroup" id="planToggleCo">
+          <button class="pill is-active" data-plan="actual">Actuals</button>
+          <button class="pill" data-plan="projection">Projections</button>
+        </div>
+      </div>
+      <div class="table-scroll">
+        <table class="data-table">
+          <thead><tr><th>KPI</th>
+            {% for y in years %}<th class="plan-col {{ 'plan-proj' if y > base_year }}" {% if y > base_year %}style="display:none;"{% endif %}>{{ y }}</th>{% endfor %}
+          </tr></thead>
+          <tbody>
+            {% for it in items %}
+            <tr>
+              <td>{{ it.name }} <span class="subtle" style="font-size:10px;">{{ it.unit_label }}</span></td>
+              {% for y in years %}
+                {% set v = it.actual.get(y) if y <= base_year else it.projection.get(y) %}
+                <td class="plan-col {{ 'plan-proj' if y > base_year }}" {% if y > base_year %}style="display:none;"{% endif %}>
+                  {{ v | kpi(it.unit, it.unit_label) if v is not none else '—' }}
+                </td>
+              {% endfor %}
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const PAYLOAD = {{ chart | tojson }};
+  const charts = {};
+  const showProj = {};
+
+  function buildLine(id, series){
+    const ctx = document.getElementById(id); if(!ctx) return null;
+    if(charts[id]){ try{ charts[id].destroy(); }catch(e){} }
+    const years = PAYLOAD.years, baseIdx = years.indexOf(PAYLOAD.base_year);
+    const proj = showProj[id] !== false;
+    const ds = series.map(s=>{
+      const combined = years.map((y,i)=> y <= PAYLOAD.base_year ? s.actual[i] : (proj ? s.projection[i] : null));
+      const color = MQ.palette(s.color_idx);
+      return { label:s.label, data:combined, borderColor:color, backgroundColor:MQ.hexA(color,0.05),
+        borderWidth:2.2, tension:0.3, pointRadius:0, spanGaps:true,
+        segment:{ borderDash:(cx)=> cx.p0DataIndex >= baseIdx ? [6,4] : undefined } };
+    });
+    charts[id] = new Chart(ctx, { type:'line', data:{ labels:years, datasets:ds },
+      options:{ responsive:true, maintainAspectRatio:false, interaction:{mode:'index',intersect:false},
+        scales:{ x:{ grid:{display:false}, ticks:{ color:MQ.muted(), maxTicksLimit:10 } },
+          y:{ grid:{ color:MQ.grid() }, ticks:{ color:MQ.muted() } } },
+        plugins:{ legend:{ display: series.length>1, position:'bottom', labels:{ color:MQ.muted(), boxWidth:10, font:{size:11} } } } } });
+    return charts[id];
+  }
+  function seriesFor(cat){ return PAYLOAD.series.filter(s=> cat==='all' ? true : s.category===cat); }
+
+  MQ.register(()=>buildLine('chart-dashboard', seriesFor('all')));
+  ['Commercial','Operations','Finance'].forEach(cat=>{
+    if(document.getElementById('chart-'+cat)) MQ.register(()=>buildLine('chart-'+cat, seriesFor(cat)));
+  });
+
+  document.querySelectorAll('[data-projtoggle]').forEach(cb=>{
+    cb.addEventListener('change', ()=>{ const id=cb.dataset.projtoggle; showProj[id]=cb.checked; buildLine(id, seriesFor(cb.dataset.cat)); });
+  });
+
+  document.getElementById('planToggleCo').addEventListener('click', function(e){
+    var b=e.target.closest('.pill[data-plan]'); if(!b) return;
+    this.querySelectorAll('.pill').forEach(p=>p.classList.toggle('is-active', p===b));
+    var showP = b.dataset.plan==='projection';
+    document.querySelectorAll('#planToggleCo').forEach(()=>{});
+    document.querySelector('[data-panel="planning"]').querySelectorAll('.plan-col').forEach(function(td){
+      var isProj=td.classList.contains('plan-proj');
+      td.style.display = (showP ? isProj : !isProj) ? '' : 'none';
+    });
+  });
+</script>
+{% endblock %}

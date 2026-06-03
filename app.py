@@ -1,0 +1,586 @@
+"""Maquina — Portfolio Management Platform (Flask).
+
+Single-file app following the Ember dashboard's conventions: session auth
+over a `users` table, a Railway Postgres via psycopg2, schema + fake-data
+seeding on first request. Pages read from the unified model in db.py and
+hand fully-shaped data to Jinja templates (charts are rendered client-side
+with Chart.js from embedded JSON).
+"""
+import os
+import functools
+
+import requests
+from flask import (Flask, render_template, request, redirect, url_for,
+                   session, flash, jsonify, abort)
+from werkzeug.security import check_password_hash, generate_password_hash
+
+import db
+import seed_data
+
+app = Flask(__name__)
+app.secret_key = os.environ.get("SECRET_KEY", "maquina-dev-secret-change-me")
+
+BASE_YEAR = seed_data.BASE_YEAR
+HIST_START = seed_data.HIST_START
+PROJ_END = seed_data.PROJ_END
+
+_booted = False
+
+
+@app.before_request
+def _boot():
+    """Idempotently create the schema and seed fake data once per process."""
+    global _booted
+    if _booted:
+        return
+    try:
+        db.init_schema()
+        if not db.is_seeded():
+            conn = db.get_db()
+            seed_data.seed(conn)
+            conn.close()
+        _booted = True
+    except Exception as e:  # pragma: no cover
+        app.logger.error("Boot/init failed: %s", e)
+
+
+# ─── AUTH ──────────────────────────────────────────────────────────
+def login_required(f):
+    @functools.wraps(f)
+    def wrapper(*args, **kwargs):
+        if not session.get("user_id"):
+            return redirect(url_for("login", next=request.path))
+        return f(*args, **kwargs)
+    return wrapper
+
+
+@app.route("/health")
+def health():
+    return "ok", 200
+
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    error = None
+    if request.method == "POST":
+        username = request.form.get("username", "").strip()
+        password = request.form.get("password", "")
+        conn = db.get_db()
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM users WHERE username = %s", (username,))
+        user = cur.fetchone()
+        cur.close()
+        conn.close()
+        if user and check_password_hash(user["password_hash"], password):
+            session["user_id"] = user["id"]
+            session["username"] = user["username"]
+            session["is_admin"] = user["is_admin"]
+            fn = (user.get("first_name") or "").strip()
+            ln = (user.get("last_name") or "").strip()
+            session["display_name"] = f"{fn} {ln}".strip() or user["username"]
+            nxt = request.args.get("next") or url_for("dashboard")
+            return redirect(nxt)
+        error = "Invalid username or password."
+    return render_template("login.html", error=error)
+
+
+@app.route("/logout")
+def logout():
+    session.clear()
+    return redirect(url_for("login"))
+
+
+# ─── FORMATTING FILTERS ────────────────────────────────────────────
+def _money(x, symbol="$"):
+    try:
+        x = float(x)
+    except (TypeError, ValueError):
+        return "—"
+    a = abs(x)
+    if a >= 1e9:
+        return f"{symbol}{x/1e9:.1f}B"
+    if a >= 1e6:
+        return f"{symbol}{x/1e6:.1f}M"
+    if a >= 1e3:
+        return f"{symbol}{x/1e3:.0f}K"
+    return f"{symbol}{x:,.0f}"
+
+
+def _signed_money(x, symbol="$"):
+    try:
+        x = float(x)
+    except (TypeError, ValueError):
+        return "—"
+    sign = "+" if x >= 0 else "-"
+    return f"{sign}{_money(abs(x), symbol)}"
+
+
+def _num(x, integer=False):
+    try:
+        x = float(x)
+    except (TypeError, ValueError):
+        return "—"
+    if integer or abs(x - round(x)) < 1e-9:
+        return f"{x:,.0f}"
+    return f"{x:,.1f}"
+
+
+app.jinja_env.filters["money"] = _money
+app.jinja_env.filters["smoney"] = _signed_money
+app.jinja_env.filters["num"] = _num
+
+
+def _fmt_kpi(value, unit, unit_label):
+    if value is None:
+        return "—"
+    if unit == "currency":
+        return _money(value, "$")
+    if unit == "percent":
+        return f"{value:,.1f}%"
+    if unit == "count":
+        return f"{value:,.0f}"
+    # plain number, maybe with a trailing unit label like MW / GWh / Litros
+    n = _num(value)
+    return f"{n} {unit_label}" if unit_label and unit_label not in ("%",) else n
+
+
+app.jinja_env.filters["kpi"] = _fmt_kpi
+
+
+# ─── SHARED DATA HELPERS ───────────────────────────────────────────
+def usd_mxn_rate():
+    """MXN per 1 USD. Prefers a stored setting; live Banxico if a token is set."""
+    token = os.environ.get("BANXICO_TOKEN", "").strip()
+    if token:
+        try:
+            r = requests.get(
+                "https://www.banxico.org.mx/SieAPIRest/service/v1/series/SF43718/datos/oportuno",
+                headers={"Bmx-Token": token}, timeout=4,
+            )
+            v = r.json()["bmx"]["series"][0]["datos"][0]["dato"]
+            return float(v.replace(",", ""))
+        except Exception:
+            pass
+    conn = db.get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT value FROM app_settings WHERE key='usd_mxn_rate'")
+    row = cur.fetchone()
+    cur.close()
+    conn.close()
+    try:
+        return float(row["value"]) if row else 17.3328
+    except (TypeError, ValueError):
+        return 17.3328
+
+
+def all_companies(include_archived=False):
+    conn = db.get_db()
+    cur = conn.cursor()
+    q = "SELECT * FROM companies"
+    if not include_archived:
+        q += " WHERE archived = FALSE"
+    q += " ORDER BY display_order, name"
+    cur.execute(q)
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+    return rows
+
+
+def company_by_slug(slug):
+    conn = db.get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM companies WHERE slug = %s", (slug,))
+    row = cur.fetchone()
+    cur.close()
+    conn.close()
+    return row
+
+
+def company_cashflow_totals():
+    """Per-company cumulative + per-year investment/distribution (USD)."""
+    conn = db.get_db()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT c.id, c.slug, c.name, c.industry, c.country, c.country_code,
+               c.currency, c.accent,
+               pc.year, pc.investment, pc.distribution
+        FROM companies c
+        LEFT JOIN portfolio_cashflows pc ON pc.company_id = c.id
+        WHERE c.archived = FALSE
+        ORDER BY c.display_order, pc.year
+    """)
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+
+    comps = {}
+    for r in rows:
+        cid = r["id"]
+        if cid not in comps:
+            comps[cid] = dict(
+                id=cid, slug=r["slug"], name=r["name"], industry=r["industry"],
+                country=r["country"], country_code=r["country_code"],
+                currency=r["currency"], accent=r["accent"],
+                investment=0.0, distribution=0.0, series={},
+            )
+        if r["year"] is not None:
+            comps[cid]["investment"] += r["investment"] or 0
+            comps[cid]["distribution"] += r["distribution"] or 0
+            comps[cid]["series"][r["year"]] = dict(
+                inv=r["investment"] or 0, dist=r["distribution"] or 0)
+    for c in comps.values():
+        c["net"] = c["distribution"] - c["investment"]
+        c["roi"] = (c["distribution"] / c["investment"] * 100) if c["investment"] else 0
+    return list(comps.values())
+
+
+def load_company_items(cid):
+    """All KPI items for a company with actual/projection series + trend."""
+    conn = db.get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM unified_items WHERE company_id = %s ORDER BY display_order", (cid,))
+    items = cur.fetchall()
+    cur.execute("""
+        SELECT iv.item_id, iv.year, iv.value, iv.dataset_type
+        FROM unified_values iv
+        JOIN unified_items ui ON ui.id = iv.item_id
+        WHERE ui.company_id = %s
+        ORDER BY iv.year
+    """, (cid,))
+    vals = cur.fetchall()
+    cur.close()
+    conn.close()
+
+    by_item = {}
+    for v in vals:
+        d = by_item.setdefault(v["item_id"], {"actual": {}, "projection": {}})
+        d[v["dataset_type"]][v["year"]] = v["value"]
+
+    out = []
+    for it in items:
+        series = by_item.get(it["id"], {"actual": {}, "projection": {}})
+        cur_v = series["actual"].get(BASE_YEAR)
+        prev_v = series["actual"].get(BASE_YEAR - 1)
+        trend = None
+        if cur_v is not None and prev_v not in (None, 0):
+            trend = (cur_v - prev_v) / abs(prev_v) * 100
+        out.append(dict(
+            id=it["id"], name=it["name"], type=it["type"], category=it["category"],
+            unit=it["unit"], unit_label=it["unit_label"],
+            is_dashboard=it["is_dashboard"], in_chart=it["in_chart"],
+            current=cur_v, prev=prev_v, trend=trend,
+            actual=series["actual"], projection=series["projection"],
+        ))
+    return out
+
+
+def chart_series_for(items):
+    """Build Chart.js-ready actual/projection line series for in_chart items."""
+    palette = ["--c1", "--c2", "--c3", "--c4", "--c5", "--c6"]
+    years = list(range(HIST_START, PROJ_END + 1))
+    series = []
+    ci = 0
+    for it in items:
+        if not it["in_chart"]:
+            continue
+        color_idx = ci % len(palette)
+        ci += 1
+        actual = [it["actual"].get(y) for y in years]
+        # projection line starts where actuals end (continuous), else None
+        proj = [it["projection"].get(y) if y >= BASE_YEAR else None for y in years]
+        series.append(dict(
+            label=it["name"], color_idx=color_idx, category=it["category"],
+            actual=actual, projection=proj, unit=it["unit"], unit_label=it["unit_label"],
+        ))
+    return dict(years=years, base_year=BASE_YEAR, series=series)
+
+
+# ─── CONTEXT PROCESSOR (sidebar) ───────────────────────────────────
+@app.context_processor
+def inject_nav():
+    if not session.get("user_id"):
+        return {}
+    comps = all_companies()
+    industries = {}
+    for c in comps:
+        industries.setdefault(c["industry"], 0)
+        industries[c["industry"]] += 1
+    industry_order = ["Real Estate", "Energy", "Consumer Products"]
+    industry_list = [(i, industries[i]) for i in industry_order if i in industries]
+    for i, n in industries.items():
+        if i not in industry_order:
+            industry_list.append((i, n))
+    return dict(
+        nav_companies=comps,
+        nav_industries=industry_list,
+        current_path=request.path,
+        display_name=session.get("display_name"),
+        is_admin=session.get("is_admin"),
+    )
+
+
+def _avatar_initials(name):
+    parts = [p for p in name.split() if p]
+    if len(parts) >= 2:
+        return (parts[0][0] + parts[1][0]).upper()
+    return name[:2].upper()
+
+
+app.jinja_env.filters["initials"] = _avatar_initials
+
+
+# ─── PAGES ─────────────────────────────────────────────────────────
+@app.route("/")
+@login_required
+def dashboard():
+    rate = usd_mxn_rate()
+    comps = company_cashflow_totals()
+    us_usd = sum(c["investment"] for c in comps if c["country_code"] == "US")
+    mx_usd = sum(c["investment"] for c in comps if c["country_code"] == "MX")
+    total_usd = us_usd + mx_usd
+
+    by_country = []
+    for code, label in [("US", "United States"), ("MX", "Mexico")]:
+        amt = sum(c["investment"] for c in comps if c["country_code"] == code)
+        if amt:
+            by_country.append(dict(code=code, label=label, usd=amt,
+                                   pct=(amt / total_usd * 100) if total_usd else 0))
+
+    by_industry = {}
+    for c in comps:
+        by_industry.setdefault(c["industry"], 0)
+        by_industry[c["industry"]] += c["investment"]
+    industry_rows = [dict(industry=k, usd=v, pct=(v / total_usd * 100) if total_usd else 0)
+                     for k, v in sorted(by_industry.items(), key=lambda kv: -kv[1])]
+
+    return render_template(
+        "dashboard.html",
+        rate=rate,
+        us_usd=us_usd, mx_usd=mx_usd, mx_mxn=mx_usd * rate, total_usd=total_usd,
+        us_count=sum(1 for c in comps if c["country_code"] == "US"),
+        mx_count=sum(1 for c in comps if c["country_code"] == "MX"),
+        total_count=len(comps),
+        by_country=by_country, by_industry=industry_rows,
+        base_year=BASE_YEAR,
+    )
+
+
+@app.route("/maquina-cashflow")
+@login_required
+def portfolio():
+    comps = company_cashflow_totals()
+    total_inv = sum(c["investment"] for c in comps)
+    total_dist = sum(c["distribution"] for c in comps)
+    net = total_dist - total_inv
+    roi = (total_dist / total_inv * 100) if total_inv else 0
+
+    year_inv = sum(c["series"].get(BASE_YEAR, {}).get("inv", 0) for c in comps)
+    year_dist = sum(c["series"].get(BASE_YEAR, {}).get("dist", 0) for c in comps)
+
+    # cumulative timeline
+    years = list(range(HIST_START, PROJ_END + 1))
+    cum_inv, cum_dist = [], []
+    ci = cd = 0.0
+    for y in years:
+        ci += sum(c["series"].get(y, {}).get("inv", 0) for c in comps)
+        cd += sum(c["series"].get(y, {}).get("dist", 0) for c in comps)
+        cum_inv.append(round(ci))
+        cum_dist.append(round(cd))
+
+    # per-company sparkline = cumulative net by year
+    for c in comps:
+        run = 0.0
+        spark = []
+        for y in years:
+            s = c["series"].get(y, {})
+            run += (s.get("dist", 0) - s.get("inv", 0))
+            spark.append(round(run))
+        c["spark"] = spark
+
+    by_industry = {}
+    by_country = {}
+    for c in comps:
+        by_industry[c["industry"]] = by_industry.get(c["industry"], 0) + c["investment"]
+        by_country[c["country"]] = by_country.get(c["country"], 0) + c["investment"]
+
+    # portfolio planning matrix: per company inv/dist by year
+    return render_template(
+        "portfolio.html",
+        comps=comps, total_inv=total_inv, total_dist=total_dist, net=net, roi=roi,
+        year_inv=year_inv, year_dist=year_dist, base_year=BASE_YEAR,
+        timeline=dict(years=years, inv=cum_inv, dist=cum_dist, base_year=BASE_YEAR),
+        by_industry=[dict(k=k, v=v) for k, v in sorted(by_industry.items(), key=lambda x: -x[1])],
+        by_country=[dict(k=k, v=v) for k, v in sorted(by_country.items(), key=lambda x: -x[1])],
+        years=years,
+    )
+
+
+@app.route("/strategy")
+@login_required
+def strategy():
+    conn = db.get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM strategy_phases ORDER BY phase_order")
+    phases = cur.fetchall()
+    cur.execute("""
+        SELECT c.id, c.slug, c.name, c.accent, c.industry, c.takeover_year,
+               r.internal_risk, r.external_risk
+        FROM companies c LEFT JOIN company_risks r ON r.company_id = c.id
+        WHERE c.archived = FALSE ORDER BY c.display_order
+    """)
+    comps = cur.fetchall()
+    # current phase per company
+    cur.execute("""
+        SELECT ph.company_id, sp.phase_order, sp.name, sp.color, ph.start_year, ph.end_year
+        FROM company_phase_history ph JOIN strategy_phases sp ON sp.id = ph.phase_id
+        ORDER BY ph.company_id, sp.phase_order
+    """)
+    hist = cur.fetchall()
+    cur.close()
+    conn.close()
+
+    cur_phase = {}
+    for h in hist:
+        cur_phase[h["company_id"]] = h  # last wins → highest phase_order
+    comp_list = []
+    for c in comps:
+        cp = cur_phase.get(c["id"])
+        comp_list.append(dict(
+            slug=c["slug"], name=c["name"], accent=c["accent"], industry=c["industry"],
+            takeover_year=c["takeover_year"],
+            internal=c["internal_risk"] or 5, external=c["external_risk"] or 5,
+            phase_name=cp["name"] if cp else "—",
+            phase_order=cp["phase_order"] if cp else 0,
+            phase_color=cp["color"] if cp else "#8A9199",
+            years_held=BASE_YEAR - c["takeover_year"] if c["takeover_year"] else None,
+        ))
+
+    # group companies under each phase
+    for p in phases:
+        p_companies = [c for c in comp_list if c["phase_order"] == p["phase_order"]]
+        p["_companies"] = p_companies
+
+    return render_template("strategy.html", phases=phases, comps=comp_list, base_year=BASE_YEAR)
+
+
+@app.route("/company/<slug>")
+@login_required
+def company(slug):
+    c = company_by_slug(slug)
+    if not c or c["archived"]:
+        abort(404)
+    items = load_company_items(c["id"])
+    dashboard_kpis = [it for it in items if it["is_dashboard"]]
+
+    by_category = {"Commercial": [], "Operations": [], "Finance": []}
+    for it in items:
+        by_category.setdefault(it["category"], []).append(it)
+
+    # strategy tab data
+    conn = db.get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM company_risks WHERE company_id = %s", (c["id"],))
+    risk = cur.fetchone()
+    cur.execute("SELECT * FROM company_strategies WHERE company_id = %s ORDER BY start_year", (c["id"],))
+    strategies = cur.fetchall()
+    cur.execute("""
+        SELECT sp.name, sp.phase_order, sp.color, sp.year_range, sp.team_expectation,
+               ph.start_year, ph.end_year, ph.is_projected
+        FROM company_phase_history ph JOIN strategy_phases sp ON sp.id = ph.phase_id
+        WHERE ph.company_id = %s ORDER BY sp.phase_order
+    """, (c["id"],))
+    phase_hist = cur.fetchall()
+    cur.close()
+    conn.close()
+
+    return render_template(
+        "company.html",
+        c=c, items=items, dashboard_kpis=dashboard_kpis, by_category=by_category,
+        chart=chart_series_for(items), risk=risk, strategies=strategies,
+        phase_hist=phase_hist, base_year=BASE_YEAR,
+        years=list(range(HIST_START, PROJ_END + 1)),
+    )
+
+
+@app.route("/manage-companies")
+@login_required
+def manage_companies():
+    comps = all_companies(include_archived=True)
+    # attach KPI + cashflow counts
+    conn = db.get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT company_id, COUNT(*) AS n FROM unified_items GROUP BY company_id")
+    kpi_counts = {r["company_id"]: r["n"] for r in cur.fetchall()}
+    cur.close()
+    conn.close()
+    return render_template("manage_companies.html", comps=comps, kpi_counts=kpi_counts)
+
+
+@app.route("/manage-companies/<int:cid>/archive", methods=["POST"])
+@login_required
+def archive_company(cid):
+    if not session.get("is_admin"):
+        abort(403)
+    archived = request.form.get("archived") == "1"
+    conn = db.get_db()
+    cur = conn.cursor()
+    cur.execute("UPDATE companies SET archived = %s WHERE id = %s", (archived, cid))
+    conn.commit()
+    cur.close()
+    conn.close()
+    flash("Company updated.", "ok")
+    return redirect(url_for("manage_companies"))
+
+
+@app.route("/settings", methods=["GET", "POST"])
+@login_required
+def settings():
+    conn = db.get_db()
+    cur = conn.cursor()
+    if request.method == "POST" and session.get("is_admin"):
+        rate = request.form.get("usd_mxn_rate", "").strip()
+        if rate:
+            cur.execute(
+                "INSERT INTO app_settings (key,value) VALUES ('usd_mxn_rate',%s) "
+                "ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value", (rate,))
+            conn.commit()
+        flash("Settings saved.", "ok")
+    cur.execute("SELECT value FROM app_settings WHERE key='usd_mxn_rate'")
+    row = cur.fetchone()
+    # users for admin
+    users = []
+    if session.get("is_admin"):
+        cur.execute("SELECT id, username, first_name, last_name, email, is_admin FROM users ORDER BY id")
+        users = cur.fetchall()
+    cur.close()
+    conn.close()
+    return render_template("settings.html",
+                           usd_mxn_rate=row["value"] if row else "17.3328",
+                           live_rate=usd_mxn_rate(), users=users,
+                           banxico_on=bool(os.environ.get("BANXICO_TOKEN", "").strip()))
+
+
+@app.route("/account/password", methods=["POST"])
+@login_required
+def change_password():
+    cur_pw = request.form.get("current_password", "")
+    new_pw = request.form.get("new_password", "")
+    conn = db.get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM users WHERE id = %s", (session["user_id"],))
+    user = cur.fetchone()
+    if user and check_password_hash(user["password_hash"], cur_pw) and len(new_pw) >= 6:
+        cur.execute("UPDATE users SET password_hash = %s WHERE id = %s",
+                    (generate_password_hash(new_pw), session["user_id"]))
+        conn.commit()
+        flash("Password updated.", "ok")
+    else:
+        flash("Could not update password — check your current password (new must be 6+ chars).", "error")
+    cur.close()
+    conn.close()
+    return redirect(url_for("settings"))
+
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)), debug=True)

@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+{% block title %}Maquina Dashboard{% endblock %}
+
+{% set flags = {'US': '🇺🇸', 'MX': '🇲🇽'} %}
+
+{% block content %}
+<div class="page-head">
+  <div class="page-eyebrow">Portfolio</div>
+  <h1 class="page-title">Portfolio Dashboard</h1>
+  <div class="page-sub">Overview of your portfolio performance and companies.</div>
+</div>
+
+<div class="card mb-24">
+  <div class="card-head">
+    <div>
+      <div class="card-title">Portfolio Investment Summary</div>
+      <div class="card-sub">Total invested capital by currency, with live exchange-rate conversion.</div>
+    </div>
+  </div>
+
+  <div class="grid grid-3">
+    <div class="summary-card">
+      <div class="lbl">US Companies (USD M) <span class="flag">🇺🇸</span></div>
+      <div class="val">{{ us_usd | money }}</div>
+      <div class="cap">{{ us_count }} compan{{ 'y' if us_count == 1 else 'ies' }}</div>
+    </div>
+    <div class="summary-card">
+      <div class="lbl">MX Companies (MXN M) <span class="flag">🇲🇽</span></div>
+      <div class="val">{{ mx_mxn | money }}</div>
+      <div class="cap">{{ mx_count }} compan{{ 'y' if mx_count == 1 else 'ies' }}</div>
+    </div>
+    <div class="summary-card" style="border-color:var(--mq-accent-soft);background:var(--mq-accent-soft);">
+      <div class="lbl">Combined (USD M) <span class="flag">🇺🇸</span></div>
+      <div class="val">{{ total_usd | money }}</div>
+      <div class="cap">{{ total_count }} total companies</div>
+    </div>
+  </div>
+
+  <div class="divider"></div>
+  <div class="row between wrap" style="font-size:12.5px;">
+    <div class="muted">Exchange Rate: <strong style="color:var(--mq-ink);">1 USD = {{ '%.4f'|format(rate) }} MXN</strong></div>
+    <div class="subtle">Source: Banxico</div>
+  </div>
+</div>
+
+<div class="grid grid-2">
+  <div class="card">
+    <div class="card-title mb-16">Investments by Country <span class="subtle" style="font-weight:500;">(USD M)</span></div>
+    <div class="row" style="gap:24px;align-items:center;">
+      <div class="chart-wrap" style="width:150px;flex-shrink:0;position:relative;">
+        <canvas id="countryChart" height="150"></canvas>
+        <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column;pointer-events:none;">
+          <div style="font-family:var(--font-display);font-weight:700;font-size:16px;color:var(--mq-ink-2);">{{ total_usd | money }}</div>
+        </div>
+      </div>
+      <div style="flex:1;">
+        {% for r in by_country %}
+        <div class="legend-row">
+          <span class="legend-left"><span class="legend-dot" data-cidx="{{ loop.index0 }}" data-set="country"></span>{{ flags[r.code] }} {{ r.label }}</span>
+          <span><span class="legend-val">{{ r.usd | money }}</span><span class="legend-pct">({{ '%.0f'|format(r.pct) }}%)</span></span>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title mb-16">Investments by Industry <span class="subtle" style="font-weight:500;">(USD M)</span></div>
+    <div class="row" style="gap:24px;align-items:center;">
+      <div class="chart-wrap" style="width:150px;flex-shrink:0;position:relative;">
+        <canvas id="industryChart" height="150"></canvas>
+        <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column;pointer-events:none;">
+          <div style="font-family:var(--font-display);font-weight:700;font-size:16px;color:var(--mq-ink-2);">{{ total_usd | money }}</div>
+        </div>
+      </div>
+      <div style="flex:1;">
+        {% for r in by_industry %}
+        <div class="legend-row">
+          <span class="legend-left"><span class="legend-dot" data-cidx="{{ loop.index0 }}" data-set="industry"></span>{{ r.industry }}</span>
+          <span><span class="legend-val">{{ r.usd | money }}</span><span class="legend-pct">({{ '%.0f'|format(r.pct) }}%)</span></span>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const COUNTRY = {{ by_country | map(attribute='usd') | list | tojson }};
+  const COUNTRY_LBL = {{ by_country | map(attribute='label') | list | tojson }};
+  const INDUSTRY = {{ by_industry | map(attribute='usd') | list | tojson }};
+  const INDUSTRY_LBL = {{ by_industry | map(attribute='industry') | list | tojson }};
+  // semantic color indices: country US=blue,MX=green ; industry RE=blue,Energy=green,Consumer=amber
+  const COUNTRY_CIDX = [0, 2];
+  const INDUSTRY_CIDX = [0, 2, 3, 1, 4, 5];
+
+  function donut(id, data, cidx){
+    const ctx = document.getElementById(id);
+    if(!ctx) return null;
+    const colors = data.map((_,i)=>MQ.palette(cidx[i] !== undefined ? cidx[i] : i));
+    return new Chart(ctx, {
+      type:'doughnut',
+      data:{ labels:(id==='countryChart'?COUNTRY_LBL:INDUSTRY_LBL), datasets:[{ data:data.map(v=>v/1e6), backgroundColor:colors, borderColor:MQ.surface(), borderWidth:2, hoverOffset:4 }] },
+      options:{ cutout:'70%', responsive:true, maintainAspectRatio:true,
+        plugins:{ tooltip:{ callbacks:{ label:(c)=>' $'+(c.parsed).toFixed(1)+'M' } } } }
+    });
+  }
+  function paintDots(){
+    document.querySelectorAll('.legend-dot').forEach(function(d){
+      const i = +d.dataset.cidx;
+      const arr = d.dataset.set==='country' ? COUNTRY_CIDX : INDUSTRY_CIDX;
+      d.style.background = MQ.palette(arr[i] !== undefined ? arr[i] : i);
+    });
+  }
+  MQ.register(()=>donut('countryChart', COUNTRY, COUNTRY_CIDX));
+  MQ.register(()=>donut('industryChart', INDUSTRY, INDUSTRY_CIDX));
+  paintDots();
+  document.querySelector('[onclick="toggleTheme()"]').addEventListener('click', paintDots);
+</script>
+{% endblock %}

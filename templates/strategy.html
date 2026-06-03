@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block title %}Maquina Strategy{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div class="page-eyebrow">Strategy</div>
+  <h1 class="page-title">Maquina Strategy</h1>
+  <div class="page-sub">Lifecycle phase framework and risk positioning across the portfolio.</div>
+</div>
+
+<div class="grid grid-3 mb-24">
+  {% for p in phases %}
+  <div class="phase-card">
+    <div class="phase-bar" style="background:{{ p.color }};"></div>
+    <div class="phase-body">
+      <div class="phase-num" style="color:{{ p.color }};">Phase {{ p.phase_order }}</div>
+      <div class="phase-name">{{ p.name }}</div>
+      <div class="phase-years">{{ p.year_range }}
+        <span class="badge" style="margin-left:6px;border-color:{{ p.color }};color:{{ p.color }};">{{ p.team_expectation }}</span>
+      </div>
+      <div class="phase-desc">{{ p.description }}</div>
+      <div class="divider"></div>
+      <div class="row wrap" style="gap:8px;">
+        {% if p._companies %}
+          {% for c in p._companies %}
+          <a href="{{ url_for('company', slug=c.slug) }}" class="row" style="gap:7px;text-decoration:none;background:var(--mq-surface-2);border:1px solid var(--mq-line);border-radius:999px;padding:4px 10px 4px 4px;">
+            <span class="company-avatar" style="width:22px;height:22px;font-size:9px;background:{{ c.accent }};">{{ c.name|initials }}</span>
+            <span style="font-size:12px;font-weight:600;color:var(--mq-ink);">{{ c.name }}</span>
+          </a>
+          {% endfor %}
+        {% else %}
+          <span class="subtle" style="font-size:12px;">No companies in this phase.</span>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+<div class="grid grid-4 mb-24">
+  {% for c in comps %}
+  <a href="{{ url_for('company', slug=c.slug) }}" class="card" style="padding:18px;text-decoration:none;">
+    <div class="row" style="gap:10px;">
+      <span class="company-avatar" style="background:{{ c.accent }};">{{ c.name|initials }}</span>
+      <div><div style="font-weight:700;color:var(--mq-ink-2);">{{ c.name }}</div><div class="subtle" style="font-size:11.5px;">{{ c.industry }}</div></div>
+    </div>
+    <div class="divider"></div>
+    <div class="row between" style="font-size:12.5px;"><span class="muted">Phase</span>
+      <span class="badge" style="border-color:{{ c.phase_color }};color:{{ c.phase_color }};">{{ c.phase_name }}</span></div>
+    <div class="row between" style="font-size:12.5px;margin-top:8px;"><span class="muted">Years held</span>
+      <span class="tnum" style="font-weight:600;">{{ c.years_held if c.years_held is not none else '—' }}</span></div>
+  </a>
+  {% endfor %}
+</div>
+
+<div class="card">
+  <div class="card-head"><div>
+    <div class="card-title">Risk Quadrant</div>
+    <div class="card-sub">Internal (execution) vs. external (market) risk, each rated 0–10.</div>
+  </div></div>
+  <div class="row" style="gap:28px;align-items:stretch;">
+    <div style="flex:1;min-width:0;position:relative;padding:14px 14px 28px 40px;">
+      <div class="quadrant" id="quad">
+        {% for c in comps %}
+        <div class="quadrant-dot" style="left:{{ (c.external/10*100)|round(1) }}%; bottom:{{ (c.internal/10*100)|round(1) }}%;" title="{{ c.name }} · ext {{ c.external }} / int {{ c.internal }}">
+          <span class="lbl">{{ c.name }}</span>
+          <span class="dot" style="background:{{ c.accent }};"></span>
+        </div>
+        {% endfor %}
+        <span class="quadrant-axis" style="left:10px;top:8px;">High internal</span>
+        <span class="quadrant-axis" style="right:10px;bottom:8px;">High external</span>
+      </div>
+      <div style="text-align:center;font-size:11px;letter-spacing:0.08em;text-transform:uppercase;color:var(--mq-subtle);font-weight:600;margin-top:8px;">External Risk →</div>
+      <div style="position:absolute;left:6px;top:50%;transform:rotate(-90deg) translateX(50%);transform-origin:left top;font-size:11px;letter-spacing:0.08em;text-transform:uppercase;color:var(--mq-subtle);font-weight:600;white-space:nowrap;">Internal Risk →</div>
+    </div>
+    <div style="width:240px;flex-shrink:0;">
+      <div class="nav-label" style="color:var(--mq-subtle);padding-left:0;">Legend</div>
+      {% for c in comps %}
+      <div class="row between" style="font-size:13px;padding:7px 0;border-bottom:1px solid var(--mq-line);">
+        <span class="legend-left"><span class="legend-dot" style="background:{{ c.accent }};"></span>{{ c.name }}</span>
+        <span class="subtle tnum" style="font-size:12px;">int {{ c.internal }} · ext {{ c.external }}</span>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}Settings — Maquina{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div class="page-eyebrow">Administration</div>
+  <h1 class="page-title">Settings</h1>
+  <div class="page-sub">Platform configuration and team access.</div>
+</div>
+
+<div class="grid grid-2 mb-24">
+  <div class="card">
+    <div class="card-title mb-16">Exchange Rate</div>
+    <p class="muted" style="font-size:13px;margin-bottom:16px;">MXN per 1 USD, used to convert peso-denominated companies to USD across the portfolio views.</p>
+    <form method="POST" action="{{ url_for('settings') }}">
+      <label class="fld-label">USD → MXN</label>
+      <input class="input" type="number" step="0.0001" name="usd_mxn_rate" value="{{ usd_mxn_rate }}" {{ '' if is_admin else 'disabled' }} style="margin-bottom:14px;">
+      {% if is_admin %}<button class="btn btn-primary" type="submit">Save rate</button>{% endif %}
+    </form>
+    <div class="divider"></div>
+    <div class="row between" style="font-size:12.5px;">
+      <span class="muted">Live rate in use</span>
+      <span class="tnum" style="font-weight:600;">1 USD = {{ '%.4f'|format(live_rate) }} MXN</span>
+    </div>
+    <div class="row between" style="font-size:12.5px;margin-top:6px;">
+      <span class="muted">Banxico live feed</span>
+      <span class="badge {{ 'good' if banxico_on else '' }}">{{ 'Connected' if banxico_on else 'Static (no token)' }}</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title mb-16">Appearance</div>
+    <p class="muted" style="font-size:13px;margin-bottom:16px;">Switch between light and dark. Your choice is remembered on this device.</p>
+    <div class="pillgroup">
+      <button class="pill" data-theme-pill="light" onclick="setTheme('light');syncThemePills();">Light</button>
+      <button class="pill" data-theme-pill="dark" onclick="setTheme('dark');syncThemePills();">Dark</button>
+    </div>
+
+    <div class="divider"></div>
+    <div class="card-title mb-16" style="font-size:14px;">Ember Data Connection</div>
+    <div class="row between" style="font-size:12.5px;">
+      <span class="muted">Live Ember database</span>
+      <span class="badge">Seeded (configure EMBER_DATABASE_URL)</span>
+    </div>
+    <p class="subtle" style="font-size:12px;margin-top:10px;">Ember currently shows seeded figures. Point <code>EMBER_DATABASE_URL</code> at the Ember dashboard's Postgres to pull live numbers.</p>
+  </div>
+</div>
+
+{% if is_admin %}
+<div class="card">
+  <div class="card-title mb-16">Team</div>
+  <div class="table-scroll" style="max-height:none;">
+    <table class="data-table">
+      <thead><tr><th style="text-align:left;">Username</th><th style="text-align:left;">Name</th><th style="text-align:left;">Email</th><th>Role</th></tr></thead>
+      <tbody>
+        {% for u in users %}
+        <tr>
+          <td style="text-align:left;font-weight:600;color:var(--mq-ink-2);">{{ u.username }}</td>
+          <td style="text-align:left;">{{ (u.first_name or '') ~ ' ' ~ (u.last_name or '') }}</td>
+          <td style="text-align:left;">{{ u.email or '—' }}</td>
+          <td>{% if u.is_admin %}<span class="badge accent">Admin</span>{% else %}<span class="badge">Member</span>{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p class="subtle" style="font-size:12px;margin-top:12px;">User creation &amp; permissions management can be wired to a modal next, mirroring the Ember admin panel.</p>
+</div>
+{% endif %}
+{% endblock %}
