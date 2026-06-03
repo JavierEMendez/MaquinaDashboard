@@ -825,7 +825,7 @@ def ember_diagnostics():
     shape of the latest 'operations' report so we can map KPIs precisely."""
     info = {"configured": bool(os.environ.get("EMBER_DATABASE_URL", "").strip()),
             "connected": False, "error": None, "report_types": [],
-            "operations": None, "returns": None, "loans": None}
+            "operations": None, "returns": None, "loans": None, "community": {}}
     if not info["configured"]:
         return info
     try:
@@ -873,6 +873,22 @@ def ember_diagnostics():
                     "fields": sorted(dd.keys()) if isinstance(dd, dict) else "(type: %s)" % type(dd).__name__,
                     "raw": json.dumps(preview, default=str, ensure_ascii=False)[:2800],
                 }
+        # Community sales/permit reports — reveal aggregatable shape (units/lots).
+        for rt in ("sales", "bohlke", "hpermits", "waller_monthly"):
+            ecur.execute("SELECT data FROM reports WHERE report_type = %s ORDER BY uploaded_at DESC LIMIT 1", (rt,))
+            rr = ecur.fetchone()
+            if not (rr and rr.get("data")):
+                continue
+            dd = rr["data"]
+            if isinstance(dd, dict):
+                shape = {"keys": sorted(dd.keys())}
+                for k, v in dd.items():
+                    if isinstance(v, list) and v:
+                        shape[k + "[]"] = {"len": len(v),
+                                           "item0_keys": sorted(v[0].keys()) if isinstance(v[0], dict) else type(v[0]).__name__}
+            else:
+                shape = ("list[%d]" % len(dd)) if isinstance(dd, list) else type(dd).__name__
+            info["community"][rt] = json.dumps(shape, default=str, ensure_ascii=False)[:1400]
         info["connected"] = True
         ecur.close(); econn.close()
     except Exception as e:

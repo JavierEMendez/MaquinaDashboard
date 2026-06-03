@@ -72,6 +72,13 @@
           {% if rep.raw %}<pre style="font-size:10px;line-height:1.4;background:var(--mq-bg-2);border:1px solid var(--mq-line);border-radius:8px;padding:10px;max-height:220px;overflow:auto;white-space:pre-wrap;word-break:break-word;color:var(--mq-muted);">{{ rep.raw }}</pre>{% endif %}
         {% endif %}
       {% endfor %}
+      {% if ember.community %}
+        <div style="{{ lbl }}">Community sales/permit reports</div>
+        {% for rt, shape in ember.community.items() %}
+          <p class="subtle" style="font-size:11px;margin:8px 0 4px;"><strong style="color:var(--mq-ink);">{{ rt }}</strong></p>
+          <pre style="font-size:10px;line-height:1.4;background:var(--mq-bg-2);border:1px solid var(--mq-line);border-radius:8px;padding:10px;max-height:180px;overflow:auto;white-space:pre-wrap;word-break:break-word;color:var(--mq-muted);">{{ shape }}</pre>
+        {% endfor %}
+      {% endif %}
     {% else %}
       <p class="subtle" style="font-size:12px;">Ember data status is visible to administrators.</p>
     {% endif %}
