@@ -87,47 +87,141 @@
   {# ───────── Strategy ───────── #}
   <div class="tab-panel" data-panel="strategy">
     <div class="grid grid-2 mb-24">
+      {# ---- Lifecycle Timeline ---- #}
       <div class="card">
         <div class="card-title mb-16">Lifecycle Timeline</div>
         {% for p in phase_hist %}
-        <div class="row" style="gap:12px;padding:10px 0;border-bottom:1px solid var(--mq-line);">
-          <span style="width:10px;height:10px;border-radius:50%;background:{{ p.color }};flex-shrink:0;"></span>
-          <div style="flex:1;">
-            <div style="font-weight:600;color:var(--mq-ink-2);font-size:13.5px;">Phase {{ p.phase_order }} · {{ p.name }}
-              {% if p.is_projected %}<span class="badge" style="margin-left:6px;">projected</span>{% endif %}</div>
-            <div class="subtle" style="font-size:12px;">{{ p.start_year }}–{{ p.end_year }} · {{ p.team_expectation }} focus</div>
+        <div style="padding:10px 0;border-bottom:1px solid var(--mq-line);">
+          <div class="row" style="gap:12px;">
+            <span style="width:10px;height:10px;border-radius:50%;background:{{ p.color }};flex-shrink:0;"></span>
+            <div style="flex:1;">
+              <div style="font-weight:600;color:var(--mq-ink-2);font-size:13.5px;">Phase {{ p.phase_order }} · {{ p.name }}
+                {% if p.is_projected %}<span class="badge" style="margin-left:6px;">projected</span>{% endif %}</div>
+              <div class="subtle" style="font-size:12px;">{{ p.start_year }}–{{ p.end_year }} · {{ p.team_expectation }} focus</div>
+            </div>
           </div>
+          {% if is_admin %}
+          <details class="editor">
+            <summary style="margin-left:22px;">Edit phase</summary>
+            <form class="editor-body" method="POST" action="{{ url_for('save_phase', slug=c.slug, hid=p.hid) }}">
+              <div class="grid grid-3" style="gap:10px;">
+                <div><label class="fld-label">Phase</label>
+                  <select class="input" name="phase_id">{% for ph in phases_all %}<option value="{{ ph.id }}" {{ 'selected' if ph.id==p.phase_id }}>P{{ ph.phase_order }} · {{ ph.name }}</option>{% endfor %}</select></div>
+                <div><label class="fld-label">Start year</label><input class="input" type="number" name="start_year" value="{{ p.start_year }}"></div>
+                <div><label class="fld-label">End year</label><input class="input" type="number" name="end_year" value="{{ p.end_year }}"></div>
+              </div>
+              <label class="row" style="gap:8px;margin:12px 0;font-size:13px;color:var(--mq-muted);cursor:pointer;"><input type="checkbox" name="is_projected" value="1" {{ 'checked' if p.is_projected }} style="accent-color:var(--mq-accent);"> Projected</label>
+              <div class="row" style="gap:8px;"><button class="btn btn-primary btn-sm" type="submit">Save</button>
+                <button class="btn btn-sm btn-danger" type="submit" name="delete" value="1" onclick="return confirm('Remove this phase?');">Delete</button></div>
+            </form>
+          </details>
+          {% endif %}
         </div>
-        {% endfor %}
+        {% else %}<span class="subtle">No lifecycle phases yet.</span>{% endfor %}
+        {% if is_admin %}
+        <details class="editor" style="margin-top:14px;">
+          <summary>+ Add phase</summary>
+          <form class="editor-body" method="POST" action="{{ url_for('add_phase', slug=c.slug) }}">
+            <div class="grid grid-3" style="gap:10px;">
+              <div><label class="fld-label">Phase</label>
+                <select class="input" name="phase_id"><option value="">Select…</option>{% for ph in phases_all %}<option value="{{ ph.id }}">P{{ ph.phase_order }} · {{ ph.name }}</option>{% endfor %}</select></div>
+              <div><label class="fld-label">Start year</label><input class="input" type="number" name="start_year" placeholder="2024"></div>
+              <div><label class="fld-label">End year</label><input class="input" type="number" name="end_year" placeholder="2027"></div>
+            </div>
+            <label class="row" style="gap:8px;margin:12px 0;font-size:13px;color:var(--mq-muted);cursor:pointer;"><input type="checkbox" name="is_projected" value="1" style="accent-color:var(--mq-accent);"> Projected</label>
+            <button class="btn btn-primary btn-sm" type="submit">Add phase</button>
+          </form>
+        </details>
+        {% endif %}
       </div>
+
+      {# ---- Risk Ratings ---- #}
       <div class="card">
         <div class="card-title mb-16">Risk Ratings</div>
-        {% if risk %}
-        {% for label, val in [('Market', risk.market_risk), ('Team', risk.team_risk), ('Finance', risk.finance_risk), ('Product', risk.product_risk)] %}
+        {% set rr = [('Market', risk.market_risk if risk else 5), ('Team', risk.team_risk if risk else 5), ('Finance', risk.finance_risk if risk else 5), ('Product', risk.product_risk if risk else 5)] %}
+        {% for label, val in rr %}
         <div class="risk-slider">
           <span class="rl">{{ label }}</span>
           <span class="risk-track"><span class="risk-fill" style="width:{{ (val/10*100)|round }}%;background:{{ '#1F9D6B' if val<=3 else '#C98A00' if val<=6 else '#D2452F' }};"></span></span>
           <span class="risk-val">{{ val }}</span>
         </div>
         {% endfor %}
-        {% else %}<span class="subtle">No risk data.</span>{% endif %}
+        {% if risk and risk.commentary %}
+        <div class="divider"></div>
+        <div style="font-size:10px;letter-spacing:0.14em;text-transform:uppercase;color:var(--mq-subtle);font-weight:700;margin-bottom:6px;">Commentary</div>
+        <p class="muted" style="font-size:13px;line-height:1.55;white-space:pre-wrap;">{{ risk.commentary }}</p>
+        {% endif %}
+        {% if is_admin %}
+        <details class="editor">
+          <summary>Edit risk ratings</summary>
+          <form class="editor-body" method="POST" action="{{ url_for('update_risk', slug=c.slug) }}">
+            <div class="grid grid-2" style="gap:10px;">
+              {% for nm, lab, v in [('market_risk','Market', risk.market_risk if risk else 5), ('team_risk','Team', risk.team_risk if risk else 5), ('finance_risk','Finance', risk.finance_risk if risk else 5), ('product_risk','Product', risk.product_risk if risk else 5), ('internal_risk','Internal (quadrant)', risk.internal_risk if risk else 5), ('external_risk','External (quadrant)', risk.external_risk if risk else 5)] %}
+              <div><label class="fld-label">{{ lab }}</label><input class="input" type="number" min="0" max="10" step="1" name="{{ nm }}" value="{{ v|round|int }}"></div>
+              {% endfor %}
+            </div>
+            <label class="fld-label" style="margin-top:12px;">Commentary</label>
+            <textarea class="input" name="commentary" placeholder="Context on these risk ratings…">{{ risk.commentary if risk and risk.commentary else '' }}</textarea>
+            <button class="btn btn-primary btn-sm mt-8" type="submit">Save ratings</button>
+          </form>
+        </details>
+        {% endif %}
       </div>
     </div>
+
+    {# ---- Strategic Initiatives ---- #}
     <div class="card">
       <div class="card-title mb-16">Strategic Initiatives</div>
       {% for s in strategies %}
-      <div class="row between wrap" style="padding:12px 0;border-bottom:1px solid var(--mq-line);gap:12px;">
-        <div style="flex:1;min-width:200px;">
-          <div style="font-weight:600;color:var(--mq-ink-2);">{{ s.name }}
-            <span class="badge {{ 'accent' if s.approach=='different' }}" style="margin-left:6px;">{{ s.approach|capitalize }}</span></div>
-          <div class="subtle" style="font-size:12px;">{{ s.start_year }}–{{ s.end_year }}</div>
+      <div style="padding:12px 0;border-bottom:1px solid var(--mq-line);">
+        <div class="row between wrap" style="gap:12px;">
+          <div style="flex:1;min-width:200px;">
+            <div style="font-weight:600;color:var(--mq-ink-2);">{{ s.name }}
+              <span class="badge {{ 'accent' if s.approach=='different' }}" style="margin-left:6px;">{{ s.approach|capitalize }}</span></div>
+            <div class="subtle" style="font-size:12px;">{{ s.start_year }}–{{ s.end_year }}</div>
+          </div>
+          <div class="row" style="gap:18px;">
+            <div style="text-align:center;"><div class="subtle" style="font-size:10px;text-transform:uppercase;letter-spacing:0.08em;">Formulation</div><div style="font-family:var(--font-display);font-weight:700;color:var(--mq-ink-2);">{{ s.formulation_rating }}/10</div></div>
+            <div style="text-align:center;"><div class="subtle" style="font-size:10px;text-transform:uppercase;letter-spacing:0.08em;">Execution</div><div style="font-family:var(--font-display);font-weight:700;color:var(--mq-ink-2);">{{ s.execution_rating }}/10</div></div>
+          </div>
         </div>
-        <div class="row" style="gap:18px;">
-          <div style="text-align:center;"><div class="subtle" style="font-size:10px;text-transform:uppercase;letter-spacing:0.08em;">Formulation</div><div style="font-family:var(--font-display);font-weight:700;color:var(--mq-ink-2);">{{ s.formulation_rating }}/10</div></div>
-          <div style="text-align:center;"><div class="subtle" style="font-size:10px;text-transform:uppercase;letter-spacing:0.08em;">Execution</div><div style="font-family:var(--font-display);font-weight:700;color:var(--mq-ink-2);">{{ s.execution_rating }}/10</div></div>
-        </div>
+        {% if is_admin %}
+        <details class="editor">
+          <summary>Edit initiative</summary>
+          <form class="editor-body" method="POST" action="{{ url_for('save_strategy', slug=c.slug, sid=s.id) }}">
+            <div class="grid grid-2" style="gap:10px;">
+              <div style="grid-column:1 / -1;"><label class="fld-label">Name</label><input class="input" name="name" value="{{ s.name }}"></div>
+              <div><label class="fld-label">Approach</label><select class="input" name="approach"><option value="better" {{ 'selected' if s.approach=='better' }}>Better</option><option value="different" {{ 'selected' if s.approach=='different' }}>Different</option></select></div>
+              <div></div>
+              <div><label class="fld-label">Start year</label><input class="input" type="number" name="start_year" value="{{ s.start_year }}"></div>
+              <div><label class="fld-label">End year</label><input class="input" type="number" name="end_year" value="{{ s.end_year }}"></div>
+              <div><label class="fld-label">Formulation (0–10)</label><input class="input" type="number" min="0" max="10" name="formulation_rating" value="{{ s.formulation_rating }}"></div>
+              <div><label class="fld-label">Execution (0–10)</label><input class="input" type="number" min="0" max="10" name="execution_rating" value="{{ s.execution_rating }}"></div>
+            </div>
+            <div class="row" style="gap:8px;margin-top:12px;"><button class="btn btn-primary btn-sm" type="submit">Save</button>
+              <button class="btn btn-sm btn-danger" type="submit" name="delete" value="1" onclick="return confirm('Remove “{{ s.name }}”?');">Delete</button></div>
+          </form>
+        </details>
+        {% endif %}
       </div>
       {% else %}<span class="subtle">No strategies defined.</span>{% endfor %}
+      {% if is_admin %}
+      <details class="editor" style="margin-top:14px;">
+        <summary>+ Add initiative</summary>
+        <form class="editor-body" method="POST" action="{{ url_for('add_strategy', slug=c.slug) }}">
+          <div class="grid grid-2" style="gap:10px;">
+            <div style="grid-column:1 / -1;"><label class="fld-label">Name</label><input class="input" name="name" placeholder="e.g. US Distribution Network" required></div>
+            <div><label class="fld-label">Approach</label><select class="input" name="approach"><option value="better">Better</option><option value="different">Different</option></select></div>
+            <div></div>
+            <div><label class="fld-label">Start year</label><input class="input" type="number" name="start_year" placeholder="2025"></div>
+            <div><label class="fld-label">End year</label><input class="input" type="number" name="end_year" placeholder="2030"></div>
+            <div><label class="fld-label">Formulation (0–10)</label><input class="input" type="number" min="0" max="10" name="formulation_rating" value="5"></div>
+            <div><label class="fld-label">Execution (0–10)</label><input class="input" type="number" min="0" max="10" name="execution_rating" value="5"></div>
+          </div>
+          <button class="btn btn-primary btn-sm mt-8" type="submit">Add initiative</button>
+        </form>
+      </details>
+      {% endif %}
     </div>
   </div>
 

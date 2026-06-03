@@ -402,6 +402,17 @@ select.input { appearance: none; background-image: url("data:image/svg+xml;utf8,
 .mb-16 { margin-bottom: 16px; } .mb-24 { margin-bottom: 24px; }
 .divider { height: 1px; background: var(--mq-line); margin: 16px 0; }
 
+/* Inline editors (native <details>) for admin editing on the Strategy tab */
+details.editor { margin-top: 10px; }
+details.editor > summary { cursor: pointer; list-style: none; display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 700; letter-spacing: 0.02em; color: var(--mq-accent); padding: 4px 10px; border: 1px solid var(--mq-accent-soft); border-radius: 8px; background: var(--mq-accent-soft); }
+details.editor > summary::-webkit-details-marker { display: none; }
+details.editor[open] > summary { color: var(--mq-muted); background: transparent; border-color: var(--mq-line-2); }
+details.editor .editor-body { margin-top: 12px; padding: 14px; border: 1px solid var(--mq-line); border-radius: 10px; background: var(--mq-surface-2); }
+details.editor .editor-body label.fld-label { margin-top: 4px; }
+.btn-danger { color: var(--mq-bad); border-color: var(--mq-bad-soft); background: var(--mq-bad-soft); }
+.btn-danger:hover { color: #fff; background: var(--mq-bad); border-color: transparent; }
+textarea.input { resize: vertical; min-height: 64px; font-family: inherit; }
+
 .spinner { width: 26px; height: 26px; border: 3px solid var(--mq-line-2); border-top-color: var(--mq-accent); border-radius: 50%; animation: mq-spin .8s linear infinite; }
 @keyframes mq-spin { to { transform: rotate(360deg); } }
 

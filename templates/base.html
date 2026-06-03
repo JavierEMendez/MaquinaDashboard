@@ -109,6 +109,9 @@
     document.getElementById('topbar-date').textContent =
       d.toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric',year:'numeric'});
     updateThemeIcon(document.documentElement.getAttribute('data-theme'));
+    // Open a specific tab when arriving with ?tab=… (e.g. after saving an edit)
+    var wanted = new URLSearchParams(location.search).get('tab');
+    if (wanted) { var b = document.querySelector('.tab[data-tab="'+wanted+'"]'); if (b) b.click(); }
   });
 </script>
 {% block scripts %}{% endblock %}

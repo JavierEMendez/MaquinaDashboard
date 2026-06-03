@@ -586,12 +586,14 @@ def company(slug):
     cur.execute("SELECT * FROM company_strategies WHERE company_id = %s ORDER BY start_year", (c["id"],))
     strategies = cur.fetchall()
     cur.execute("""
-        SELECT sp.name, sp.phase_order, sp.color, sp.year_range, sp.team_expectation,
-               ph.start_year, ph.end_year, ph.is_projected
+        SELECT ph.id AS hid, ph.phase_id, sp.name, sp.phase_order, sp.color, sp.year_range,
+               sp.team_expectation, ph.start_year, ph.end_year, ph.is_projected
         FROM company_phase_history ph JOIN strategy_phases sp ON sp.id = ph.phase_id
-        WHERE ph.company_id = %s ORDER BY sp.phase_order
+        WHERE ph.company_id = %s ORDER BY ph.start_year, sp.phase_order
     """, (c["id"],))
     phase_hist = cur.fetchall()
+    cur.execute("SELECT id, name, phase_order FROM strategy_phases ORDER BY phase_order")
+    phases_all = cur.fetchall()
     cur.close()
     conn.close()
 
@@ -599,10 +601,147 @@ def company(slug):
         "company.html",
         c=c, items=items, dashboard_kpis=dashboard_kpis, by_category=by_category,
         chart=chart, risk=risk, strategies=strategies,
-        phase_hist=phase_hist, base_year=BASE_YEAR,
+        phase_hist=phase_hist, phases_all=phases_all, base_year=BASE_YEAR,
         years=list(range(HIST_START, PROJ_END + 1)),
         ember_live=ember_live, ember_asof=ember_asof,
     )
+
+
+# ─── COMPANY STRATEGY / RISK EDITING (admin) ───────────────────────
+def _company_or_404(slug):
+    c = company_by_slug(slug)
+    if not c or c["archived"]:
+        abort(404)
+    return c
+
+
+def _to_int(v, default=None):
+    try:
+        return int(float(v))
+    except (TypeError, ValueError):
+        return default
+
+
+def _rating(v, default=5):
+    n = _to_int(v, default)
+    return max(0, min(10, n if n is not None else default))
+
+
+@app.route("/company/<slug>/risk", methods=["POST"])
+@login_required
+def update_risk(slug):
+    if not session.get("is_admin"):
+        abort(403)
+    c = _company_or_404(slug)
+    f = request.form
+    commentary = (f.get("commentary") or "").strip() or None
+    conn = db.get_db(); cur = conn.cursor()
+    cur.execute(
+        """INSERT INTO company_risks
+             (company_id, market_risk, team_risk, finance_risk, product_risk, internal_risk, external_risk, commentary)
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
+           ON CONFLICT (company_id) DO UPDATE SET
+             market_risk=EXCLUDED.market_risk, team_risk=EXCLUDED.team_risk,
+             finance_risk=EXCLUDED.finance_risk, product_risk=EXCLUDED.product_risk,
+             internal_risk=EXCLUDED.internal_risk, external_risk=EXCLUDED.external_risk,
+             commentary=EXCLUDED.commentary""",
+        (c["id"], _rating(f.get("market_risk")), _rating(f.get("team_risk")),
+         _rating(f.get("finance_risk")), _rating(f.get("product_risk")),
+         _rating(f.get("internal_risk")), _rating(f.get("external_risk")), commentary))
+    conn.commit(); cur.close(); conn.close()
+    flash("Risk ratings updated.", "ok")
+    return redirect(url_for("company", slug=slug, tab="strategy"))
+
+
+@app.route("/company/<slug>/strategy/add", methods=["POST"])
+@login_required
+def add_strategy(slug):
+    if not session.get("is_admin"):
+        abort(403)
+    c = _company_or_404(slug)
+    f = request.form
+    name = (f.get("name") or "").strip()
+    if not name:
+        flash("Initiative name is required.", "error")
+        return redirect(url_for("company", slug=slug, tab="strategy"))
+    conn = db.get_db(); cur = conn.cursor()
+    cur.execute(
+        "INSERT INTO company_strategies (company_id,name,approach,start_year,end_year,formulation_rating,execution_rating) "
+        "VALUES (%s,%s,%s,%s,%s,%s,%s)",
+        (c["id"], name, f.get("approach", "better"), _to_int(f.get("start_year")), _to_int(f.get("end_year")),
+         _rating(f.get("formulation_rating")), _rating(f.get("execution_rating"))))
+    conn.commit(); cur.close(); conn.close()
+    flash("Initiative added.", "ok")
+    return redirect(url_for("company", slug=slug, tab="strategy"))
+
+
+@app.route("/company/<slug>/strategy/<int:sid>/save", methods=["POST"])
+@login_required
+def save_strategy(slug, sid):
+    if not session.get("is_admin"):
+        abort(403)
+    c = _company_or_404(slug)
+    f = request.form
+    if f.get("delete") == "1":
+        q, args, msg = ("DELETE FROM company_strategies WHERE id=%s AND company_id=%s",
+                        (sid, c["id"]), "Initiative removed.")
+    else:
+        q = ("UPDATE company_strategies SET name=%s, approach=%s, start_year=%s, end_year=%s, "
+             "formulation_rating=%s, execution_rating=%s WHERE id=%s AND company_id=%s")
+        args = ((f.get("name") or "").strip() or "Untitled", f.get("approach", "better"),
+                _to_int(f.get("start_year")), _to_int(f.get("end_year")),
+                _rating(f.get("formulation_rating")), _rating(f.get("execution_rating")), sid, c["id"])
+        msg = "Initiative updated."
+    conn = db.get_db(); cur = conn.cursor()
+    cur.execute(q, args)
+    conn.commit(); cur.close(); conn.close()
+    flash(msg, "ok")
+    return redirect(url_for("company", slug=slug, tab="strategy"))
+
+
+@app.route("/company/<slug>/phase/add", methods=["POST"])
+@login_required
+def add_phase(slug):
+    if not session.get("is_admin"):
+        abort(403)
+    c = _company_or_404(slug)
+    f = request.form
+    pid = _to_int(f.get("phase_id"))
+    if not pid:
+        flash("Pick a phase.", "error")
+        return redirect(url_for("company", slug=slug, tab="strategy"))
+    conn = db.get_db(); cur = conn.cursor()
+    cur.execute(
+        "INSERT INTO company_phase_history (company_id,phase_id,start_year,end_year,is_projected) "
+        "VALUES (%s,%s,%s,%s,%s)",
+        (c["id"], pid, _to_int(f.get("start_year")), _to_int(f.get("end_year")),
+         f.get("is_projected") == "1"))
+    conn.commit(); cur.close(); conn.close()
+    flash("Lifecycle phase added.", "ok")
+    return redirect(url_for("company", slug=slug, tab="strategy"))
+
+
+@app.route("/company/<slug>/phase/<int:hid>/save", methods=["POST"])
+@login_required
+def save_phase(slug, hid):
+    if not session.get("is_admin"):
+        abort(403)
+    c = _company_or_404(slug)
+    f = request.form
+    if f.get("delete") == "1":
+        q, args, msg = ("DELETE FROM company_phase_history WHERE id=%s AND company_id=%s",
+                        (hid, c["id"]), "Lifecycle phase removed.")
+    else:
+        q = ("UPDATE company_phase_history SET phase_id=%s, start_year=%s, end_year=%s, is_projected=%s "
+             "WHERE id=%s AND company_id=%s")
+        args = (_to_int(f.get("phase_id")), _to_int(f.get("start_year")), _to_int(f.get("end_year")),
+                f.get("is_projected") == "1", hid, c["id"])
+        msg = "Lifecycle phase updated."
+    conn = db.get_db(); cur = conn.cursor()
+    cur.execute(q, args)
+    conn.commit(); cur.close(); conn.close()
+    flash(msg, "ok")
+    return redirect(url_for("company", slug=slug, tab="strategy"))
 
 
 @app.route("/manage-companies")
