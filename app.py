@@ -88,6 +88,13 @@ def _boot():
             cur.execute("INSERT INTO app_settings (key,value) VALUES ('financials_v1','1') "
                         "ON CONFLICT (key) DO NOTHING")
             conn.commit()
+        # v2: correct the initial placeholder defaults once (pre-edit)
+        cur.execute("SELECT value FROM app_settings WHERE key = 'financials_v2'")
+        if not cur.fetchone():
+            seed_data.seed_financials(conn, overwrite=True)
+            cur.execute("INSERT INTO app_settings (key,value) VALUES ('financials_v2','1') "
+                        "ON CONFLICT (key) DO NOTHING")
+            conn.commit()
         cur.close()
         conn.close()
         _booted = True
@@ -264,6 +271,38 @@ def load_financials(cid):
     cur.close()
     conn.close()
     return row
+
+
+def _to_usd(value, value_unit, rate):
+    """Normalize a display-unit value to raw USD."""
+    if value is None:
+        return 0.0
+    if value_unit == "KUSD":
+        return value * 1000.0
+    if value_unit == "MMXN":
+        return value * 1e6 / rate if rate else 0.0
+    if value_unit == "KMXN":
+        return value * 1e3 / rate if rate else 0.0
+    return value
+
+
+def company_valuation(fin, promote_total_usd, rate, value_unit):
+    """Two-model equity valuation. Returns display-unit pieces + normalized USD.
+    Sponsor: FRE × multiple + PV(promotes) (~3yr horizon). Else: EV − net debt."""
+    if not fin:
+        return None
+    out = {"model": fin["valuation_model"]}
+    if fin["valuation_model"] == "sponsor":
+        fre_value = (fin["fre"] or 0) * (fin["fre_multiple"] or 0)        # display units
+        cd = fin["carry_discount"] or 0.15
+        promote_pv = (promote_total_usd or 0) / ((1 + cd) ** 3)           # raw USD
+        out.update(fre_value=fre_value, promote_pv=promote_pv,
+                   value_usd=_to_usd(fre_value, value_unit, rate) + promote_pv)
+    else:
+        ev = (fin["ebitda"] or 0) * (fin["ebitda_multiple"] or 0)         # display units
+        equity = ev - (fin["total_debt"] or 0)
+        out.update(ev=ev, equity=equity, value_usd=_to_usd(equity, value_unit, rate))
+    return out
 
 
 def annual_irr(cfs):
@@ -519,10 +558,21 @@ def portfolio():
     top = max(comps, key=lambda c: c["investment"]) if comps else None
     concentration = (top["investment"] / total_inv * 100) if (top and total_inv) else 0
 
+    # estimated portfolio NAV (USD) = sum of per-company equity valuations
+    rate = usd_mxn_rate()
+    er = fetch_ember_returns()
+    promote_total = er["totals"]["promote"] if er else 0
+    conn = db.get_db(); cur = conn.cursor()
+    cur.execute("SELECT cf.*, c.value_unit, c.slug FROM company_financials cf "
+                "JOIN companies c ON c.id = cf.company_id WHERE c.archived = FALSE")
+    fins = cur.fetchall(); cur.close(); conn.close()
+    nav = sum((company_valuation(fr, promote_total if fr["slug"] == "ember" else 0, rate, fr["value_unit"]) or {}).get("value_usd", 0)
+              for fr in fins)
+
     return render_template(
         "portfolio.html",
         comps=comps, total_inv=total_inv, total_dist=total_dist, net=net, roi=roi,
-        moic=(roi / 100), blended_irr=blended_irr, concentration=concentration,
+        moic=(roi / 100), blended_irr=blended_irr, concentration=concentration, nav=nav,
         top_holding=(top["name"] if top else None),
         year_inv=year_inv, year_dist=year_dist, base_year=BASE_YEAR,
         timeline=dict(years=years, inv=cum_inv, dist=cum_dist, base_year=BASE_YEAR),
@@ -754,9 +804,12 @@ def company(slug):
                        "debt": (ember_loans["totals"]["balance"] if ember_loans else None),
                        "wrate": (ember_loans["totals"]["wrate"] if ember_loans else None)}
 
-    # financial inputs (EBITDA/FRE) + leverage (Net Debt / EBITDA for operating cos)
+    # financial inputs (EBITDA/FRE) + leverage + two-model equity valuation
     fin = load_financials(c["id"])
     leverage = (fin["total_debt"] / fin["ebitda"]) if (fin and fin["ebitda"] and fin["ebitda"] > 0) else None
+    valuation = company_valuation(
+        fin, (ember_returns["totals"]["promote"] if ember_returns else 0),
+        usd_mxn_rate(), c["value_unit"])
 
     # strategy tab data
     conn = db.get_db()
@@ -785,6 +838,7 @@ def company(slug):
         years=list(range(HIST_START, PROJ_END + 1)),
         ember_live=ember_live, ember_asof=ember_asof, ember_loans=ember_loans,
         ember_returns=ember_returns, summary=summary, fin=fin, leverage=leverage,
+        valuation=valuation,
     )
 
 

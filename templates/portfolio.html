@@ -64,7 +64,7 @@
       </div>
       {% endfor %}
     </div>
-    {% if top_holding %}<div class="subtle" style="font-size:12px;margin:-8px 0 20px;">Concentration: <strong style="color:var(--mq-ink);">{{ top_holding }}</strong> = {{ '%.0f'|format(concentration) }}% of invested capital.</div>{% endif %}
+    <div class="subtle" style="font-size:12px;margin:-8px 0 20px;">{% if nav %}Estimated portfolio NAV ≈ <strong style="color:var(--mq-ink);">{{ nav | money }}</strong> (sum of equity values){% endif %}{% if top_holding %} · Concentration: <strong style="color:var(--mq-ink);">{{ top_holding }}</strong> = {{ '%.0f'|format(concentration) }}% of invested capital{% endif %}.</div>
 
     <div class="card mb-24">
       <div class="card-head"><div><div class="card-title">Portfolio Timeline</div><div class="card-sub">Cumulative investment &amp; distributions — actuals through {{ base_year }}, projections after.</div></div></div>

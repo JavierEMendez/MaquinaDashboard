@@ -154,6 +154,23 @@
         <div class="kpi"><div class="kpi-top"><span class="kpi-label">Total Debt</span></div><div class="kpi-value">{{ fin.total_debt | num }} <span style="font-size:13px;color:var(--mq-subtle);">{{ c.value_unit }}</span></div></div>
         {% endif %}
       </div>
+      {% if valuation %}
+      <div class="divider"></div>
+      {% if valuation.model == 'sponsor' %}
+      <div class="row between wrap" style="gap:12px;align-items:baseline;">
+        <div><div style="font-size:11px;text-transform:uppercase;letter-spacing:0.12em;color:var(--mq-subtle);font-weight:700;">Estimated Equity Value</div>
+          <div style="font-family:var(--font-display);font-size:24px;font-weight:700;color:var(--mq-ink-2);">{{ valuation.value_usd | money }}</div></div>
+        <div class="subtle" style="font-size:12px;text-align:right;">FRE value {{ valuation.fre_value | num }} {{ c.value_unit }} + Promote PV {{ valuation.promote_pv | money }}<br>sponsor model · carry discounted {{ '%.0f'|format(fin.carry_discount * 100) }}% over ~3 yrs</div>
+      </div>
+      {% else %}
+      <div class="row between wrap" style="gap:12px;align-items:baseline;">
+        <div><div style="font-size:11px;text-transform:uppercase;letter-spacing:0.12em;color:var(--mq-subtle);font-weight:700;">Equity Value</div>
+          <div style="font-family:var(--font-display);font-size:24px;font-weight:700;color:var(--mq-ink-2);">{{ valuation.equity | num }} {{ c.value_unit }}</div>
+          <div class="subtle" style="font-size:12px;">≈ {{ valuation.value_usd | money }} USD</div></div>
+        <div class="subtle" style="font-size:12px;text-align:right;">EV {{ valuation.ev | num }} {{ c.value_unit }} ({{ '%.1f'|format(fin.ebitda_multiple) }}× EBITDA)<br>− debt {{ fin.total_debt | num }} {{ c.value_unit }}</div>
+      </div>
+      {% endif %}
+      {% endif %}
       {% if is_admin %}
       <details class="editor" style="margin-top:14px;">
         <summary>Edit financial inputs</summary>
