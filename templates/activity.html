@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+{% block title %}Team Activity — Maquina{% endblock %}
+
+{% block content %}
+{% if forbidden %}
+<div class="page-head">
+  <div class="page-eyebrow">Administration</div>
+  <h1 class="page-title">Team Activity</h1>
+</div>
+<div class="card"><div class="row" style="gap:10px;align-items:center;">
+  <span class="badge">Admin only</span>
+  <span class="subtle" style="font-size:13px;">The Team Activity page is available to administrators only.</span>
+</div></div>
+{% else %}
+<div class="page-head">
+  <div class="page-eyebrow">Administration</div>
+  <h1 class="page-title">Team Activity</h1>
+  <div class="page-sub">Per-user roll-up of sign-ins and dashboard page views. Activity older than 12 months is purged automatically.</div>
+  <div class="subtle" style="font-size:11.5px;margin-top:6px;">Generated · <time datetime="{{ generated_at_iso }}" data-fmt="long">{{ generated_at_iso }}</time></div>
+</div>
+
+<div class="grid grid-4 mb-24">
+  {% for k in kpis %}
+  <div class="kpi">
+    <div class="kpi-top"><span class="kpi-label">{{ k.label }}</span></div>
+    <div class="kpi-value">{{ k.val }}</div>
+    <div class="kpi-foot"><span class="kpi-sub">{{ k.sub }}</span></div>
+  </div>
+  {% endfor %}
+</div>
+
+<div class="card" style="padding:0;overflow:hidden;">
+  <div class="card-head" style="padding:18px 20px 0;">
+    <div>
+      <div class="card-title">Who's using the platform</div>
+      <div class="card-sub">{{ rows|length }} team member{{ 's' if rows|length != 1 else '' }} · sorted by 7-day activity</div>
+    </div>
+  </div>
+  <div class="table-scroll" style="max-height:none;border:none;">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th style="text-align:left;">User</th>
+          <th style="text-align:left;">Last seen</th>
+          <th>Logins · 7d</th>
+          <th>Logins · 30d</th>
+          <th>Views · 7d</th>
+          <th>Views · 30d</th>
+          <th style="text-align:left;">Top pages · 30d</th>
+          <th style="text-align:left;">Activity · 14d</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in rows %}
+        <tr style="{{ 'opacity:0.5;' if not r.active else '' }}">
+          <td style="text-align:left;">
+            <span style="font-weight:600;color:var(--mq-ink-2);">{{ r.display }}</span>
+            {% if r.is_admin %}<span class="badge accent" style="margin-left:6px;">Admin</span>{% endif %}
+            {% if r.display != r.username %}<span class="subtle" style="display:block;font-size:11px;">@{{ r.username }}</span>{% endif %}
+          </td>
+          <td style="text-align:left;">
+            {% if r.last_seen_iso %}<time datetime="{{ r.last_seen_iso }}" data-fmt="short">{{ r.last_seen }}</time>
+            {% else %}<span class="subtle" style="font-style:italic;">Never</span>{% endif %}
+          </td>
+          <td>{{ r.logins_7d }}</td>
+          <td>{{ r.logins_30d }}</td>
+          <td>{{ r.views_7d }}</td>
+          <td>{{ r.views_30d }}</td>
+          <td style="text-align:left;">
+            {% if r.top_pages %}
+              {% for p in r.top_pages %}
+              <div class="row between" style="gap:14px;font-size:12px;line-height:1.7;">
+                <span style="color:var(--mq-ink-2);">{{ p.label }}</span><span class="subtle">{{ p.n }}</span>
+              </div>
+              {% endfor %}
+            {% else %}<span class="subtle" style="font-style:italic;">no views yet</span>{% endif %}
+          </td>
+          <td style="text-align:left;">{{ r.spark_svg | safe }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+/* Localize every <time datetime="ISO"> to the viewer's timezone. The
+   server sends UTC ISO strings; the browser knows the viewer's locale.
+   data-fmt="short" → "Jun 4, 09:14"; "long" → "Jun 4, 2026 · 09:14". */
+(function () {
+  const SHORT = { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit', hour12:false };
+  const LONG  = { month:'short', day:'numeric', year:'numeric', hour:'2-digit', minute:'2-digit', hour12:false };
+  document.querySelectorAll('time[datetime]').forEach(function (el) {
+    const d = new Date(el.dateTime);
+    if (isNaN(d)) return;
+    let s = d.toLocaleString(undefined, el.dataset.fmt === 'long' ? LONG : SHORT);
+    if (el.dataset.fmt === 'long') s = s.replace(/,\s*(\d{2}:\d{2})$/, ' · $1');
+    el.textContent = s;
+  });
+})();
+</script>
+{% endblock %}

@@ -157,6 +157,22 @@ CREATE TABLE IF NOT EXISTS company_financials (
     updated_at TIMESTAMP DEFAULT NOW()
 );
 
+-- Per-user activity ledger powering the admin Team Activity page.
+-- Captures successful logins, logouts, and page views (user-level only —
+-- no IPs, no user agents). Username is denormalized so the page keeps
+-- working even if a user is later renamed or deleted. Retention is
+-- 12 months, enforced by a once-per-boot purge in app.py's _boot().
+CREATE TABLE IF NOT EXISTS activity_log (
+    id BIGSERIAL PRIMARY KEY,
+    user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    username TEXT NOT NULL,
+    event_type TEXT NOT NULL,           -- login | logout | page_view
+    path TEXT,
+    ts TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS activity_log_user_ts ON activity_log (user_id, ts DESC);
+CREATE INDEX IF NOT EXISTS activity_log_ts ON activity_log (ts DESC);
+
 -- Uploaded images live in Postgres (Railway's filesystem is ephemeral).
 -- Stored as small processed thumbnails; served via dedicated routes.
 ALTER TABLE users     ADD COLUMN IF NOT EXISTS avatar BYTEA;

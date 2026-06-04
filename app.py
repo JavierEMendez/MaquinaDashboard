@@ -96,6 +96,9 @@ def _boot():
             cur.execute("INSERT INTO app_settings (key,value) VALUES ('financials_v2','1') "
                         "ON CONFLICT (key) DO NOTHING")
             conn.commit()
+        # 12-month retention on the activity ledger (once per process boot).
+        cur.execute("DELETE FROM activity_log WHERE ts < NOW() - INTERVAL '12 months'")
+        conn.commit()
         cur.close()
         conn.close()
         _booted = True
@@ -139,6 +142,7 @@ def login():
             session["display_name"] = f"{fn} {ln}".strip() or user["username"]
             session["has_avatar"] = user.get("avatar") is not None
             session["avatar_ver"] = len(user["avatar"]) if user.get("avatar") else 0
+            _log_activity("login", user_id=user["id"], username=user["username"])
             nxt = request.args.get("next") or url_for("dashboard")
             return redirect(nxt)
         error = "Invalid username or password."
@@ -147,8 +151,209 @@ def login():
 
 @app.route("/logout")
 def logout():
+    _log_activity("logout", user_id=session.get("user_id"), username=session.get("username"))
     session.clear()
     return redirect(url_for("login"))
+
+
+# ─── ACTIVITY TRACKING ─────────────────────────────────────────────
+# Per-user page-view + login/logout capture for the admin Team Activity
+# page. User-level only (no IPs, no user agents); 12-month retention is
+# enforced by a once-per-boot purge in _boot().
+_ACTIVITY_DENY_PREFIXES = ("/static/", "/api/", "/health", "/favicon",
+                           "/login", "/logout", "/avatar/", "/company-logo/")
+_ACTIVITY_DENY_SUFFIXES = (".json", ".css", ".js", ".ico", ".png", ".svg",
+                           ".jpg", ".jpeg", ".gif", ".woff", ".woff2", ".map")
+
+# Friendly labels for the paths the page surfaces. Anything not mapped
+# falls back to a readable name (company pages resolve to the company).
+_ACTIVITY_PATH_LABELS = {
+    "/":                 "Portfolio Dashboard",
+    "/strategy":         "Maquina Strategy",
+    "/maquina-cashflow":  "Maquina Portfolio",
+    "/manage-companies":  "Manage Companies",
+    "/settings":         "Settings",
+    "/activity":         "Team Activity",
+}
+
+
+def _activity_label(path):
+    if not path:
+        return "—"
+    if path in _ACTIVITY_PATH_LABELS:
+        return _ACTIVITY_PATH_LABELS[path]
+    if path.startswith("/company/"):
+        parts = path.split("/")
+        c = company_by_slug(parts[2]) if len(parts) > 2 else None
+        return c["name"] if c else "Company"
+    return path
+
+
+def _log_activity(event_type, path=None, user_id=None, username=None):
+    """Insert one activity_log row. Swallows all errors — a logging
+    hiccup must never take down a real request."""
+    try:
+        uid = user_id if user_id is not None else session.get("user_id")
+        uname = username or session.get("username")
+        if not uid or not uname:
+            return
+        conn = db.get_db()
+        cur = conn.cursor()
+        cur.execute("INSERT INTO activity_log (user_id, username, event_type, path) "
+                    "VALUES (%s, %s, %s, %s)", (uid, uname, event_type, path))
+        conn.commit()
+        cur.close()
+        conn.close()
+    except Exception as e:  # pragma: no cover
+        app.logger.warning("activity log failed (%s): %s", event_type, e)
+
+
+@app.before_request
+def _capture_page_view():
+    """Log GET requests to authenticated dashboard pages. Logins/logouts
+    are captured by their own handlers; POSTs, AJAX and asset fetches are
+    ignored so the log stays focused on 'who looked at what'."""
+    if request.method != "GET" or not session.get("user_id"):
+        return
+    p = request.path or ""
+    if p.startswith(_ACTIVITY_DENY_PREFIXES) or p.endswith(_ACTIVITY_DENY_SUFFIXES):
+        return
+    _log_activity("page_view", path=p)
+
+
+def _sparkline(values, color="#0568B3", bold=False):
+    """Server-rendered SVG sparkline (88×22)."""
+    w, h, pad = 88, 22, 2
+    if not values:
+        return ""
+    vmin = min(values)
+    rng = (max(values) - vmin) or 1
+    step = (w - pad * 2) / max(1, len(values) - 1)
+    parts = []
+    for i, v in enumerate(values):
+        x = pad + i * step
+        y = pad + (1 - (v - vmin) / rng) * (h - pad * 2)
+        parts.append(f"{'M' if i == 0 else 'L'} {x:.1f} {y:.1f}")
+    return (f'<svg width="{w}" height="{h}" viewBox="0 0 {w} {h}">'
+            f'<path d="{" ".join(parts)}" fill="none" stroke="{color}" '
+            f'stroke-width="{1.8 if bold else 1.2}" stroke-linecap="round" '
+            f'stroke-linejoin="round" opacity="{1 if bold else 0.85}"/></svg>')
+
+
+@app.route("/activity")
+@login_required
+def activity():
+    """Team Activity — admin-only per-user roll-up of logins and page
+    views (7d / 30d) with a 14-day sparkline and most-visited pages."""
+    if not session.get("is_admin"):
+        return render_template("activity.html", forbidden=True), 403
+
+    conn = db.get_db()
+    cur = conn.cursor()
+
+    # ── KPI band (last 7 days) ──
+    cur.execute("SELECT COUNT(DISTINCT user_id) AS n FROM activity_log "
+                "WHERE ts >= NOW() - INTERVAL '7 days' AND user_id IS NOT NULL")
+    active_7d = (cur.fetchone() or {}).get("n") or 0
+
+    cur.execute("SELECT COUNT(*) AS n FROM activity_log "
+                "WHERE event_type = 'login' AND ts >= NOW() - INTERVAL '7 days'")
+    logins_7d = (cur.fetchone() or {}).get("n") or 0
+
+    cur.execute("SELECT path, COUNT(*) AS n FROM activity_log "
+                "WHERE event_type = 'page_view' AND ts >= NOW() - INTERVAL '7 days' "
+                "AND path IS NOT NULL GROUP BY path ORDER BY n DESC LIMIT 1")
+    top_row = cur.fetchone()
+    top_page_label = _activity_label(top_row["path"]) if top_row else "—"
+    top_page_count = top_row["n"] if top_row else 0
+
+    cur.execute("SELECT COUNT(*) AS n FROM activity_log "
+                "WHERE event_type = 'page_view' AND ts >= NOW() - INTERVAL '7 days'")
+    views_7d = (cur.fetchone() or {}).get("n") or 0
+    avg_views = round(views_7d / active_7d, 1) if active_7d else 0
+
+    # ── Per-user roll-up ──
+    cur.execute("SELECT id AS user_id, username, is_admin, "
+                "COALESCE(first_name, '') AS first_name, "
+                "COALESCE(last_name, '') AS last_name FROM users ORDER BY username")
+    user_rows = cur.fetchall()
+
+    cur.execute("""
+        SELECT user_id, MAX(ts) AS last_seen,
+               COUNT(*) FILTER (WHERE event_type='login'     AND ts >= NOW() - INTERVAL '7 days')  AS logins_7d,
+               COUNT(*) FILTER (WHERE event_type='login'     AND ts >= NOW() - INTERVAL '30 days') AS logins_30d,
+               COUNT(*) FILTER (WHERE event_type='page_view' AND ts >= NOW() - INTERVAL '7 days')  AS views_7d,
+               COUNT(*) FILTER (WHERE event_type='page_view' AND ts >= NOW() - INTERVAL '30 days') AS views_30d
+        FROM activity_log WHERE user_id IS NOT NULL GROUP BY user_id
+    """)
+    by_user = {r["user_id"]: r for r in cur.fetchall()}
+
+    cur.execute("""
+        SELECT user_id, DATE_TRUNC('day', ts)::date AS d, COUNT(*) AS n
+        FROM activity_log
+        WHERE event_type='page_view' AND ts >= (NOW() - INTERVAL '14 days')::date
+          AND user_id IS NOT NULL
+        GROUP BY user_id, d
+    """)
+    spark_rows = cur.fetchall()
+
+    cur.execute("""
+        SELECT user_id, path, COUNT(*) AS n
+        FROM activity_log
+        WHERE event_type='page_view' AND ts >= NOW() - INTERVAL '30 days'
+          AND user_id IS NOT NULL AND path IS NOT NULL
+        GROUP BY user_id, path
+    """)
+    top_paths = {}
+    for r in cur.fetchall():
+        top_paths.setdefault(r["user_id"], []).append((r["path"], r["n"]))
+    for uid in top_paths:
+        top_paths[uid].sort(key=lambda t: -t[1])
+
+    cur.close()
+    conn.close()
+
+    today = datetime.date.today()
+    days = [today - datetime.timedelta(days=13 - i) for i in range(14)]
+    spark_by_user = {}
+    for r in spark_rows:
+        d = r["d"]
+        if hasattr(d, "date"):
+            d = d.date()
+        spark_by_user.setdefault(r["user_id"], {})[d] = int(r["n"])
+
+    rows = []
+    for u in user_rows:
+        agg = by_user.get(u["user_id"]) or {}
+        last_seen = agg.get("last_seen")
+        if last_seen and hasattr(last_seen, "isoformat"):
+            last_seen_iso = last_seen.isoformat()
+            last_seen_label = last_seen.strftime("%b %d, %H:%M UTC")
+        else:
+            last_seen_iso, last_seen_label = None, "Never"
+        spark_values = [spark_by_user.get(u["user_id"], {}).get(d, 0) for d in days]
+        spark_svg = _sparkline(spark_values, "#0568B3", bold=True) if any(spark_values) else ""
+        top3 = top_paths.get(u["user_id"], [])[:3]
+        display = (f"{u['first_name']} {u['last_name']}".strip()) or u["username"]
+        rows.append(dict(
+            user_id=u["user_id"], username=u["username"], display=display,
+            is_admin=u["is_admin"], last_seen=last_seen_label, last_seen_iso=last_seen_iso,
+            logins_7d=int(agg.get("logins_7d") or 0), logins_30d=int(agg.get("logins_30d") or 0),
+            views_7d=int(agg.get("views_7d") or 0), views_30d=int(agg.get("views_30d") or 0),
+            top_pages=[{"label": _activity_label(p), "n": n} for p, n in top3],
+            spark_svg=spark_svg, active=bool(any(spark_values)),
+        ))
+    rows.sort(key=lambda r: (-r["views_7d"], r["display"].lower()))
+
+    kpis = [
+        dict(label="Active Users",      val=str(active_7d),  sub="with any activity · last 7d"),
+        dict(label="Total Logins",      val=str(logins_7d),  sub="sign-ins · last 7d"),
+        dict(label="Most-Visited Page", val=top_page_label,  sub=f"{top_page_count} views · last 7d"),
+        dict(label="Avg Views / User",  val=str(avg_views),  sub="page views per active user · last 7d"),
+    ]
+    generated_at_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    return render_template("activity.html", forbidden=False, kpis=kpis, rows=rows,
+                           generated_at_iso=generated_at_iso)
 
 
 # ─── FORMATTING FILTERS ────────────────────────────────────────────
