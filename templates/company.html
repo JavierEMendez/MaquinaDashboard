@@ -67,25 +67,44 @@
 
   {# ───────── Dashboard ───────── #}
   <div class="tab-panel active" data-panel="dashboard">
-    {% if ember_live %}
+    {% if summary %}
     <div class="row wrap" style="gap:8px;margin-bottom:14px;align-items:center;">
       <span class="badge good">● Live from Ember</span>
-      <span class="subtle" style="font-size:12px;">Operating revenues{% if ember_asof %} · as of {{ ember_asof }}{% endif %} · other tabs show modeled data</span>
+      <span class="subtle" style="font-size:12px;">Key values across Operations, Finance &amp; Strategy{% if ember_asof %} · as of {{ ember_asof }}{% endif %}</span>
     </div>
-    {% endif %}
+    <div class="grid grid-4 mb-24">
+      <div class="kpi"><div class="kpi-top"><span class="kpi-label">Operating Revenue</span></div>
+        <div class="kpi-value">{{ summary.revenue | money }}</div><div class="kpi-foot"><span class="kpi-sub">FY{{ summary.year }} · Operations</span></div></div>
+      <div class="kpi"><div class="kpi-top"><span class="kpi-label">Net Operating Cashflow</span></div>
+        <div class="kpi-value {{ 'pos' if summary.net_ocf >= 0 else 'neg' }}">{{ summary.net_ocf | money }}</div><div class="kpi-foot"><span class="kpi-sub">FY{{ summary.year }} · net of est. overhead</span></div></div>
+      <div class="kpi"><div class="kpi-top"><span class="kpi-label">Debt Outstanding</span></div>
+        <div class="kpi-value">{{ summary.debt | money if summary.debt is not none else '—' }}</div><div class="kpi-foot"><span class="kpi-sub">Finance</span></div></div>
+      <div class="kpi"><div class="kpi-top"><span class="kpi-label">Wtd Avg Debt Rate</span></div>
+        <div class="kpi-value">{{ ('%.2f'|format(summary.wrate * 100) ~ '%') if summary.wrate is not none else '—' }}</div><div class="kpi-foot"><span class="kpi-sub">Finance</span></div></div>
+    </div>
+    <div class="card">
+      <div class="card-head"><div><div class="card-title">Operating Revenue Trend</div>
+        <div class="card-sub">Total operating revenue, {{ chart.years[0] }}–{{ chart.years[-1] }} (USD).</div></div></div>
+      <div class="chart-wrap" style="height:300px;"><canvas id="chart-summary"></canvas></div>
+    </div>
+    {% else %}
     <div class="grid grid-4 mb-24">{% for it in dashboard_kpis %}{{ kpicard(it) }}{% endfor %}</div>
     <div class="card">
-      <div class="card-head"><div><div class="card-title">{{ 'Operating Revenue by Category' if ember_live else 'Performance Overview' }}</div>
-        <div class="card-sub">{% if ember_live %}Live Ember fees, {{ chart.years[0] }}–{{ chart.years[-1] }} (USD).{% else %}Key metrics — actuals through {{ base_year }}, projections dashed.{% endif %}</div></div>
-        {% if not ember_live %}<label class="row" style="gap:7px;font-size:12px;cursor:pointer;color:var(--mq-muted);">
-          <input type="checkbox" data-projtoggle="chart-dashboard" data-cat="all" checked style="accent-color:var(--mq-accent);"> Show projections</label>{% endif %}
+      <div class="card-head"><div><div class="card-title">Performance Overview</div>
+        <div class="card-sub">Key metrics — actuals through {{ base_year }}, projections dashed.</div></div>
+        <label class="row" style="gap:7px;font-size:12px;cursor:pointer;color:var(--mq-muted);">
+          <input type="checkbox" data-projtoggle="chart-dashboard" data-cat="all" checked style="accent-color:var(--mq-accent);"> Show projections</label>
       </div>
       <div class="chart-wrap" style="height:320px;"><canvas id="chart-dashboard"></canvas></div>
     </div>
+    {% endif %}
   </div>
 
   <div class="tab-panel" data-panel="commercial">{{ category_panel('Commercial') }}</div>
-  <div class="tab-panel" data-panel="operations">{{ category_panel('Operations') }}</div>
+  <div class="tab-panel" data-panel="operations">
+    {% if ember_live %}<div class="row wrap" style="gap:8px;margin-bottom:14px;align-items:center;"><span class="badge good">● Live from Ember</span><span class="subtle" style="font-size:12px;">Operating revenues{% if ember_asof %} · as of {{ ember_asof }}{% endif %}</span></div>{% endif %}
+    {{ category_panel('Operations') }}
+  </div>
   <div class="tab-panel" data-panel="finance">
     {{ category_panel('Finance') }}
     {% if ember_loans %}
@@ -299,7 +318,8 @@
   }
   function seriesFor(cat){ return PAYLOAD.series.filter(s=> cat==='all' ? true : s.category===cat); }
 
-  MQ.register(()=>buildLine('chart-dashboard', seriesFor('all')));
+  if(document.getElementById('chart-dashboard')) MQ.register(()=>buildLine('chart-dashboard', seriesFor('all')));
+  if(document.getElementById('chart-summary')) MQ.register(()=>buildLine('chart-summary', seriesFor('summary')));
   ['Commercial','Operations','Finance'].forEach(cat=>{
     if(document.getElementById('chart-'+cat)) MQ.register(()=>buildLine('chart-'+cat, seriesFor(cat)));
   });

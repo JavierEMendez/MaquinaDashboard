@@ -73,6 +73,17 @@ def _boot():
             conn = db.get_db()
             seed_data.seed(conn)
             conn.close()
+        # one-time re-categorization of existing KPIs to the new tab taxonomy
+        conn = db.get_db()
+        cur = conn.cursor()
+        cur.execute("SELECT value FROM app_settings WHERE key = 'cat_remap_v1'")
+        if not cur.fetchone():
+            seed_data.remap_categories(conn)
+            cur.execute("INSERT INTO app_settings (key,value) VALUES ('cat_remap_v1','1') "
+                        "ON CONFLICT (key) DO NOTHING")
+            conn.commit()
+        cur.close()
+        conn.close()
         _booted = True
     except Exception as e:  # pragma: no cover
         app.logger.error("Boot/init failed: %s", e)
@@ -604,8 +615,9 @@ def company(slug):
     for it in items:
         by_category.setdefault(it["category"], []).append(it)
 
-    # Live Ember overlay — real operating revenues from the Ember DB (seed fallback).
-    ember_live, ember_asof, ember_loans = False, None, None
+    # Live Ember overlay (seed fallback). Operating revenues → Operations tab;
+    # a cross-tab summary → Dashboard; units/lots → Commercial (coming soon).
+    ember_live, ember_asof, ember_loans, summary = False, None, None, None
     if c["slug"] == "ember":
         ember_loans = fetch_ember_loans()
         op = fetch_ember_operations()
@@ -615,19 +627,22 @@ def company(slug):
             yr0 = str(yrs[0])
             first = lambda lbl: (rows.get(lbl) or [None])[0]
             # Overhead proxy until Ember uploads full overhead: Project Personnel + 10%.
-            overhead0 = (rows.get("Project Personnel") or [0])[0] * 1.10
-            dashboard_kpis = [
-                dict(name="Corporate Revenues", current=totals[0], unit="currency", unit_label=yr0, trend=None),
-                dict(name="Development Fees", current=first("Development Fees"), unit="currency", unit_label=yr0, trend=None),
-                dict(name="Bookkeeping Fee", current=first("Bookkeeping"), unit="currency", unit_label=yr0, trend=None),
-                dict(name="Corporate Cashflow", current=(totals[0] - overhead0), unit="currency",
-                     unit_label="net of est. overhead · " + yr0, trend=None),
+            net_ocf = totals[0] - (rows.get("Project Personnel") or [0])[0] * 1.10
+            by_category["Operations"] = [
+                dict(name="Corporate Revenues", current=totals[0], unit="currency", unit_label=yr0, trend=None, in_chart=True),
+                dict(name="Development Fees", current=first("Development Fees"), unit="currency", unit_label=yr0, trend=None, in_chart=False),
+                dict(name="Bookkeeping Fee", current=first("Bookkeeping"), unit="currency", unit_label=yr0, trend=None, in_chart=False),
+                dict(name="Net Operating Cashflow", current=net_ocf, unit="currency", unit_label="net of est. overhead · " + yr0, trend=None, in_chart=False),
             ]
-            chart = dict(years=yrs, base_year=yrs[-1],
-                         series=[dict(label=lbl, color_idx=i, category="Finance",
-                                      actual=vals, projection=[None] * len(yrs),
-                                      unit="currency", unit_label="USD")
-                                 for i, (lbl, vals) in enumerate(rows.items())])
+            series = [dict(label=lbl, color_idx=i, category="Operations",
+                           actual=vals, projection=[None] * len(yrs), unit="currency", unit_label="USD")
+                      for i, (lbl, vals) in enumerate(rows.items())]
+            series.append(dict(label="Operating Revenue", color_idx=0, category="summary",
+                               actual=totals, projection=[None] * len(yrs), unit="currency", unit_label="USD"))
+            chart = dict(years=yrs, base_year=yrs[-1], series=series)
+            summary = {"revenue": totals[0], "net_ocf": net_ocf, "year": yr0,
+                       "debt": (ember_loans["totals"]["balance"] if ember_loans else None),
+                       "wrate": (ember_loans["totals"]["wrate"] if ember_loans else None)}
 
     # strategy tab data
     conn = db.get_db()
@@ -654,7 +669,7 @@ def company(slug):
         chart=chart, risk=risk, strategies=strategies,
         phase_hist=phase_hist, phases_all=phases_all, base_year=BASE_YEAR,
         years=list(range(HIST_START, PROJ_END + 1)),
-        ember_live=ember_live, ember_asof=ember_asof, ember_loans=ember_loans,
+        ember_live=ember_live, ember_asof=ember_asof, ember_loans=ember_loans, summary=summary,
     )
 
 

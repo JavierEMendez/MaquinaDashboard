@@ -38,6 +38,44 @@ def _kpi(name, category, current, cagr=0.10, unit="number", unit_label="",
                 integer=integer, type=type)
 
 
+# ── Authoritative tab taxonomy ─────────────────────────────────────
+# Commercial = sales & project performance; Operations = company financial
+# health (revenue sources, margins, expenses, net operating cashflow);
+# Finance = lines of credit / debt. Overrides the per-KPI category above and
+# is also applied to the live DB via remap_categories().
+CATEGORY_BY_COMPANY = {
+    "ember": {"Corporate Cashflow": "Operations", "Corporate Revenues": "Operations",
+              "Bookkeeping Fee": "Operations", "Development Fees": "Operations",
+              "G&A Expense": "Operations", "Units Closed": "Commercial", "Lots Delivered": "Commercial"},
+    "ranman": {"Apartados": "Commercial", "Firmas": "Commercial", "Escrituras": "Commercial",
+               "Inventario de Lotes": "Commercial", "Margen UAIR %": "Operations",
+               "UAIR": "Operations", "Ingresos": "Operations"},
+    "ips": {"Inversión": "Operations", "Inversión IPS": "Operations",
+            "Inversión Ranman Energy": "Operations", "Acumulado Inversión": "Operations",
+            "Capacidad Instalada": "Operations", "Generación": "Commercial", "Clientes": "Commercial"},
+    "mezcal-local": {"Sell-in Mexico": "Commercial", "Sell-in USA": "Commercial",
+                     "Puntos de Venta": "Commercial", "Margen Bruto": "Operations",
+                     "UAIR": "Operations", "Producción": "Operations"},
+}
+
+
+def _category_for(slug, name, default):
+    return CATEGORY_BY_COMPANY.get(slug, {}).get(name, default)
+
+
+def remap_categories(conn):
+    """Sync existing unified_items.category in the live DB to the taxonomy above."""
+    cur = conn.cursor()
+    for slug, mapping in CATEGORY_BY_COMPANY.items():
+        for name, cat in mapping.items():
+            cur.execute(
+                "UPDATE unified_items SET category = %s WHERE name = %s AND "
+                "company_id = (SELECT id FROM companies WHERE slug = %s)",
+                (cat, name, slug))
+    conn.commit()
+    cur.close()
+
+
 COMPANIES = [
     # ── EMBER ─────────────────────────────────────────────────────
     dict(
@@ -268,8 +306,8 @@ def seed(conn):
                 """INSERT INTO unified_items
                    (company_id,name,type,category,unit,unit_label,is_dashboard,in_chart,display_order)
                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
-                (cid, k["name"], k["type"], k["category"], k["unit"], k["unit_label"],
-                 k["dashboard"], k["in_chart"], order),
+                (cid, k["name"], k["type"], _category_for(c["slug"], k["name"], k["category"]),
+                 k["unit"], k["unit_label"], k["dashboard"], k["in_chart"], order),
             )
             iid = cur.fetchone()["id"]
             allow_neg = k["current"] < 0
