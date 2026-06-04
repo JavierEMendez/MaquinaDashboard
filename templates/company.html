@@ -68,6 +68,42 @@
 
   {# ───────── Dashboard ───────── #}
   <div class="tab-panel active" data-panel="dashboard">
+    {% if valuation %}
+    <div class="card mb-24">
+      <div class="row between wrap" style="gap:18px;align-items:center;">
+        <div>
+          <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.14em;color:var(--mq-subtle);font-weight:700;">Current Valuation</div>
+          <div style="font-family:var(--font-display);font-size:30px;font-weight:700;color:var(--mq-ink-2);line-height:1.15;">{{ valuation.value_usd | money }}</div>
+          <div class="subtle" style="font-size:12px;margin-top:3px;">
+            {% if valuation.model == 'sponsor' %}
+              Sponsor model · FRE {{ valuation.fre_value | num }} {{ c.value_unit }} × {{ '%.0f'|format(fin.fre_multiple) }} + promote PV {{ valuation.promote_pv | money }}
+            {% else %}
+              {{ valuation.equity | num }} {{ c.value_unit }} equity · EV {{ valuation.ev | num }} {{ c.value_unit }} ({{ '%.1f'|format(fin.ebitda_multiple) }}× EBITDA) − debt {{ fin.total_debt | num }} {{ c.value_unit }}
+            {% endif %}
+          </div>
+        </div>
+        <div class="row wrap" style="gap:26px;align-items:flex-start;">
+          <div style="text-align:right;">
+            <div class="subtle" style="font-size:10px;text-transform:uppercase;letter-spacing:0.12em;font-weight:700;margin-bottom:4px;">Model</div>
+            <span class="badge {{ 'accent' if valuation.model == 'sponsor' }}">{{ 'Sponsor (FRE + carry)' if valuation.model == 'sponsor' else 'EV / EBITDA' }}</span>
+          </div>
+          {% if exitr and exitr.moic is not none %}
+          <div style="text-align:right;">
+            <div class="subtle" style="font-size:10px;text-transform:uppercase;letter-spacing:0.12em;font-weight:700;">Proj. Exit MOIC</div>
+            <div style="font-family:var(--font-display);font-size:20px;font-weight:700;color:var(--mq-accent);">{{ '%.2fx'|format(exitr.moic) }}</div>
+          </div>
+          {% endif %}
+          {% if hold and hold.hold_years is not none %}
+          <div style="text-align:right;">
+            <div class="subtle" style="font-size:10px;text-transform:uppercase;letter-spacing:0.12em;font-weight:700;">Hold</div>
+            <div style="font-family:var(--font-display);font-size:20px;font-weight:700;color:var(--mq-ink-2);">{{ '%.1f yrs'|format(hold.hold_years) }}</div>
+          </div>
+          {% endif %}
+        </div>
+      </div>
+      {% if is_admin %}<div class="subtle" style="font-size:11px;margin-top:10px;">Driven by the inputs on the <strong>Operations</strong> tab (EBITDA × multiple − debt{{ ' / FRE + promotes' if valuation.model == 'sponsor' }}). Edit there to update.</div>{% endif %}
+    </div>
+    {% endif %}
     {% if summary %}
     <div class="row wrap" style="gap:8px;margin-bottom:14px;align-items:center;">
       <span class="badge good">● Live from Ember</span>
