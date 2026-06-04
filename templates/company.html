@@ -269,6 +269,44 @@
 
   {# ───────── Strategy ───────── #}
   <div class="tab-panel" data-panel="strategy">
+    {# ---- Investment & Control (hold / takeover / target) ---- #}
+    {% set stl = 'font-size:10px;letter-spacing:0.12em;text-transform:uppercase;color:var(--mq-subtle);font-weight:700;' %}
+    {% set stv = 'font-family:var(--font-display);font-size:22px;font-weight:700;color:var(--mq-ink-2);line-height:1.2;' %}
+    <div class="card mb-24">
+      <div class="card-head"><div>
+        <div class="card-title">Investment &amp; Control</div>
+        <div class="card-sub">Hold period runs from the investment date; the lifecycle phases run from operational takeover.</div>
+      </div></div>
+      <div class="row wrap" style="gap:36px;align-items:flex-start;">
+        <div><div style="{{ stl }}">Hold Period</div>
+          <div style="{{ stv }}">{{ '%.1f yrs'|format(hold.hold_years) if hold.hold_years is not none else '—' }}</div>
+          <div class="subtle" style="font-size:11.5px;">since {{ hold.hold_start_label }}</div></div>
+        <div><div style="{{ stl }}">Under Control</div>
+          <div style="{{ stv }}">{{ '%.1f yrs'|format(hold.control_years) if hold.control_years is not none else '—' }}</div>
+          <div class="subtle" style="font-size:11.5px;">since {{ hold.takeover_label }}</div></div>
+        <div><div style="{{ stl }}">Vintage</div>
+          <div style="{{ stv }}">{{ hold.vintage or '—' }}</div>
+          <div class="subtle" style="font-size:11.5px;">investment year</div></div>
+        <div><div style="{{ stl }}">Target Hold</div>
+          <div style="{{ stv }}">{{ ('%g yrs'|format(hold.target_hold)) if hold.target_hold else '—' }}</div>
+          <div class="subtle" style="font-size:11.5px;">{% if hold.exit_label %}exit ~ {{ hold.exit_label }}{% else %}no target set{% endif %}</div></div>
+        {% if hold.over_due %}<div style="align-self:center;"><span class="badge" style="border-color:#D2452F;color:#D2452F;">Past target hold</span></div>{% endif %}
+      </div>
+      {% if is_admin %}
+      <details class="editor" style="margin-top:16px;">
+        <summary>Edit hold &amp; control dates</summary>
+        <form class="editor-body" method="POST" action="{{ url_for('update_hold', slug=c.slug) }}">
+          <div class="grid grid-3" style="gap:10px;">
+            <div><label class="fld-label">Hold start (investment)</label><input class="input" type="month" name="hold_start" value="{{ '%04d-%02d'|format(c.hold_start_year, c.hold_start_month or 1) if c.hold_start_year else '' }}"></div>
+            <div><label class="fld-label">Takeover (control)</label><input class="input" type="month" name="takeover" value="{{ '%04d-%02d'|format(c.takeover_year, c.takeover_month or 1) if c.takeover_year else '' }}"></div>
+            <div><label class="fld-label">Target hold (years)</label><input class="input" type="number" step="0.5" min="0" name="target_hold_years" value="{{ c.target_hold_years if c.target_hold_years is not none else '' }}"></div>
+          </div>
+          <button class="btn btn-primary btn-sm mt-8" type="submit">Save dates</button>
+        </form>
+      </details>
+      {% endif %}
+    </div>
+
     <div class="grid grid-2 mb-24">
       {# ---- Lifecycle Timeline ---- #}
       <div class="card">

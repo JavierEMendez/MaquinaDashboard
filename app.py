@@ -97,6 +97,16 @@ def _boot():
             cur.execute("INSERT INTO app_settings (key,value) VALUES ('financials_v2','1') "
                         "ON CONFLICT (key) DO NOTHING")
             conn.commit()
+        # Seed hold/takeover dates once: default hold start to the takeover
+        # year and a 5-year target hold (both editable per company afterwards).
+        cur.execute("SELECT value FROM app_settings WHERE key = 'hold_dates_v1'")
+        if not cur.fetchone():
+            cur.execute("UPDATE companies SET hold_start_year = takeover_year "
+                        "WHERE hold_start_year IS NULL AND takeover_year IS NOT NULL")
+            cur.execute("UPDATE companies SET target_hold_years = 5 WHERE target_hold_years IS NULL")
+            cur.execute("INSERT INTO app_settings (key,value) VALUES ('hold_dates_v1','1') "
+                        "ON CONFLICT (key) DO NOTHING")
+            conn.commit()
         # 12-month retention on the activity ledger (once per process boot).
         cur.execute("DELETE FROM activity_log WHERE ts < NOW() - INTERVAL '12 months'")
         conn.commit()
@@ -461,7 +471,8 @@ def company_by_slug(slug):
     cur = conn.cursor()
     cur.execute(
         "SELECT id, slug, name, industry, country, country_code, currency, value_unit, "
-        "accent, description, takeover_year, display_order, archived, "
+        "accent, description, takeover_year, takeover_month, hold_start_year, "
+        "hold_start_month, target_hold_years, display_order, archived, "
         "(logo IS NOT NULL) AS has_logo, octet_length(logo) AS logo_ver "
         "FROM companies WHERE slug = %s", (slug,))
     row = cur.fetchone()
@@ -803,13 +814,18 @@ def strategy():
     cur.execute("SELECT * FROM strategy_phases ORDER BY phase_order")
     phases = cur.fetchall()
     cur.execute("""
-        SELECT c.id, c.slug, c.name, c.accent, c.industry, c.takeover_year,
+        SELECT c.id, c.slug, c.name, c.accent, c.industry, c.takeover_year, c.takeover_month,
+               c.hold_start_year, c.hold_start_month, c.target_hold_years,
                (c.logo IS NOT NULL) AS has_logo, octet_length(c.logo) AS logo_ver,
                r.internal_risk, r.external_risk
         FROM companies c LEFT JOIN company_risks r ON r.company_id = c.id
         WHERE c.archived = FALSE ORDER BY c.display_order
     """)
     comps = cur.fetchall()
+    # invested capital per company (USD) — the weight for hold analytics
+    cur.execute("SELECT company_id, COALESCE(SUM(investment), 0) AS invested "
+                "FROM portfolio_cashflows GROUP BY company_id")
+    invested_by_co = {r["company_id"]: float(r["invested"] or 0) for r in cur.fetchall()}
     # full phase history per company (with month precision)
     cur.execute("""
         SELECT ph.company_id, sp.phase_order, sp.name, sp.color,
@@ -851,6 +867,8 @@ def strategy():
     comp_list = []
     for c in comps:
         cp = cur_phase.get(c["id"])
+        hold_years = _period_years(c["hold_start_year"], c["hold_start_month"])
+        target = c["target_hold_years"]
         comp_list.append(dict(
             id=c["id"], slug=c["slug"], name=c["name"], accent=c["accent"], industry=c["industry"],
             has_logo=c["has_logo"], logo_ver=c["logo_ver"],
@@ -860,7 +878,10 @@ def strategy():
             phase_order=cp["phase_order"] if cp else 0,
             phase_color=cp["color"] if cp else "#8A9199",
             phase_window=phase_window.get(c["id"]),
-            years_held=BASE_YEAR - c["takeover_year"] if c["takeover_year"] else None,
+            hold_years=hold_years,
+            vintage=c["hold_start_year"],
+            target_hold=target,
+            over_due=(hold_years is not None and target and hold_years > target),
         ))
 
     # group companies under each phase
@@ -868,7 +889,39 @@ def strategy():
         p_companies = [c for c in comp_list if c["phase_order"] == p["phase_order"]]
         p["_companies"] = p_companies
 
-    return render_template("strategy.html", phases=phases, comps=comp_list, base_year=BASE_YEAR)
+    # ── Portfolio hold analytics ──
+    # Capital-weighted average hold, vintage spread, and aging buckets
+    # (capital + company count by how long each asset has been held).
+    held = [c for c in comp_list if c["hold_years"] is not None]
+    wnum = sum(c["hold_years"] * invested_by_co.get(c["id"], 0) for c in held)
+    wden = sum(invested_by_co.get(c["id"], 0) for c in held)
+    if wden:
+        wavg_hold = wnum / wden
+    else:                                    # no invested capital → simple mean
+        wavg_hold = (sum(c["hold_years"] for c in held) / len(held)) if held else None
+    avg_target = ([c["target_hold"] for c in comp_list if c["target_hold"]]
+                  and sum(c["target_hold"] for c in comp_list if c["target_hold"])
+                  / len([c for c in comp_list if c["target_hold"]])) or None
+
+    vintages = {}
+    for c in held:
+        if c["vintage"]:
+            vintages.setdefault(c["vintage"], []).append(c["name"])
+    vintage_list = [dict(year=y, names=vintages[y], n=len(vintages[y])) for y in sorted(vintages)]
+
+    BUCKETS = [("<2 yrs", 0, 2), ("2–4 yrs", 2, 4), ("4–6 yrs", 4, 6), ("6+ yrs", 6, 999)]
+    aging = []
+    for label, lo, hi in BUCKETS:
+        members = [c for c in held if lo <= c["hold_years"] < hi]
+        aging.append(dict(label=label, n=len(members),
+                          capital=sum(invested_by_co.get(c["id"], 0) for c in members)))
+    total_invested = sum(invested_by_co.get(c["id"], 0) for c in comp_list)
+    hold_analytics = dict(wavg_hold=wavg_hold, avg_target=avg_target,
+                          vintages=vintage_list, aging=aging,
+                          total_invested=total_invested, n_held=len(held))
+
+    return render_template("strategy.html", phases=phases, comps=comp_list,
+                           hold=hold_analytics, base_year=BASE_YEAR)
 
 
 def fetch_ember_operations():
@@ -1180,6 +1233,20 @@ def company(slug):
     cur.close()
     conn.close()
 
+    # Hold / control derived metrics (institutional PE model)
+    hold_years = _period_years(c["hold_start_year"], c["hold_start_month"])
+    hold = dict(
+        hold_start_label=_fmt_month(c["hold_start_year"], c["hold_start_month"]),
+        takeover_label=_fmt_month(c["takeover_year"], c["takeover_month"]),
+        hold_years=hold_years,
+        control_years=_period_years(c["takeover_year"], c["takeover_month"]),
+        vintage=c["hold_start_year"],
+        target_hold=c["target_hold_years"],
+        exit_label=_exit_label(c["hold_start_year"], c["hold_start_month"], c["target_hold_years"]),
+        over_due=(hold_years is not None and c["target_hold_years"]
+                  and hold_years > c["target_hold_years"]),
+    )
+
     return render_template(
         "company.html",
         c=c, items=items, dashboard_kpis=dashboard_kpis, by_category=by_category,
@@ -1188,7 +1255,7 @@ def company(slug):
         years=list(range(HIST_START, PROJ_END + 1)),
         ember_live=ember_live, ember_asof=ember_asof, ember_loans=ember_loans,
         ember_returns=ember_returns, summary=summary, fin=fin, leverage=leverage,
-        valuation=valuation, cap=cap,
+        valuation=valuation, cap=cap, hold=hold,
     )
 
 
@@ -1239,6 +1306,28 @@ def _fmt_month(year, month=1):
         return str(year)
 
 
+def _period_years(year, month):
+    """Elapsed years (decimal) from a (year, month) anchor to today.
+    None if no anchor year. Used for hold period / years under control."""
+    mi = _month_index(year, month)
+    if mi is None:
+        return None
+    today = datetime.date.today()
+    return max(0.0, (today.year * 12 + (today.month - 1) - mi) / 12.0)
+
+
+def _exit_label(year, month, hold_years):
+    """Expected-exit month label = anchor (year, month) + hold_years."""
+    mi = _month_index(year, month)
+    if mi is None or hold_years in (None, ""):
+        return None
+    try:
+        ex = mi + int(round(float(hold_years) * 12))
+    except (TypeError, ValueError):
+        return None
+    return _fmt_month(ex // 12, ex % 12 + 1)
+
+
 @app.route("/company/<slug>/risk", methods=["POST"])
 @login_required
 def update_risk(slug):
@@ -1262,6 +1351,32 @@ def update_risk(slug):
          _rating(f.get("internal_risk")), _rating(f.get("external_risk")), commentary))
     conn.commit(); cur.close(); conn.close()
     flash("Risk ratings updated.", "ok")
+    return redirect(url_for("company", slug=slug, tab="strategy"))
+
+
+@app.route("/company/<slug>/hold", methods=["POST"])
+@login_required
+def update_hold(slug):
+    """Edit a company's investment hold-start date, operational takeover
+    date (both month-precise), and target hold horizon (years)."""
+    if not session.get("is_admin"):
+        abort(403)
+    c = _company_or_404(slug)
+    f = request.form
+    hy, hm = _parse_month(f.get("hold_start"), 1)
+    ty, tm = _parse_month(f.get("takeover"), 1)
+    target = f.get("target_hold_years")
+    try:
+        target = float(target) if target not in (None, "") else None
+    except (TypeError, ValueError):
+        target = None
+    conn = db.get_db(); cur = conn.cursor()
+    cur.execute(
+        "UPDATE companies SET hold_start_year=%s, hold_start_month=%s, "
+        "takeover_year=%s, takeover_month=%s, target_hold_years=%s WHERE id=%s",
+        (hy, hm, ty, tm, target, c["id"]))
+    conn.commit(); cur.close(); conn.close()
+    flash("Hold & control dates updated.", "ok")
     return redirect(url_for("company", slug=slug, tab="strategy"))
 
 

@@ -52,10 +52,37 @@
     <div class="row between" style="font-size:12px;margin-top:8px;"><span class="muted">Timeline</span>
       <span class="subtle tnum" style="font-weight:600;">{{ c.phase_window }}</span></div>
     {% endif %}
-    <div class="row between" style="font-size:12.5px;margin-top:8px;"><span class="muted">Years held</span>
-      <span class="tnum" style="font-weight:600;">{{ c.years_held if c.years_held is not none else '—' }}</span></div>
+    <div class="row between" style="font-size:12.5px;margin-top:8px;"><span class="muted">Hold period</span>
+      <span class="tnum" style="font-weight:600;{{ 'color:#D2452F;' if c.over_due }}">{{ '%.1f yrs'|format(c.hold_years) if c.hold_years is not none else '—' }}</span></div>
   </a>
   {% endfor %}
+</div>
+
+<div class="card mb-24">
+  <div class="card-head"><div>
+    <div class="card-title">Portfolio Hold &amp; Vintage</div>
+    <div class="card-sub">Capital-weighted hold period, NAV aging and vintage spread across {{ hold.n_held }} held compan{{ 'y' if hold.n_held == 1 else 'ies' }}.</div>
+  </div></div>
+  <div class="grid grid-4 mb-24">
+    <div class="kpi"><div class="kpi-top"><span class="kpi-label">Wtd-Avg Hold</span></div><div class="kpi-value">{{ '%.1f yrs'|format(hold.wavg_hold) if hold.wavg_hold is not none else '—' }}</div><div class="kpi-foot"><span class="kpi-sub">weighted by invested capital</span></div></div>
+    <div class="kpi"><div class="kpi-top"><span class="kpi-label">Capital Deployed</span></div><div class="kpi-value">{{ hold.total_invested | money }}</div></div>
+    <div class="kpi"><div class="kpi-top"><span class="kpi-label">Avg Target Hold</span></div><div class="kpi-value">{{ '%g yrs'|format(hold.avg_target) if hold.avg_target else '—' }}</div></div>
+    <div class="kpi"><div class="kpi-top"><span class="kpi-label">Companies Held</span></div><div class="kpi-value">{{ hold.n_held }}</div></div>
+  </div>
+
+  <div style="font-size:10px;letter-spacing:0.14em;text-transform:uppercase;color:var(--mq-subtle);font-weight:700;margin-bottom:10px;">NAV aging — invested capital by hold age</div>
+  <div class="grid grid-4 mb-24">
+    {% for b in hold.aging %}
+    <div class="summary-card"><div class="lbl">{{ b.label }}</div><div class="val">{{ b.capital | money }}</div><div class="subtle" style="font-size:11px;">{{ b.n }} {{ 'company' if b.n == 1 else 'companies' }}</div></div>
+    {% endfor %}
+  </div>
+
+  <div style="font-size:10px;letter-spacing:0.14em;text-transform:uppercase;color:var(--mq-subtle);font-weight:700;margin-bottom:10px;">Vintage</div>
+  <div class="row wrap" style="gap:8px;">
+    {% for v in hold.vintages %}
+    <span class="badge" title="{{ v.names | join(', ') }}">{{ v.year }} · {{ v.n }}</span>
+    {% else %}<span class="subtle" style="font-size:12px;">No vintages recorded yet.</span>{% endfor %}
+  </div>
 </div>
 
 <div class="card">
