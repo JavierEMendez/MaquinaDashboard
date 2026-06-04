@@ -1130,7 +1130,7 @@ def ember_diagnostics():
     Never writes. Returns connection status, available report types, and the
     shape of the latest 'operations' report so we can map KPIs precisely."""
     info = {"configured": bool(os.environ.get("EMBER_DATABASE_URL", "").strip()),
-            "connected": False, "error": None, "report_types": []}
+            "connected": False, "error": None, "report_types": [], "capital_raw": None}
     if not info["configured"]:
         return info
     try:
@@ -1144,6 +1144,37 @@ def ember_diagnostics():
             (r["report_type"], r["n"], r["last"].strftime("%Y-%m-%d") if r["last"] else "—")
             for r in ecur.fetchall()
         ]
+
+        def _shape(dd):
+            if isinstance(dd, dict):
+                sh = {"keys": sorted(dd.keys())}
+                for k, v in dd.items():
+                    if isinstance(v, list) and v:
+                        sh[k + "[]"] = {"len": len(v), "item0": sorted(v[0].keys()) if isinstance(v[0], dict) else type(v[0]).__name__}
+                    elif isinstance(v, dict) and v:
+                        sh[k + "{}"] = sorted(list(v.keys()))[:8]
+                return sh
+            if isinstance(dd, list):
+                return {"list_len": len(dd), "item0": sorted(dd[0].keys()) if dd and isinstance(dd[0], dict) else None}
+            return type(dd).__name__
+        cap = {}
+        for rt in ("ember_capital_commitments", "ember_capital_pipeline_manual",
+                   "ember_capital_pipeline_visibility", "ember_capital_settings", "ember_capital_asset_classes"):
+            ecur.execute("SELECT data FROM reports WHERE report_type = %s ORDER BY uploaded_at DESC LIMIT 1", (rt,))
+            r = ecur.fetchone()
+            if r and r.get("data"):
+                cap[rt] = _shape(r["data"])
+        try:
+            ecur.execute("SELECT name, COALESCE(status,'Active') AS status, outputs FROM projects "
+                         "WHERE COALESCE(status,'Active') = 'Active' LIMIT 1")
+            pr = ecur.fetchone()
+            if pr:
+                o = pr.get("outputs") or {}
+                cap["projects_active_row"] = {"name": pr.get("name"), "status": pr.get("status"),
+                                              "outputs_keys": sorted(o.keys()) if isinstance(o, dict) else type(o).__name__}
+        except Exception as e:
+            cap["projects_error"] = str(e)[:200]
+        info["capital_raw"] = json.dumps(cap, default=str, ensure_ascii=False)[:2800]
         info["connected"] = True
         ecur.close(); econn.close()
     except Exception as e:
