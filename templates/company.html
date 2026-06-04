@@ -168,6 +168,96 @@
       <p class="subtle" style="font-size:12px;margin-top:12px;">Promote is the carried interest Ember/partners earn above LP preferred returns — a key driver of Ember's valuation while corporate EBITDA is near breakeven.</p>
     </div>
     {% endif %}
+
+    {# ── Community Sales (MPCs) — live from Ember ── #}
+    {% if sales %}
+    <div class="card mb-24">
+      <div class="row wrap between" style="gap:8px;align-items:center;margin-bottom:16px;">
+        <div class="card-title">Community Sales — Master-Planned Communities</div>
+        <span class="row" style="gap:8px;align-items:center;"><span class="badge good">● Live from Ember</span>
+          <span class="subtle" style="font-size:12px;">{% if sales.as_of %}synced {{ sales.as_of }}{% endif %}</span></span>
+      </div>
+      <div class="grid grid-3">
+        {% for cm in sales.communities %}
+        <div class="summary-card">
+          <div class="lbl">{{ cm.name }}</div>
+          <div class="val">{{ cm.total_net if cm.total_net is not none else '—' }} <span style="font-size:12px;font-weight:500;color:var(--mq-subtle);">net sales</span></div>
+          <div class="subtle" style="font-size:12px;margin-top:6px;line-height:1.7;">
+            {% if cm.gross_total is not none %}{{ cm.gross_total }} gross · {{ cm.canc_total or 0 }} cancels<br>{% endif %}
+            {% if cm.ytd_net is not none %}YTD {{ cm.ytd_net }}{% if cm.ytd_pace is not none %} · {{ cm.ytd_pace }}/mo pace{% endif %}<br>{% endif %}
+            {% if cm.avg_price %}avg price {{ cm.avg_price }}{% endif %}
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+
+    {# ── LightHaven — BTR / MF leasing ── #}
+    {% if verticals and verticals.lighthaven %}
+    {% set lh = verticals.lighthaven %}
+    <div class="card mb-24">
+      <div class="row wrap between" style="gap:8px;align-items:center;margin-bottom:16px;">
+        <div class="card-title">LightHaven — BTR / Multifamily Leasing</div>
+        <span class="badge good">● Live from Ember</span>
+      </div>
+      <div class="grid grid-4 mb-24">
+        <div class="kpi"><div class="kpi-top"><span class="kpi-label">Total Units</span></div><div class="kpi-value">{{ lh.total }}</div></div>
+        <div class="kpi"><div class="kpi-top"><span class="kpi-label">Occupied</span></div><div class="kpi-value">{{ '%.0f%%'|format(lh.occupied_pct) if lh.occupied_pct is not none else '—' }}</div><div class="kpi-foot"><span class="kpi-sub">{{ lh.occupied }} of {{ lh.total }} units</span></div></div>
+        <div class="kpi"><div class="kpi-top"><span class="kpi-label">Leased</span></div><div class="kpi-value">{{ '%.0f%%'|format(lh.leased_pct) if lh.leased_pct is not none else '—' }}</div><div class="kpi-foot"><span class="kpi-sub">incl. signed / model</span></div></div>
+        <div class="kpi"><div class="kpi-top"><span class="kpi-label">Avg Rent</span></div><div class="kpi-value">{{ "${:,.0f}".format(lh.rent_avg) if lh.rent_avg else '—' }}</div><div class="kpi-foot"><span class="kpi-sub">per month</span></div></div>
+      </div>
+      {% if lh.rents %}
+      <div class="table-scroll" style="max-height:none;">
+        <table class="data-table">
+          <thead><tr><th style="text-align:left;">Floorplan</th><th>Avg Rent</th><th>Min</th><th>Max</th></tr></thead>
+          <tbody>
+            {% for r in lh.rents %}
+            <tr><td style="text-align:left;">{{ r.fp }}</td>
+              <td>{{ "${:,.0f}".format(r.avg) if r.avg else '—' }}</td>
+              <td>{{ "${:,.0f}".format(r.min) if r.min else '—' }}</td>
+              <td>{{ "${:,.0f}".format(r.max) if r.max else '—' }}</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% endif %}
+      <div class="row wrap" style="gap:8px;margin-top:12px;">
+        {% for st, n in lh.status.items() %}<span class="badge">{{ st }} · {{ n }}</span>{% endfor %}
+      </div>
+    </div>
+    {% endif %}
+
+    {# ── The Hawthorne — condo sales ── #}
+    {% if verticals and verticals.hawthorne %}
+    {% set hw = verticals.hawthorne %}
+    <div class="card mb-24">
+      <div class="row wrap between" style="gap:8px;align-items:center;margin-bottom:16px;">
+        <div class="card-title">The Hawthorne — Condominium Sales</div>
+        <span class="badge good">● Live from Ember</span>
+      </div>
+      <div class="grid grid-4 mb-24">
+        <div class="kpi"><div class="kpi-top"><span class="kpi-label">Total Units</span></div><div class="kpi-value">{{ hw.total }}</div></div>
+        <div class="kpi"><div class="kpi-top"><span class="kpi-label">Sold</span></div><div class="kpi-value">{{ hw.sold_n }}</div><div class="kpi-foot"><span class="kpi-sub">{{ '%.0f%%'|format(hw.sold_n / hw.total * 100) if hw.total else '—' }} of {{ hw.total }}</span></div></div>
+        <div class="kpi"><div class="kpi-top"><span class="kpi-label">Sales Value</span></div><div class="kpi-value">{{ hw.sold_value | money }}</div><div class="kpi-foot"><span class="kpi-sub">closed / contracted</span></div></div>
+        <div class="kpi"><div class="kpi-top"><span class="kpi-label">Avg $/SF</span></div><div class="kpi-value">{{ "${:,.0f}".format(hw.avg_ppsf) if hw.avg_ppsf else '—' }}</div><div class="kpi-foot"><span class="kpi-sub">avg price {{ hw.avg_price | money }}</span></div></div>
+      </div>
+      <div class="table-scroll">
+        <table class="data-table">
+          <thead><tr><th style="text-align:left;">Unit</th><th style="text-align:left;">Floorplan</th><th>SF</th><th>$/SF</th><th>Price</th><th style="text-align:left;">Status</th></tr></thead>
+          <tbody>
+            {% for u in hw.units %}
+            <tr><td style="text-align:left;">{{ u.title }}</td><td style="text-align:left;">{{ u.fp }}</td>
+              <td>{{ u.sqft }}</td><td>{{ "${:,.0f}".format(u.ppsf) if u.ppsf else '—' }}</td>
+              <td>{{ (u.purchasePrice or u.listPrice) | money }}</td>
+              <td style="text-align:left;"><span class="badge {{ 'good' if (u.status|string|upper) == 'SOLD' }}">{{ u.status }}</span></td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% endif %}
+
     {{ category_panel('Commercial') }}
   </div>
   <div class="tab-panel" data-panel="operations">

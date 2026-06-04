@@ -1255,11 +1255,14 @@ def company(slug):
     # Live Ember overlay (seed fallback). Operating revenues → Operations tab;
     # a cross-tab summary → Dashboard; units/lots → Commercial (coming soon).
     ember_live, ember_asof, ember_loans, ember_returns, summary = False, None, None, None, None
-    cap = None  # Ember Capital (Projects tab) — Ember only
+    cap = None        # Ember Capital (Projects tab) — Ember only
+    verticals = sales = None  # Commercial tab — Ember only
     if c["slug"] == "ember":
         ember_loans = fetch_ember_loans()
         ember_returns = fetch_ember_returns()
         cap = fetch_ember_capital()
+        verticals = fetch_ember_verticals()
+        sales = fetch_ember_sales()
         op = fetch_ember_operations()
         if op and op["totals"]:
             ember_live, ember_asof = True, op["as_of"]
@@ -1338,6 +1341,7 @@ def company(slug):
         ember_live=ember_live, ember_asof=ember_asof, ember_loans=ember_loans,
         ember_returns=ember_returns, summary=summary, fin=fin, leverage=leverage,
         valuation=valuation, cap=cap, hold=hold, exitr=exitr,
+        verticals=verticals, sales=sales,
     )
 
 
@@ -1618,12 +1622,117 @@ def archive_company(cid):
     return redirect(url_for("manage_companies"))
 
 
+def fetch_ember_verticals():
+    """Ember 'Vertical' communities from the live Ember DB (read-only):
+      • LightHaven — BTR/MF leasing: vd_units occupancy + rents by floorplan
+      • The Hawthorne — condo sales: vd_hawthorne_data units
+    Mirrors Ember's own occupancy definition. Returns None on any problem."""
+    try:
+        econn = db.get_ember_db()
+        if not econn:
+            return None
+        ecur = econn.cursor()
+
+        # ── LightHaven leasing ──
+        ecur.execute("SELECT status, COUNT(*) AS n FROM vd_units "
+                     "WHERE vertical = 'lighthaven' GROUP BY status")
+        status = {(r["status"] or "—"): r["n"] for r in ecur.fetchall()}
+        total = sum(status.values())
+        occ = status.get("Tenant Occupied", 0) + status.get("Renewal", 0)
+        leased = occ + status.get("Leased", 0) + status.get("Model", 0)  # Ember's definition
+        ecur.execute("SELECT data FROM vd_rents_data WHERE vertical='lighthaven' "
+                     "ORDER BY created_at DESC LIMIT 1")
+        rr = ecur.fetchone()
+        rents, rent_avg = [], None
+        if rr and isinstance(rr["data"], dict):
+            for fp, v in (rr["data"].get("byFloorplan") or {}).items():
+                if str(fp).startswith("*") or not isinstance(v, dict):
+                    continue
+                if str(fp).upper() == "TOTAL":
+                    rent_avg = v.get("avg")
+                else:
+                    rents.append(dict(fp=fp, avg=v.get("avg"), min=v.get("min"), max=v.get("max")))
+        lighthaven = dict(
+            total=total, occupied=occ, leased=leased, status=status, rents=rents, rent_avg=rent_avg,
+            occupied_pct=(occ / total * 100 if total else None),
+            leased_pct=(leased / total * 100 if total else None)) if total else None
+
+        # ── Hawthorne condo sales ──
+        ecur.execute("SELECT data FROM vd_hawthorne_data WHERE vertical='hawthorne' "
+                     "ORDER BY created_at DESC LIMIT 1")
+        hr = ecur.fetchone()
+        hawthorne = None
+        if hr and isinstance(hr["data"], dict):
+            units = [u for u in (hr["data"].get("units") or []) if isinstance(u, dict)]
+            by_status = {}
+            sold_val = sold_ppsf = 0.0
+            sold_n = 0
+            for u in units:
+                st = u.get("status") or "—"
+                by_status[st] = by_status.get(st, 0) + 1
+                if str(st).upper() == "SOLD":
+                    sold_n += 1
+                    sold_val += float(u.get("purchasePrice") or u.get("listPrice") or 0)
+                    sold_ppsf += float(u.get("ppsf") or 0)
+            hawthorne = dict(
+                total=len(units), by_status=by_status, sold_n=sold_n, sold_value=sold_val,
+                avg_price=(sold_val / sold_n if sold_n else None),
+                avg_ppsf=(sold_ppsf / sold_n if sold_n else None),
+                units=sorted(units, key=lambda u: (str(u.get("status")), str(u.get("title")))))
+        ecur.close()
+        econn.close()
+        if not lighthaven and not hawthorne:
+            return None
+        return dict(lighthaven=lighthaven, hawthorne=hawthorne)
+    except Exception as e:  # pragma: no cover
+        app.logger.warning("Ember verticals fetch failed: %s", e)
+        return None
+
+
+def fetch_ember_sales():
+    """Community sales (MPCs) payload mirrored into the Ember DB by the Ember
+    app (reports.report_type='sales'). Returns None until the snapshot syncs."""
+    try:
+        econn = db.get_ember_db()
+        if not econn:
+            return None
+        ecur = econn.cursor()
+        ecur.execute("SELECT data, uploaded_at FROM reports WHERE report_type='sales' "
+                     "ORDER BY uploaded_at DESC LIMIT 1")
+        row = ecur.fetchone()
+        ecur.close()
+        econn.close()
+        if not row or not row.get("data"):
+            return None
+        d = row["data"]
+        comms = d.get("communities") or {}
+        order = ["gpd", "hld", "wrg"] + [k for k in comms if k not in ("gpd", "hld", "wrg")]
+        out = []
+        for key in order:
+            c = comms.get(key)
+            if not isinstance(c, dict):
+                continue
+            out.append(dict(
+                key=key, name=c.get("name") or key.upper(),
+                gross_total=c.get("gross_total"), total_net=c.get("total_net"),
+                ytd_net=c.get("ytd_net"), ytd_pace=c.get("ytd_pace"),
+                canc_total=c.get("canc_total"), avg_price=c.get("avg_price"),
+                earliest=c.get("earliest")))
+        if not out:
+            return None
+        return dict(communities=out, generated_at=d.get("generated_at"),
+                    as_of=(row["uploaded_at"].strftime("%Y-%m-%d") if row.get("uploaded_at") else None))
+    except Exception as e:  # pragma: no cover
+        app.logger.warning("Ember sales fetch failed: %s", e)
+        return None
+
+
 def ember_diagnostics():
     """Read-only probe of the Ember Postgres for the admin diagnostic card.
     Never writes. Returns connection status, available report types, and the
     shape of the latest 'operations' report so we can map KPIs precisely."""
     info = {"configured": bool(os.environ.get("EMBER_DATABASE_URL", "").strip()),
-            "connected": False, "error": None, "report_types": [], "verticals_raw": None}
+            "connected": False, "error": None, "report_types": []}
     if not info["configured"]:
         return info
     try:
@@ -1637,51 +1746,6 @@ def ember_diagnostics():
             (r["report_type"], r["n"], r["last"].strftime("%Y-%m-%d") if r["last"] else "—")
             for r in ecur.fetchall()
         ]
-
-        # ── Verticals (vd_*) shape probe — TEMPORARY diagnostic ──
-        vd = {}
-        try:
-            ecur.execute("SELECT vertical, COUNT(*) AS n FROM vd_units GROUP BY vertical")
-            vd["units_by_vertical"] = {r["vertical"]: r["n"] for r in ecur.fetchall()}
-            ecur.execute("SELECT vertical, status, COUNT(*) AS n FROM vd_units "
-                         "GROUP BY vertical, status ORDER BY vertical, status")
-            vd["units_by_status"] = [(r["vertical"], r["status"], r["n"]) for r in ecur.fetchall()]
-            ecur.execute("SELECT * FROM vd_units LIMIT 1")
-            s = ecur.fetchone()
-            vd["unit_columns"] = sorted(s.keys()) if s else None
-        except Exception as e:
-            vd["units_error"] = str(e)[:200]
-        def _latest_vd(tbl, vert):
-            try:
-                ecur.execute("SELECT data FROM " + tbl + " WHERE vertical=%s "
-                             "ORDER BY created_at DESC LIMIT 1", (vert,))
-                r = ecur.fetchone()
-                return r["data"] if r else None
-            except Exception as e:
-                return {"_error": str(e)[:150]}
-        # Hawthorne condo sales — dump a sample unit + bp keys
-        hd = _latest_vd("vd_hawthorne_data", "hawthorne") or {}
-        if isinstance(hd, dict):
-            u = hd.get("units")
-            vd["hawthorne_units"] = ({"len": len(u), "item0": u[0]} if isinstance(u, list) and u
-                                     else type(u).__name__)
-            vd["hawthorne_bp"] = (sorted(hd["bp"].keys())[:25] if isinstance(hd.get("bp"), dict)
-                                  else type(hd.get("bp")).__name__)
-        # LightHaven leasing pace + rents
-        lp = _latest_vd("vd_leasing_pace_data", "lighthaven") or {}
-        if isinstance(lp, dict):
-            vd["leasing_pace"] = {"months_len": len(lp.get("months") or []),
-                                  "months": (lp.get("months") or [])[:4],
-                                  "actual": (lp.get("actual") or [])[:4],
-                                  "budget": (lp.get("budget") or [])[:4]}
-        rd = _latest_vd("vd_rents_data", "lighthaven") or {}
-        bf = rd.get("byFloorplan") if isinstance(rd, dict) else None
-        if isinstance(bf, dict):
-            k0 = next(iter(bf), None)
-            vd["rents_byFloorplan"] = {"keys": list(bf.keys())[:10], "sample_key": k0, "sample_val": bf.get(k0)}
-        elif isinstance(bf, list):
-            vd["rents_byFloorplan"] = {"list_len": len(bf), "item0": bf[0] if bf else None}
-        info["verticals_raw"] = json.dumps(vd, default=str, ensure_ascii=False)[:4200]
 
         info["connected"] = True
         ecur.close(); econn.close()
