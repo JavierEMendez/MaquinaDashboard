@@ -764,13 +764,18 @@ def fetch_ember_capital():
         if not econn:
             return None
         ecur = econn.cursor()
-        ecur.execute("SELECT data FROM reports WHERE report_type = 'returns' "
-                     "ORDER BY uploaded_at DESC LIMIT 1")
-        row = ecur.fetchone()
+        def _latest(rt):
+            ecur.execute("SELECT data FROM reports WHERE report_type = %s "
+                         "ORDER BY uploaded_at DESC LIMIT 1", (rt,))
+            r = ecur.fetchone()
+            return (r["data"] if r else None) or {}
+        d = _latest("returns")
+        pipe_blob = _latest("ember_capital_pipeline_manual")
+        vis_blob = _latest("ember_capital_pipeline_visibility")
+        commit_blob = _latest("ember_capital_commitments")
         ecur.close(); econn.close()
-        if not row or not row.get("data"):
+        if not d:
             return None
-        d = row["data"]
         K = 1000.0
         months = [str(m) for m in (d.get("months") or [])]
         today_iso = datetime.date.today().isoformat()
@@ -823,7 +828,32 @@ def fetch_ember_capital():
                 if months[i][:4] == cur_year and months[i] <= today_iso:
                     dist_ytd += dv * K
         active.sort(key=lambda a: -a["equity"])
+
+        # ── Pipeline (manual blob, minus hidden) — contributions/distributions are raw USD ──
+        hidden = set(vis_blob.get("hidden") or [])
+        pipeline = []
+        for mp in (pipe_blob.get("projects") or []):
+            if not isinstance(mp, dict) or mp.get("id") in hidden or mp.get("name") in hidden:
+                continue
+            pirr = mp.get("irr") or 0
+            pipeline.append(dict(
+                name=mp.get("name"), location=mp.get("location"), asset_class=mp.get("asset_class"),
+                irr=(pirr * 100 if abs(pirr) <= 1.5 else pirr), em=mp.get("em") or 0,
+                contrib=sum(abs(float(x or 0)) for x in (mp.get("contributions_yearly") or [])),
+                dist=sum(float(x or 0) for x in (mp.get("distributions_yearly") or []))))
+
+        # ── Commitments (investor groups, raw USD) ──
+        groups = [g for g in (commit_blob.get("groups") or []) if isinstance(g, dict)]
+        ctot = {"mpc": 0.0, "mpc_allocated": 0.0, "vertical": 0.0, "vertical_allocated": 0.0}
+        for g in groups:
+            for k in ctot:
+                ctot[k] += float(g.get(k) or 0)
+        ctot["committed"] = ctot["mpc"] + ctot["vertical"]
+        ctot["allocated"] = ctot["mpc_allocated"] + ctot["vertical_allocated"]
+        ctot["available"] = ctot["committed"] - ctot["allocated"]
+
         return dict(active=active, months=months, mdist=mdist, mprom=mprom,
+                    pipeline=pipeline, commitments=groups, commit_totals=ctot,
                     as_of=d.get("date"),
                     totals=dict(equity=tot_eq, profit=tot_profit, promote=tot_promote,
                                 dist_ltd=dist_ltd, dist_ytd=dist_ytd,
@@ -1130,7 +1160,7 @@ def ember_diagnostics():
     Never writes. Returns connection status, available report types, and the
     shape of the latest 'operations' report so we can map KPIs precisely."""
     info = {"configured": bool(os.environ.get("EMBER_DATABASE_URL", "").strip()),
-            "connected": False, "error": None, "report_types": [], "capital_raw": None}
+            "connected": False, "error": None, "report_types": []}
     if not info["configured"]:
         return info
     try:
@@ -1145,36 +1175,6 @@ def ember_diagnostics():
             for r in ecur.fetchall()
         ]
 
-        def _shape(dd):
-            if isinstance(dd, dict):
-                sh = {"keys": sorted(dd.keys())}
-                for k, v in dd.items():
-                    if isinstance(v, list) and v:
-                        sh[k + "[]"] = {"len": len(v), "item0": sorted(v[0].keys()) if isinstance(v[0], dict) else type(v[0]).__name__}
-                    elif isinstance(v, dict) and v:
-                        sh[k + "{}"] = sorted(list(v.keys()))[:8]
-                return sh
-            if isinstance(dd, list):
-                return {"list_len": len(dd), "item0": sorted(dd[0].keys()) if dd and isinstance(dd[0], dict) else None}
-            return type(dd).__name__
-        cap = {}
-        for rt in ("ember_capital_commitments", "ember_capital_pipeline_manual",
-                   "ember_capital_pipeline_visibility", "ember_capital_settings", "ember_capital_asset_classes"):
-            ecur.execute("SELECT data FROM reports WHERE report_type = %s ORDER BY uploaded_at DESC LIMIT 1", (rt,))
-            r = ecur.fetchone()
-            if r and r.get("data"):
-                cap[rt] = _shape(r["data"])
-        try:
-            ecur.execute("SELECT name, COALESCE(status,'Active') AS status, outputs FROM projects "
-                         "WHERE COALESCE(status,'Active') = 'Active' LIMIT 1")
-            pr = ecur.fetchone()
-            if pr:
-                o = pr.get("outputs") or {}
-                cap["projects_active_row"] = {"name": pr.get("name"), "status": pr.get("status"),
-                                              "outputs_keys": sorted(o.keys()) if isinstance(o, dict) else type(o).__name__}
-        except Exception as e:
-            cap["projects_error"] = str(e)[:200]
-        info["capital_raw"] = json.dumps(cap, default=str, ensure_ascii=False)[:2800]
         info["connected"] = True
         ecur.close(); econn.close()
     except Exception as e:

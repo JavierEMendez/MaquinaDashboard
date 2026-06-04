@@ -93,12 +93,57 @@
 
   {# ── Pipeline / Commitments (next increment) ── #}
   <div class="tab-panel" data-panel="pipeline">
-    <div class="card"><div class="row" style="gap:10px;align-items:center;"><span class="badge">Coming next</span>
-      <span class="subtle" style="font-size:13px;">Pipeline pulls from Ember's <code>projects</code> table (status = Active, from MPC Underwriting). Wiring next — needs the projects-table shape.</span></div></div>
+    {% if cap.pipeline %}
+    <div class="card" style="padding:0;overflow:hidden;">
+      <div class="table-scroll" style="max-height:none;border:none;">
+        <table class="data-table">
+          <thead><tr><th style="text-align:left;">Project</th><th style="text-align:left;">Location</th><th style="text-align:left;">Asset Class</th><th>Proj. IRR</th><th>Equity Multiple</th><th>Contributions</th><th>Distributions</th></tr></thead>
+          <tbody>
+            {% for p in cap.pipeline %}
+            <tr>
+              <td style="text-align:left;">{{ p.name }}</td>
+              <td style="text-align:left;">{{ p.location or '—' }}</td>
+              <td style="text-align:left;">{{ p.asset_class or '—' }}</td>
+              <td>{{ '%.1f'|format(p.irr) }}%</td>
+              <td>{{ '%.2f'|format(p.em) }}x</td>
+              <td>{{ p.contrib | money }}</td>
+              <td>{{ p.dist | money }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% else %}<div class="card"><span class="subtle">No pipeline projects in the Ember capital data.</span></div>{% endif %}
   </div>
   <div class="tab-panel" data-panel="commitments">
-    <div class="card"><div class="row" style="gap:10px;align-items:center;"><span class="badge">Coming next</span>
-      <span class="subtle" style="font-size:13px;">Commitments pulls from <code>ember_capital_commitments</code> (investor groups). Wiring next — needs the report shape.</span></div></div>
+    {% if cap.commitments %}
+    <div class="grid grid-3 mb-24">
+      <div class="summary-card"><div class="lbl">Total Committed</div><div class="val">{{ cap.commit_totals.committed | money }}</div></div>
+      <div class="summary-card"><div class="lbl">Total Allocated</div><div class="val">{{ cap.commit_totals.allocated | money }}</div></div>
+      <div class="summary-card"><div class="lbl">Available to Deploy</div><div class="val {{ 'pos' if cap.commit_totals.available >= 0 else 'neg' }}">{{ cap.commit_totals.available | money }}</div></div>
+    </div>
+    <div class="card" style="padding:0;overflow:hidden;">
+      <div class="table-scroll" style="max-height:none;border:none;">
+        <table class="data-table">
+          <thead><tr><th style="text-align:left;">Investor Group</th><th>MPC Committed</th><th>MPC Allocated</th><th>Vertical Committed</th><th>Vertical Allocated</th><th>Available</th></tr></thead>
+          <tbody>
+            {% for g in cap.commitments %}
+            {% set avail = ((g.mpc or 0) + (g.vertical or 0)) - ((g.mpc_allocated or 0) + (g.vertical_allocated or 0)) %}
+            <tr>
+              <td style="text-align:left;">{{ g.name or '—' }}</td>
+              <td>{{ g.mpc | money }}</td>
+              <td>{{ g.mpc_allocated | money }}</td>
+              <td>{{ g.vertical | money }}</td>
+              <td>{{ g.vertical_allocated | money }}</td>
+              <td>{{ avail | money }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% else %}<div class="card"><span class="subtle">No commitments data in the Ember capital report.</span></div>{% endif %}
   </div>
 </div>
 {% endif %}
