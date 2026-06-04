@@ -1651,25 +1651,37 @@ def ember_diagnostics():
             vd["unit_columns"] = sorted(s.keys()) if s else None
         except Exception as e:
             vd["units_error"] = str(e)[:200]
-        for tbl in ("vd_hawthorne_data", "vd_leasing_pace_data", "vd_noi_data", "vd_rents_data",
-                    "vd_phase_rollup_data", "vd_psr_data", "vd_traffic_data"):
+        def _latest_vd(tbl, vert):
             try:
-                ecur.execute("SELECT vertical, data FROM " + tbl +
-                             " ORDER BY created_at DESC LIMIT 1")
+                ecur.execute("SELECT data FROM " + tbl + " WHERE vertical=%s "
+                             "ORDER BY created_at DESC LIMIT 1", (vert,))
                 r = ecur.fetchone()
-                if not r:
-                    vd[tbl] = None
-                elif isinstance(r.get("data"), dict):
-                    vd[tbl] = {"vertical": r["vertical"], "keys": sorted(r["data"].keys())[:25]}
-                elif isinstance(r.get("data"), list):
-                    first = r["data"][0] if r["data"] else None
-                    vd[tbl] = {"vertical": r["vertical"], "list_len": len(r["data"]),
-                               "item0": sorted(first.keys()) if isinstance(first, dict) else type(first).__name__}
-                else:
-                    vd[tbl] = {"vertical": r["vertical"], "type": type(r.get("data")).__name__}
+                return r["data"] if r else None
             except Exception as e:
-                vd[tbl] = {"error": str(e)[:150]}
-        info["verticals_raw"] = json.dumps(vd, default=str, ensure_ascii=False)[:3500]
+                return {"_error": str(e)[:150]}
+        # Hawthorne condo sales — dump a sample unit + bp keys
+        hd = _latest_vd("vd_hawthorne_data", "hawthorne") or {}
+        if isinstance(hd, dict):
+            u = hd.get("units")
+            vd["hawthorne_units"] = ({"len": len(u), "item0": u[0]} if isinstance(u, list) and u
+                                     else type(u).__name__)
+            vd["hawthorne_bp"] = (sorted(hd["bp"].keys())[:25] if isinstance(hd.get("bp"), dict)
+                                  else type(hd.get("bp")).__name__)
+        # LightHaven leasing pace + rents
+        lp = _latest_vd("vd_leasing_pace_data", "lighthaven") or {}
+        if isinstance(lp, dict):
+            vd["leasing_pace"] = {"months_len": len(lp.get("months") or []),
+                                  "months": (lp.get("months") or [])[:4],
+                                  "actual": (lp.get("actual") or [])[:4],
+                                  "budget": (lp.get("budget") or [])[:4]}
+        rd = _latest_vd("vd_rents_data", "lighthaven") or {}
+        bf = rd.get("byFloorplan") if isinstance(rd, dict) else None
+        if isinstance(bf, dict):
+            k0 = next(iter(bf), None)
+            vd["rents_byFloorplan"] = {"keys": list(bf.keys())[:10], "sample_key": k0, "sample_val": bf.get(k0)}
+        elif isinstance(bf, list):
+            vd["rents_byFloorplan"] = {"list_len": len(bf), "item0": bf[0] if bf else None}
+        info["verticals_raw"] = json.dumps(vd, default=str, ensure_ascii=False)[:4200]
 
         info["connected"] = True
         ecur.close(); econn.close()
