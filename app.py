@@ -250,6 +250,32 @@ def company_by_slug(slug):
     return row
 
 
+def annual_irr(cfs):
+    """IRR for an annual net-cashflow list (period 0..n). None if no sign change.
+    Bisection on NPV — no numpy dependency."""
+    cfs = [float(x) for x in cfs]
+    if not (any(x < 0 for x in cfs) and any(x > 0 for x in cfs)):
+        return None
+
+    def npv(r):
+        return sum(cf / ((1 + r) ** i) for i, cf in enumerate(cfs))
+
+    lo, hi = -0.95, 5.0
+    flo, fhi = npv(lo), npv(hi)
+    if flo * fhi > 0:
+        return None
+    for _ in range(200):
+        mid = (lo + hi) / 2.0
+        fm = npv(mid)
+        if abs(fm) < 1e-2:
+            return mid
+        if flo * fm < 0:
+            hi = mid
+        else:
+            lo, flo = mid, fm
+    return (lo + hi) / 2.0
+
+
 def company_cashflow_totals():
     """Per-company cumulative + per-year investment/distribution (USD)."""
     conn = db.get_db()
@@ -287,6 +313,14 @@ def company_cashflow_totals():
     for c in comps.values():
         c["net"] = c["distribution"] - c["investment"]
         c["roi"] = (c["distribution"] / c["investment"] * 100) if c["investment"] else 0
+        c["moic"] = (c["distribution"] / c["investment"]) if c["investment"] else 0
+        ys = sorted(c["series"].keys())
+        if ys:
+            cfs = [c["series"].get(y, {}).get("dist", 0) - c["series"].get(y, {}).get("inv", 0)
+                   for y in range(ys[0], ys[-1] + 1)]
+            c["irr"] = annual_irr(cfs)
+        else:
+            c["irr"] = None
     return list(comps.values())
 
 
@@ -462,10 +496,18 @@ def portfolio():
         by_industry[c["industry"]] = by_industry.get(c["industry"], 0) + c["investment"]
         by_country[c["country"]] = by_country.get(c["country"], 0) + c["investment"]
 
-    # portfolio planning matrix: per company inv/dist by year
+    # blended portfolio IRR (aggregate net cashflow by year) + concentration
+    agg_net = [sum(c["series"].get(y, {}).get("dist", 0) - c["series"].get(y, {}).get("inv", 0)
+                   for c in comps) for y in years]
+    blended_irr = annual_irr(agg_net)
+    top = max(comps, key=lambda c: c["investment"]) if comps else None
+    concentration = (top["investment"] / total_inv * 100) if (top and total_inv) else 0
+
     return render_template(
         "portfolio.html",
         comps=comps, total_inv=total_inv, total_dist=total_dist, net=net, roi=roi,
+        moic=(roi / 100), blended_irr=blended_irr, concentration=concentration,
+        top_holding=(top["name"] if top else None),
         year_inv=year_inv, year_dist=year_dist, base_year=BASE_YEAR,
         timeline=dict(years=years, inv=cum_inv, dist=cum_dist, base_year=BASE_YEAR),
         by_industry=[dict(k=k, v=v) for k, v in sorted(by_industry.items(), key=lambda x: -x[1])],
@@ -595,6 +637,44 @@ def fetch_ember_loans():
         return None
 
 
+def fetch_ember_returns():
+    """Latest Ember returns report → per-project LP economics + promotes.
+    Returns {projects:[...], totals:{promote, lp_dist}, as_of}. $ values scaled
+    to raw USD (report stores $K). None on any problem."""
+    try:
+        econn = db.get_ember_db()
+        if not econn:
+            return None
+        ecur = econn.cursor()
+        ecur.execute("SELECT data FROM reports WHERE report_type = 'returns' "
+                     "ORDER BY uploaded_at DESC LIMIT 1")
+        row = ecur.fetchone()
+        ecur.close(); econn.close()
+        if not row or not row.get("data"):
+            return None
+        projs = row["data"].get("projects") or []
+        out, tot_promote, tot_dist = [], 0.0, 0.0
+        for p in projs:
+            if not isinstance(p, dict):
+                continue
+            m = {x.get("label"): x.get("total") for x in (p.get("metrics") or []) if isinstance(x, dict)}
+            promote = (m.get("Promote") or 0) * 1000.0
+            lp_dist = (m.get("Total LP Distributions") or 0) * 1000.0
+            tot_promote += promote
+            tot_dist += lp_dist
+            out.append({"name": p.get("name"), "lp_irr": m.get("LP IRR"),
+                        "moic": m.get("LP Equity Multiple"), "lp_dist": lp_dist,
+                        "lp_contrib": (m.get("Total LP Contributions") or 0) * 1000.0,
+                        "promote": promote})
+        if not out:
+            return None
+        return {"projects": out, "totals": {"promote": tot_promote, "lp_dist": tot_dist},
+                "as_of": row["data"].get("date")}
+    except Exception as e:  # pragma: no cover
+        app.logger.warning("Ember returns fetch failed: %s", e)
+        return None
+
+
 @app.route("/company/<slug>")
 @login_required
 def company(slug):
@@ -617,9 +697,10 @@ def company(slug):
 
     # Live Ember overlay (seed fallback). Operating revenues → Operations tab;
     # a cross-tab summary → Dashboard; units/lots → Commercial (coming soon).
-    ember_live, ember_asof, ember_loans, summary = False, None, None, None
+    ember_live, ember_asof, ember_loans, ember_returns, summary = False, None, None, None, None
     if c["slug"] == "ember":
         ember_loans = fetch_ember_loans()
+        ember_returns = fetch_ember_returns()
         op = fetch_ember_operations()
         if op and op["totals"]:
             ember_live, ember_asof = True, op["as_of"]
@@ -669,7 +750,8 @@ def company(slug):
         chart=chart, risk=risk, strategies=strategies,
         phase_hist=phase_hist, phases_all=phases_all, base_year=BASE_YEAR,
         years=list(range(HIST_START, PROJ_END + 1)),
-        ember_live=ember_live, ember_asof=ember_asof, ember_loans=ember_loans, summary=summary,
+        ember_live=ember_live, ember_asof=ember_asof, ember_loans=ember_loans,
+        ember_returns=ember_returns, summary=summary,
     )
 
 

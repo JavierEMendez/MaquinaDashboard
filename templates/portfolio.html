@@ -42,7 +42,7 @@
         <div class="kpi-top"><span class="kpi-label">ROI</span>
           <span class="kpi-icon"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21.21 15.89A10 10 0 1 1 8 2.83"/><path d="M22 12A10 10 0 0 0 12 2v10z"/></svg></span></div>
         <div class="kpi-value {{ 'pos' if roi >= 100 else '' }}">{{ '%.1f'|format(roi) }}%</div>
-        <div class="kpi-foot"><span class="kpi-sub">Total return on investment</span></div>
+        <div class="kpi-foot"><span class="kpi-sub">MOIC {{ '%.2f'|format(moic) }}x{% if blended_irr is not none %} · IRR {{ '%.1f'|format(blended_irr * 100) }}%{% endif %}</span></div>
       </div>
     </div>
 
@@ -57,12 +57,14 @@
         <div class="row between" style="font-size:13px;"><span class="muted">Distributions</span><span class="tnum" style="font-weight:600;">{{ c.distribution | money }}</span></div>
         <div class="divider" style="margin:12px 0;"></div>
         <div class="row between" style="font-size:13px;"><span class="muted">Net</span><span class="tnum {{ 'pos' if c.net >= 0 else 'neg' }}" style="font-weight:700;">{{ c.net | smoney }}</span></div>
+        <div class="row between" style="font-size:12px;margin-top:6px;"><span class="subtle">MOIC / IRR</span><span class="tnum subtle">{{ '%.2f'|format(c.moic) }}x{% if c.irr is not none %} · {{ '%.0f'|format(c.irr * 100) }}%{% endif %}</span></div>
         <svg class="spark" data-slug="{{ c.slug }}" viewBox="0 0 120 30" preserveAspectRatio="none" style="width:100%;height:30px;margin-top:12px;overflow:visible;">
           <polyline fill="none" stroke-width="2" points=""></polyline>
         </svg>
       </div>
       {% endfor %}
     </div>
+    {% if top_holding %}<div class="subtle" style="font-size:12px;margin:-8px 0 20px;">Concentration: <strong style="color:var(--mq-ink);">{{ top_holding }}</strong> = {{ '%.0f'|format(concentration) }}% of invested capital.</div>{% endif %}
 
     <div class="card mb-24">
       <div class="card-head"><div><div class="card-title">Portfolio Timeline</div><div class="card-sub">Cumulative investment &amp; distributions — actuals through {{ base_year }}, projections after.</div></div></div>

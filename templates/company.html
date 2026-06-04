@@ -100,7 +100,39 @@
     {% endif %}
   </div>
 
-  <div class="tab-panel" data-panel="commercial">{{ category_panel('Commercial') }}</div>
+  <div class="tab-panel" data-panel="commercial">
+    {% if ember_returns %}
+    <div class="card mb-24">
+      <div class="row wrap between" style="gap:8px;align-items:center;margin-bottom:16px;">
+        <div class="card-title">Project Returns &amp; Promotes</div>
+        <span class="row" style="gap:8px;align-items:center;"><span class="badge good">● Live from Ember</span>
+          <span class="subtle" style="font-size:12px;">{% if ember_returns.as_of %}as of {{ ember_returns.as_of }}{% endif %}</span></span>
+      </div>
+      <div class="grid grid-2 mb-24">
+        <div class="summary-card"><div class="lbl">Total Promote (carry to partners)</div><div class="val">{{ ember_returns.totals.promote | money }}</div></div>
+        <div class="summary-card"><div class="lbl">Total LP Distributions</div><div class="val">{{ ember_returns.totals.lp_dist | money }}</div></div>
+      </div>
+      <div class="table-scroll">
+        <table class="data-table">
+          <thead><tr><th style="text-align:left;">Project</th><th>LP IRR</th><th>Equity Multiple</th><th>LP Distributions</th><th>Promote</th></tr></thead>
+          <tbody>
+            {% for p in ember_returns.projects %}
+            <tr>
+              <td style="text-align:left;">{{ p.name }}</td>
+              <td>{{ (('%.1f'|format(p.lp_irr * 100)) ~ '%') if (p.lp_irr is not none and (p.lp_irr|abs) < 3) else ((('%.1f'|format(p.lp_irr)) ~ '%') if p.lp_irr is not none else '—') }}</td>
+              <td>{{ ('%.2f'|format(p.moic) ~ 'x') if p.moic is not none else '—' }}</td>
+              <td>{{ p.lp_dist | money }}</td>
+              <td>{{ p.promote | money }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <p class="subtle" style="font-size:12px;margin-top:12px;">Promote is the carried interest Ember/partners earn above LP preferred returns — a key driver of Ember's valuation while corporate EBITDA is near breakeven.</p>
+    </div>
+    {% endif %}
+    {{ category_panel('Commercial') }}
+  </div>
   <div class="tab-panel" data-panel="operations">
     {% if ember_live %}<div class="row wrap" style="gap:8px;margin-bottom:14px;align-items:center;"><span class="badge good">● Live from Ember</span><span class="subtle" style="font-size:12px;">Operating revenues{% if ember_asof %} · as of {{ ember_asof }}{% endif %}</span></div>{% endif %}
     {{ category_panel('Operations') }}
