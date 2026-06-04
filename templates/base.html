@@ -95,10 +95,13 @@
     var tab = e.target.closest('.tab[data-tab]');
     if(!tab) return;
     var group = tab.closest('[data-tabgroup]') || document;
-    group.querySelectorAll('.tab[data-tab]').forEach(t=>t.classList.toggle('active', t===tab));
     var key = tab.getAttribute('data-tab');
+    // Scope to THIS group only (so nested tab groups don't clobber each other).
+    group.querySelectorAll('.tab[data-tab]').forEach(t=>{
+      if (t.closest('[data-tabgroup]') === group) t.classList.toggle('active', t===tab);
+    });
     group.querySelectorAll('.tab-panel[data-panel]').forEach(p=>{
-      p.classList.toggle('active', p.getAttribute('data-panel')===key);
+      if (p.closest('[data-tabgroup]') === group) p.classList.toggle('active', p.getAttribute('data-panel')===key);
     });
     if(window.MQ){ MQ.charts.forEach(o=>{ try{ if(o.chart) o.chart.resize(); }catch(e){} }); }
   });

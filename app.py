@@ -863,12 +863,6 @@ def fetch_ember_capital():
         return None
 
 
-@app.route("/projects")
-@login_required
-def projects():
-    return render_template("projects.html", cap=fetch_ember_capital())
-
-
 @app.route("/company/<slug>")
 @login_required
 def company(slug):
@@ -892,9 +886,11 @@ def company(slug):
     # Live Ember overlay (seed fallback). Operating revenues → Operations tab;
     # a cross-tab summary → Dashboard; units/lots → Commercial (coming soon).
     ember_live, ember_asof, ember_loans, ember_returns, summary = False, None, None, None, None
+    cap = None  # Ember Capital (Projects tab) — Ember only
     if c["slug"] == "ember":
         ember_loans = fetch_ember_loans()
         ember_returns = fetch_ember_returns()
+        cap = fetch_ember_capital()
         op = fetch_ember_operations()
         if op and op["totals"]:
             ember_live, ember_asof = True, op["as_of"]
@@ -953,7 +949,7 @@ def company(slug):
         years=list(range(HIST_START, PROJ_END + 1)),
         ember_live=ember_live, ember_asof=ember_asof, ember_loans=ember_loans,
         ember_returns=ember_returns, summary=summary, fin=fin, leverage=leverage,
-        valuation=valuation,
+        valuation=valuation, cap=cap,
     )
 
 

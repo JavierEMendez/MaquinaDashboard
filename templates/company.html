@@ -62,6 +62,7 @@
     <button class="tab" data-tab="commercial">Commercial</button>
     <button class="tab" data-tab="operations">Operations</button>
     <button class="tab" data-tab="finance">Finance</button>
+    {% if cap %}<button class="tab" data-tab="projects">Projects</button>{% endif %}
     <button class="tab" data-tab="strategy">Strategy</button>
   </div>
 
@@ -259,6 +260,13 @@
     {% endif %}
   </div>
 
+  {# ───────── Projects (Ember Capital) ───────── #}
+  {% if cap %}
+  <div class="tab-panel" data-panel="projects">
+    {% include "_partials/_ember_capital.html" %}
+  </div>
+  {% endif %}
+
   {# ───────── Strategy ───────── #}
   <div class="tab-panel" data-panel="strategy">
     <div class="grid grid-2 mb-24">
@@ -435,6 +443,29 @@
   ['Commercial','Operations','Finance'].forEach(cat=>{
     if(document.getElementById('chart-'+cat)) MQ.register(()=>buildLine('chart-'+cat, seriesFor(cat)));
   });
+
+  {% if cap %}
+  // ── Projects tab: cumulative monthly LP distributions & promotes (Ember Capital) ──
+  (function(){
+    const MONTHS = {{ cap.months | tojson }};
+    const MDIST = {{ cap.mdist | tojson }};
+    const MPROM = {{ cap.mprom | tojson }};
+    function cumul(a){ let s=0; return a.map(v=>{ s+=(v||0); return s; }); }
+    function distChart(){
+      const ctx=document.getElementById('distChart'); if(!ctx) return null;
+      const cd=cumul(MDIST).map(v=>v/1e6), cp=cumul(MPROM).map(v=>v/1e6);
+      return new Chart(ctx,{ type:'line',
+        data:{ labels:MONTHS, datasets:[
+          { label:'Cumulative LP Distributions', data:cd, borderColor:MQ.palette(2), backgroundColor:MQ.hexA(MQ.palette(2),0.08), borderWidth:2.5, tension:0.3, pointRadius:0, fill:true },
+          { label:'Cumulative Promote', data:cp, borderColor:MQ.palette(0), backgroundColor:MQ.hexA(MQ.palette(0),0.06), borderWidth:2.5, tension:0.3, pointRadius:0, fill:true } ]},
+        options:{ responsive:true, maintainAspectRatio:false, interaction:{mode:'index',intersect:false},
+          scales:{ x:{ grid:{display:false}, ticks:{ color:MQ.muted(), maxTicksLimit:10 } },
+            y:{ grid:{color:MQ.grid()}, ticks:{ color:MQ.muted(), callback:v=>'$'+v+'M' } } },
+          plugins:{ tooltip:{ callbacks:{ label:c=>c.dataset.label+': $'+c.parsed.y.toFixed(1)+'M' } } } } });
+    }
+    if(document.getElementById('distChart')) MQ.register(distChart);
+  })();
+  {% endif %}
 
   document.querySelectorAll('[data-projtoggle]').forEach(cb=>{
     cb.addEventListener('change', ()=>{ const id=cb.dataset.projtoggle; showProj[id]=cb.checked; buildLine(id, seriesFor(cb.dataset.cat)); });
