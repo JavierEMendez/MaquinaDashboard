@@ -280,7 +280,7 @@
             <div style="flex:1;">
               <div style="font-weight:600;color:var(--mq-ink-2);font-size:13.5px;">Phase {{ p.phase_order }} · {{ p.name }}
                 {% if p.is_projected %}<span class="badge" style="margin-left:6px;">projected</span>{% endif %}</div>
-              <div class="subtle" style="font-size:12px;">{{ p.start_year }}–{{ p.end_year }} · {{ p.team_expectation }} focus</div>
+              <div class="subtle" style="font-size:12px;">{{ fmt_month(p.start_year, p.start_month) }} – {{ fmt_month(p.end_year, p.end_month) }} · {{ p.team_expectation }} focus</div>
             </div>
           </div>
           {% if is_admin %}
@@ -290,8 +290,8 @@
               <div class="grid grid-3" style="gap:10px;">
                 <div><label class="fld-label">Phase</label>
                   <select class="input" name="phase_id">{% for ph in phases_all %}<option value="{{ ph.id }}" {{ 'selected' if ph.id==p.phase_id }}>P{{ ph.phase_order }} · {{ ph.name }}</option>{% endfor %}</select></div>
-                <div><label class="fld-label">Start year</label><input class="input" type="number" name="start_year" value="{{ p.start_year }}"></div>
-                <div><label class="fld-label">End year</label><input class="input" type="number" name="end_year" value="{{ p.end_year }}"></div>
+                <div><label class="fld-label">Start month</label><input class="input" type="month" name="start" value="{{ '%04d-%02d'|format(p.start_year, p.start_month or 1) if p.start_year else '' }}"></div>
+                <div><label class="fld-label">End month</label><input class="input" type="month" name="end" value="{{ '%04d-%02d'|format(p.end_year, p.end_month or 12) if p.end_year else '' }}"></div>
               </div>
               <label class="row" style="gap:8px;margin:12px 0;font-size:13px;color:var(--mq-muted);cursor:pointer;"><input type="checkbox" name="is_projected" value="1" {{ 'checked' if p.is_projected }} style="accent-color:var(--mq-accent);"> Projected</label>
               <div class="row" style="gap:8px;"><button class="btn btn-primary btn-sm" type="submit">Save</button>
@@ -308,8 +308,8 @@
             <div class="grid grid-3" style="gap:10px;">
               <div><label class="fld-label">Phase</label>
                 <select class="input" name="phase_id"><option value="">Select…</option>{% for ph in phases_all %}<option value="{{ ph.id }}">P{{ ph.phase_order }} · {{ ph.name }}</option>{% endfor %}</select></div>
-              <div><label class="fld-label">Start year</label><input class="input" type="number" name="start_year" placeholder="2024"></div>
-              <div><label class="fld-label">End year</label><input class="input" type="number" name="end_year" placeholder="2027"></div>
+              <div><label class="fld-label">Start month</label><input class="input" type="month" name="start"></div>
+              <div><label class="fld-label">End month</label><input class="input" type="month" name="end"></div>
             </div>
             <label class="row" style="gap:8px;margin:12px 0;font-size:13px;color:var(--mq-muted);cursor:pointer;"><input type="checkbox" name="is_projected" value="1" style="accent-color:var(--mq-accent);"> Projected</label>
             <button class="btn btn-primary btn-sm" type="submit">Add phase</button>

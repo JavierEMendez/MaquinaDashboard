@@ -9,6 +9,7 @@ with Chart.js from embedded JSON).
 import os
 import io
 import json
+import calendar
 import datetime
 import functools
 
@@ -673,6 +674,12 @@ def inject_nav():
     )
 
 
+@app.context_processor
+def inject_helpers():
+    """Template helpers available on every page."""
+    return dict(fmt_month=_fmt_month)
+
+
 def _avatar_initials(name):
     parts = [p for p in name.split() if p]
     if len(parts) >= 2:
@@ -803,19 +810,44 @@ def strategy():
         WHERE c.archived = FALSE ORDER BY c.display_order
     """)
     comps = cur.fetchall()
-    # current phase per company
+    # full phase history per company (with month precision)
     cur.execute("""
-        SELECT ph.company_id, sp.phase_order, sp.name, sp.color, ph.start_year, ph.end_year
+        SELECT ph.company_id, sp.phase_order, sp.name, sp.color,
+               ph.start_year, ph.start_month, ph.end_year, ph.end_month
         FROM company_phase_history ph JOIN strategy_phases sp ON sp.id = ph.phase_id
-        ORDER BY ph.company_id, sp.phase_order
+        ORDER BY ph.company_id, ph.start_year, ph.start_month, sp.phase_order
     """)
     hist = cur.fetchall()
     cur.close()
     conn.close()
 
-    cur_phase = {}
+    # Pick each company's CURRENT phase from its timeline, by date: the
+    # phase whose [start, end] window contains today (latest-starting one
+    # if several do); otherwise the most recent phase that has started.
+    today = datetime.date.today()
+    today_mi = today.year * 12 + (today.month - 1)
+    hist_by_co = {}
     for h in hist:
-        cur_phase[h["company_id"]] = h  # last wins → highest phase_order
+        hist_by_co.setdefault(h["company_id"], []).append(h)
+
+    cur_phase, phase_window = {}, {}
+    for cid, hs in hist_by_co.items():
+        hs.sort(key=lambda h: (_month_index(h["start_year"], h["start_month"]) or 0))
+        chosen = None
+        for h in hs:
+            s = _month_index(h["start_year"], h["start_month"])
+            e = _month_index(h["end_year"], h["end_month"])
+            if s is not None and e is not None and s <= today_mi <= e:
+                chosen = h  # latest-starting window that still contains today
+        if chosen is None:
+            started = [h for h in hs if (_month_index(h["start_year"], h["start_month"]) or 0) <= today_mi]
+            chosen = started[-1] if started else (hs[0] if hs else None)
+        if chosen:
+            cur_phase[cid] = chosen
+            phase_window[cid] = "%s – %s" % (
+                _fmt_month(chosen["start_year"], chosen["start_month"]),
+                _fmt_month(chosen["end_year"], chosen["end_month"]))
+
     comp_list = []
     for c in comps:
         cp = cur_phase.get(c["id"])
@@ -827,6 +859,7 @@ def strategy():
             phase_name=cp["name"] if cp else "—",
             phase_order=cp["phase_order"] if cp else 0,
             phase_color=cp["color"] if cp else "#8A9199",
+            phase_window=phase_window.get(c["id"]),
             years_held=BASE_YEAR - c["takeover_year"] if c["takeover_year"] else None,
         ))
 
@@ -1136,9 +1169,10 @@ def company(slug):
     strategies = cur.fetchall()
     cur.execute("""
         SELECT ph.id AS hid, ph.phase_id, sp.name, sp.phase_order, sp.color, sp.year_range,
-               sp.team_expectation, ph.start_year, ph.end_year, ph.is_projected
+               sp.team_expectation, ph.start_year, ph.start_month, ph.end_year,
+               ph.end_month, ph.is_projected
         FROM company_phase_history ph JOIN strategy_phases sp ON sp.id = ph.phase_id
-        WHERE ph.company_id = %s ORDER BY ph.start_year, sp.phase_order
+        WHERE ph.company_id = %s ORDER BY ph.start_year, ph.start_month, sp.phase_order
     """, (c["id"],))
     phase_hist = cur.fetchall()
     cur.execute("SELECT id, name, phase_order FROM strategy_phases ORDER BY phase_order")
@@ -1176,6 +1210,33 @@ def _to_int(v, default=None):
 def _rating(v, default=5):
     n = _to_int(v, default)
     return max(0, min(10, n if n is not None else default))
+
+
+def _parse_month(val, default_month):
+    """Parse an <input type=month> value ('YYYY-MM') → (year, month).
+    Accepts a bare 'YYYY' too, falling back to default_month."""
+    if not val:
+        return None, None
+    s = str(val).strip()
+    if "-" in s:
+        y, _, m = s.partition("-")
+        return _to_int(y), (_to_int(m) or default_month)
+    return _to_int(s), default_month
+
+
+def _month_index(year, month):
+    """Comparable integer for a (year, month) pair; None if no year."""
+    return (int(year) * 12 + (int(month or 1) - 1)) if year else None
+
+
+def _fmt_month(year, month=1):
+    """'Dec 2025' style label for a (year, month) pair."""
+    if not year:
+        return "—"
+    try:
+        return "%s %d" % (calendar.month_abbr[int(month or 1)], int(year))
+    except (TypeError, ValueError, IndexError):
+        return str(year)
 
 
 @app.route("/company/<slug>/risk", methods=["POST"])
@@ -1261,12 +1322,14 @@ def add_phase(slug):
     if not pid:
         flash("Pick a phase.", "error")
         return redirect(url_for("company", slug=slug, tab="strategy"))
+    sy, sm = _parse_month(f.get("start"), 1)
+    ey, em = _parse_month(f.get("end"), 12)
     conn = db.get_db(); cur = conn.cursor()
     cur.execute(
-        "INSERT INTO company_phase_history (company_id,phase_id,start_year,end_year,is_projected) "
-        "VALUES (%s,%s,%s,%s,%s)",
-        (c["id"], pid, _to_int(f.get("start_year")), _to_int(f.get("end_year")),
-         f.get("is_projected") == "1"))
+        "INSERT INTO company_phase_history "
+        "(company_id,phase_id,start_year,start_month,end_year,end_month,is_projected) "
+        "VALUES (%s,%s,%s,%s,%s,%s,%s)",
+        (c["id"], pid, sy, sm, ey, em, f.get("is_projected") == "1"))
     conn.commit(); cur.close(); conn.close()
     flash("Lifecycle phase added.", "ok")
     return redirect(url_for("company", slug=slug, tab="strategy"))
@@ -1283,9 +1346,11 @@ def save_phase(slug, hid):
         q, args, msg = ("DELETE FROM company_phase_history WHERE id=%s AND company_id=%s",
                         (hid, c["id"]), "Lifecycle phase removed.")
     else:
-        q = ("UPDATE company_phase_history SET phase_id=%s, start_year=%s, end_year=%s, is_projected=%s "
-             "WHERE id=%s AND company_id=%s")
-        args = (_to_int(f.get("phase_id")), _to_int(f.get("start_year")), _to_int(f.get("end_year")),
+        sy, sm = _parse_month(f.get("start"), 1)
+        ey, em = _parse_month(f.get("end"), 12)
+        q = ("UPDATE company_phase_history SET phase_id=%s, start_year=%s, start_month=%s, "
+             "end_year=%s, end_month=%s, is_projected=%s WHERE id=%s AND company_id=%s")
+        args = (_to_int(f.get("phase_id")), sy, sm, ey, em,
                 f.get("is_projected") == "1", hid, c["id"])
         msg = "Lifecycle phase updated."
     conn = db.get_db(); cur = conn.cursor()

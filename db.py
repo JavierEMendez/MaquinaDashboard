@@ -180,6 +180,11 @@ ALTER TABLE users     ADD COLUMN IF NOT EXISTS avatar_mime TEXT;
 ALTER TABLE companies ADD COLUMN IF NOT EXISTS logo BYTEA;
 ALTER TABLE companies ADD COLUMN IF NOT EXISTS logo_mime TEXT;
 ALTER TABLE company_risks ADD COLUMN IF NOT EXISTS commentary TEXT;
+
+-- Month precision on lifecycle phases (e.g. Dec 2025 → Dec 2027).
+-- Defaults keep legacy year-only rows as full-year spans (Jan–Dec).
+ALTER TABLE company_phase_history ADD COLUMN IF NOT EXISTS start_month INT DEFAULT 1;
+ALTER TABLE company_phase_history ADD COLUMN IF NOT EXISTS end_month   INT DEFAULT 12;
 """
 
 

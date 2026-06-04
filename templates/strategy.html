@@ -48,6 +48,10 @@
     <div class="divider"></div>
     <div class="row between" style="font-size:12.5px;"><span class="muted">Phase</span>
       <span class="badge" style="border-color:{{ c.phase_color }};color:{{ c.phase_color }};">{{ c.phase_name }}</span></div>
+    {% if c.phase_window %}
+    <div class="row between" style="font-size:12px;margin-top:8px;"><span class="muted">Timeline</span>
+      <span class="subtle tnum" style="font-weight:600;">{{ c.phase_window }}</span></div>
+    {% endif %}
     <div class="row between" style="font-size:12.5px;margin-top:8px;"><span class="muted">Years held</span>
       <span class="tnum" style="font-weight:600;">{{ c.years_held if c.years_held is not none else '—' }}</span></div>
   </a>
