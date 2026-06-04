@@ -9,6 +9,7 @@ with Chart.js from embedded JSON).
 import os
 import io
 import json
+import datetime
 import functools
 
 import requests
@@ -752,6 +753,90 @@ def fetch_ember_returns():
     except Exception as e:  # pragma: no cover
         app.logger.warning("Ember returns fetch failed: %s", e)
         return None
+
+
+def fetch_ember_capital():
+    """Replicate the core of Ember's Capital dashboard from the returns report:
+    active projects, portfolio roll-ups, and the monthly LP distributions / promotes.
+    $ values scaled to raw USD (report stores $K). None on any problem."""
+    try:
+        econn = db.get_ember_db()
+        if not econn:
+            return None
+        ecur = econn.cursor()
+        ecur.execute("SELECT data FROM reports WHERE report_type = 'returns' "
+                     "ORDER BY uploaded_at DESC LIMIT 1")
+        row = ecur.fetchone()
+        ecur.close(); econn.close()
+        if not row or not row.get("data"):
+            return None
+        d = row["data"]
+        K = 1000.0
+        months = [str(m) for m in (d.get("months") or [])]
+        today_iso = datetime.date.today().isoformat()
+        cur_year = today_iso[:4]
+        active, mdist, mprom = [], [0.0] * len(months), [0.0] * len(months)
+        tot_eq = tot_profit = tot_promote = dist_ltd = dist_ytd = 0.0
+        wnum = wden = 0.0
+        for p in (d.get("projects") or []):
+            if not isinstance(p, dict) or p.get("active") is False:
+                continue
+            name = (p.get("name") or "").strip()
+            if not name:
+                continue
+            by = {m.get("label"): m for m in (p.get("metrics") or []) if isinstance(m, dict)}
+
+            def t(lbl):
+                v = (by.get(lbl) or {}).get("total")
+                try:
+                    return float(v) if v is not None else 0.0
+                except (TypeError, ValueError):
+                    return 0.0
+
+            def mo(lbl):
+                return (by.get(lbl) or {}).get("monthly") or []
+            irr = t("LP IRR")
+            irr_pct = irr * 100 if abs(irr) <= 1.5 else irr
+            equity = abs(t("Total LP Contributions")) * K
+            promote = t("Promote") * K
+            dist_total = t("Total LP Distributions") * K
+            dm, pm = mo("Total LP Distributions"), mo("Promote")
+            p_ltd = dist_total
+            if dm and months:
+                p_ltd = sum((dm[i] or 0) for i in range(min(len(dm), len(months)))
+                            if months[i] <= today_iso) * K
+            active.append(dict(name=name, irr=irr_pct, em=t("LP Equity Multiple"),
+                               equity=equity, profit=t("Total LP Profit") * K,
+                               promote=promote, dist_ltd=p_ltd, dist_total=dist_total))
+            tot_eq += equity
+            tot_profit += t("Total LP Profit") * K
+            tot_promote += promote
+            dist_ltd += p_ltd
+            if equity > 0:
+                wnum += irr_pct * equity
+                wden += equity
+            for i in range(len(months)):
+                dv = (dm[i] if i < len(dm) else 0) or 0
+                pv = (pm[i] if i < len(pm) else 0) or 0
+                mdist[i] += dv * K
+                mprom[i] += pv * K
+                if months[i][:4] == cur_year and months[i] <= today_iso:
+                    dist_ytd += dv * K
+        active.sort(key=lambda a: -a["equity"])
+        return dict(active=active, months=months, mdist=mdist, mprom=mprom,
+                    as_of=d.get("date"),
+                    totals=dict(equity=tot_eq, profit=tot_profit, promote=tot_promote,
+                                dist_ltd=dist_ltd, dist_ytd=dist_ytd,
+                                weighted_irr=(wnum / wden if wden else 0), count=len(active)))
+    except Exception as e:  # pragma: no cover
+        app.logger.warning("Ember capital fetch failed: %s", e)
+        return None
+
+
+@app.route("/projects")
+@login_required
+def projects():
+    return render_template("projects.html", cap=fetch_ember_capital())
 
 
 @app.route("/company/<slug>")

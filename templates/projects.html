@@ -1,0 +1,129 @@
+{% extends "base.html" %}
+{% block title %}Projects — Maquina{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div class="page-eyebrow">Ember Capital</div>
+  <h1 class="page-title">Projects</h1>
+  <div class="page-sub">Active project returns, distributions and promotes — live from the Ember database.</div>
+</div>
+
+{% if not cap %}
+<div class="card"><div class="row" style="gap:10px;align-items:center;">
+  <span class="badge">Ember not connected</span>
+  <span class="subtle" style="font-size:13px;">No Ember <code>returns</code> report available. Set <code>EMBER_DATABASE_URL</code> to populate Projects.</span>
+</div></div>
+{% else %}
+
+<div class="row wrap" style="gap:8px;margin-bottom:16px;align-items:center;">
+  <span class="badge good">● Live from Ember</span>
+  <span class="subtle" style="font-size:12px;">{{ cap.totals.count }} active projects{% if cap.as_of %} · as of {{ cap.as_of }}{% endif %}</span>
+</div>
+
+<div class="grid grid-4 mb-24">
+  <div class="kpi"><div class="kpi-top"><span class="kpi-label">LP Equity Invested</span></div><div class="kpi-value">{{ cap.totals.equity | money }}</div><div class="kpi-foot"><span class="kpi-sub">{{ cap.totals.count }} active projects</span></div></div>
+  <div class="kpi"><div class="kpi-top"><span class="kpi-label">Total LP Profit</span></div><div class="kpi-value {{ 'pos' if cap.totals.profit >= 0 else 'neg' }}">{{ cap.totals.profit | money }}</div></div>
+  <div class="kpi"><div class="kpi-top"><span class="kpi-label">Total Promote</span></div><div class="kpi-value">{{ cap.totals.promote | money }}</div><div class="kpi-foot"><span class="kpi-sub">carry to partners</span></div></div>
+  <div class="kpi"><div class="kpi-top"><span class="kpi-label">Equity-Wtd LP IRR</span></div><div class="kpi-value pos">{{ '%.1f'|format(cap.totals.weighted_irr) }}%</div></div>
+</div>
+
+<div data-tabgroup>
+  <div class="tabs">
+    <button class="tab active" data-tab="active">Active</button>
+    <button class="tab" data-tab="returns">Returns</button>
+    <button class="tab" data-tab="pipeline">Pipeline</button>
+    <button class="tab" data-tab="commitments">Commitments</button>
+  </div>
+
+  {# ── Active ── #}
+  <div class="tab-panel active" data-panel="active">
+    <div class="card mb-24">
+      <div class="card-head"><div><div class="card-title">Monthly LP Distributions &amp; Promotes</div>
+        <div class="card-sub">Cumulative across active projects (USD). Distributed LTD {{ cap.totals.dist_ltd | money }} · YTD {{ cap.totals.dist_ytd | money }}.</div></div></div>
+      <div class="chart-wrap" style="height:300px;"><canvas id="distChart"></canvas></div>
+      <div class="row" style="gap:20px;margin-top:14px;font-size:12.5px;">
+        <span class="legend-left"><span class="legend-dot" style="background:var(--mq-c3);"></span>Cumulative LP Distributions</span>
+        <span class="legend-left"><span class="legend-dot" style="background:var(--mq-c1);"></span>Cumulative Promote</span>
+      </div>
+    </div>
+    <div class="card" style="padding:0;overflow:hidden;">
+      <div class="table-scroll" style="max-height:none;border:none;">
+        <table class="data-table">
+          <thead><tr><th style="text-align:left;">Project</th><th>LP IRR</th><th>Equity Multiple</th><th>LP Equity</th><th>Distributed (LTD)</th><th>Promote</th></tr></thead>
+          <tbody>
+            {% for p in cap.active %}
+            <tr>
+              <td style="text-align:left;">{{ p.name }}</td>
+              <td>{{ '%.1f'|format(p.irr) }}%</td>
+              <td>{{ '%.2f'|format(p.em) }}x</td>
+              <td>{{ p.equity | money }}</td>
+              <td>{{ p.dist_ltd | money }}</td>
+              <td>{{ p.promote | money }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  {# ── Returns ── #}
+  <div class="tab-panel" data-panel="returns">
+    <div class="card" style="padding:0;overflow:hidden;">
+      <div class="table-scroll" style="max-height:none;border:none;">
+        <table class="data-table">
+          <thead><tr><th style="text-align:left;">Project</th><th>LP IRR</th><th>Equity Multiple</th><th>LP Equity</th><th>LP Profit</th><th>Distributions (total)</th><th>Promote</th></tr></thead>
+          <tbody>
+            {% for p in cap.active %}
+            <tr>
+              <td style="text-align:left;">{{ p.name }}</td>
+              <td>{{ '%.1f'|format(p.irr) }}%</td>
+              <td>{{ '%.2f'|format(p.em) }}x</td>
+              <td>{{ p.equity | money }}</td>
+              <td class="{{ 'pos' if p.profit >= 0 else 'neg' }}">{{ p.profit | money }}</td>
+              <td>{{ p.dist_total | money }}</td>
+              <td>{{ p.promote | money }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  {# ── Pipeline / Commitments (next increment) ── #}
+  <div class="tab-panel" data-panel="pipeline">
+    <div class="card"><div class="row" style="gap:10px;align-items:center;"><span class="badge">Coming next</span>
+      <span class="subtle" style="font-size:13px;">Pipeline pulls from Ember's <code>projects</code> table (status = Active, from MPC Underwriting). Wiring next — needs the projects-table shape.</span></div></div>
+  </div>
+  <div class="tab-panel" data-panel="commitments">
+    <div class="card"><div class="row" style="gap:10px;align-items:center;"><span class="badge">Coming next</span>
+      <span class="subtle" style="font-size:13px;">Commitments pulls from <code>ember_capital_commitments</code> (investor groups). Wiring next — needs the report shape.</span></div></div>
+  </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+{% if cap %}
+<script>
+  const MONTHS = {{ cap.months | tojson }};
+  const MDIST = {{ cap.mdist | tojson }};
+  const MPROM = {{ cap.mprom | tojson }};
+  function cumul(a){ let s=0; return a.map(v=>{ s+=(v||0); return s; }); }
+  function distChart(){
+    const ctx=document.getElementById('distChart'); if(!ctx) return null;
+    const cd=cumul(MDIST).map(v=>v/1e6), cp=cumul(MPROM).map(v=>v/1e6);
+    return new Chart(ctx,{ type:'line',
+      data:{ labels:MONTHS, datasets:[
+        { label:'Cumulative LP Distributions', data:cd, borderColor:MQ.palette(2), backgroundColor:MQ.hexA(MQ.palette(2),0.08), borderWidth:2.5, tension:0.3, pointRadius:0, fill:true },
+        { label:'Cumulative Promote', data:cp, borderColor:MQ.palette(0), backgroundColor:MQ.hexA(MQ.palette(0),0.06), borderWidth:2.5, tension:0.3, pointRadius:0, fill:true } ]},
+      options:{ responsive:true, maintainAspectRatio:false, interaction:{mode:'index',intersect:false},
+        scales:{ x:{ grid:{display:false}, ticks:{ color:MQ.muted(), maxTicksLimit:10 } },
+          y:{ grid:{color:MQ.grid()}, ticks:{ color:MQ.muted(), callback:v=>'$'+v+'M' } } },
+        plugins:{ tooltip:{ callbacks:{ label:c=>c.dataset.label+': $'+c.parsed.y.toFixed(1)+'M' } } } } });
+  }
+  MQ.register(distChart);
+</script>
+{% endif %}
+{% endblock %}
