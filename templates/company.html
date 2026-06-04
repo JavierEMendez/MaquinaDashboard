@@ -174,7 +174,21 @@
           </tbody>
         </table>
       </div>
-      <div class="subtle" style="font-size:12px;margin-top:12px;">{{ ember_loans.totals.count }} facilities · monthly interest burn {{ ember_loans.totals.burn | money }}</div>
+      <div class="subtle" style="font-size:12px;margin-top:12px;">{{ ember_loans.totals.count }} facilities</div>
+      <div class="grid grid-2 mt-16" style="gap:18px;">
+        <div>
+          <div style="font-size:10px;letter-spacing:0.14em;text-transform:uppercase;color:var(--mq-subtle);font-weight:700;margin-bottom:8px;">Maturity Ladder</div>
+          {% for yr, amt in ember_loans.totals.maturity %}
+          <div class="row between" style="font-size:12.5px;padding:3px 0;border-bottom:1px solid var(--mq-line);"><span class="muted">{{ yr }}</span><span class="tnum">{{ amt | money }}</span></div>
+          {% else %}<span class="subtle" style="font-size:12px;">—</span>{% endfor %}
+        </div>
+        <div>
+          <div style="font-size:10px;letter-spacing:0.14em;text-transform:uppercase;color:var(--mq-subtle);font-weight:700;margin-bottom:8px;">Interest Reserve &amp; Burn</div>
+          <div class="row between" style="font-size:12.5px;padding:3px 0;border-bottom:1px solid var(--mq-line);"><span class="muted">Total reserve</span><span class="tnum">{{ ember_loans.totals.reserve | money }}</span></div>
+          <div class="row between" style="font-size:12.5px;padding:3px 0;border-bottom:1px solid var(--mq-line);"><span class="muted">Soonest depletion</span><span class="tnum">{{ ('%.1f'|format(ember_loans.totals.soonest_ir) ~ ' mo') if ember_loans.totals.soonest_ir is not none else '—' }}</span></div>
+          <div class="row between" style="font-size:12.5px;padding:3px 0;"><span class="muted">Monthly interest burn</span><span class="tnum">{{ ember_loans.totals.burn | money }}</span></div>
+        </div>
+      </div>
     </div>
     {% endif %}
   </div>

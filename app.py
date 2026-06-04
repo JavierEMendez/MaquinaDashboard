@@ -622,6 +622,16 @@ def fetch_ember_loans():
             except (TypeError, ValueError):
                 return 0.0
         bal = sum(num(r, "Balance") for r in loans)
+        # Maturity ladder (balance maturing per year) + interest-reserve runway
+        maturity, reserve, soonest_ir = {}, 0.0, None
+        for r in loans:
+            td = r.get("Loan Term Date")
+            if isinstance(td, str) and len(td) >= 4 and td[:4].isdigit():
+                maturity[int(td[:4])] = maturity.get(int(td[:4]), 0.0) + num(r, "Balance")
+            res, rmir = num(r, "Rem. Interest Reserve"), num(r, "Remaining Mos. of IR")
+            reserve += res
+            if res > 0 and rmir > 0:
+                soonest_ir = rmir if soonest_ir is None else min(soonest_ir, rmir)
         totals = {
             "amount": sum(num(r, "Loan Amount") for r in loans),
             "drawn": sum(num(r, "Drawn") for r in loans),
@@ -630,6 +640,9 @@ def fetch_ember_loans():
             "burn": sum(num(r, "Monthly Interest Burn") for r in loans),
             "wrate": (sum(num(r, "Today's Rate") * num(r, "Balance") for r in loans) / bal) if bal else 0.0,
             "count": len(loans),
+            "maturity": sorted(maturity.items()),
+            "reserve": reserve,
+            "soonest_ir": soonest_ir,
         }
         return {"loans": loans, "totals": totals, "as_of": d.get("date")}
     except Exception as e:  # pragma: no cover
