@@ -597,6 +597,53 @@ def company_cashflow_totals():
     return list(comps.values())
 
 
+def _exit_calc(series, entry_year, target_hold_years, exit_value_usd):
+    """Projected gross return to a potential exit. Pure (no DB).
+
+    series: {year: {'inv': usd, 'dist': usd}} of actual + projected cashflows.
+    Exit year = entry + target hold (never in the past). Cashflows AFTER the
+    exit year are ignored (you've exited); the exit equity value lands in the
+    exit year. MOIC = (distributions through exit + exit value) / invested;
+    IRR = annualized over the dated net-cashflow stream."""
+    today_y = datetime.date.today().year
+    years = sorted(series.keys())
+    entry_y = entry_year or (years[0] if years else today_y)
+    if target_hold_years:
+        exit_y = max(entry_y + int(round(float(target_hold_years))), today_y)
+    else:
+        exit_y = today_y
+    in_window = [y for y in years if y <= exit_y]
+    invested = sum((series[y].get("inv") or 0) for y in in_window)
+    dist = sum((series[y].get("dist") or 0) for y in in_window)
+    if not invested:
+        return None
+    ev = float(exit_value_usd or 0.0)
+    start_y = in_window[0] if in_window else exit_y
+    cfs = []
+    for y in range(start_y, exit_y + 1):
+        s = series.get(y) or {}
+        net = (s.get("dist") or 0) - (s.get("inv") or 0)
+        if y == exit_y:
+            net += ev
+        cfs.append(net)
+    return dict(invested=invested, dist=dist, exit_value=ev, exit_year=exit_y,
+                moic=(dist + ev) / invested, dpi=dist / invested, irr=annual_irr(cfs))
+
+
+def exit_returns(cid, entry_year, target_hold_years, exit_value_usd):
+    """DB wrapper around _exit_calc for a single company."""
+    conn = db.get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT year, COALESCE(SUM(investment),0) AS inv, "
+                "COALESCE(SUM(distribution),0) AS dist FROM portfolio_cashflows "
+                "WHERE company_id = %s GROUP BY year", (cid,))
+    series = {r["year"]: {"inv": r["inv"] or 0, "dist": r["dist"] or 0}
+              for r in cur.fetchall() if r["year"] is not None}
+    cur.close()
+    conn.close()
+    return _exit_calc(series, entry_year, target_hold_years, exit_value_usd)
+
+
 def load_company_items(cid):
     """All KPI items for a company with actual/projection series + trend."""
     conn = db.get_db()
@@ -814,7 +861,8 @@ def strategy():
     cur.execute("SELECT * FROM strategy_phases ORDER BY phase_order")
     phases = cur.fetchall()
     cur.execute("""
-        SELECT c.id, c.slug, c.name, c.accent, c.industry, c.takeover_year, c.takeover_month,
+        SELECT c.id, c.slug, c.name, c.accent, c.industry, c.value_unit,
+               c.takeover_year, c.takeover_month,
                c.hold_start_year, c.hold_start_month, c.target_hold_years,
                (c.logo IS NOT NULL) AS has_logo, octet_length(c.logo) AS logo_ver,
                r.internal_risk, r.external_risk
@@ -822,10 +870,18 @@ def strategy():
         WHERE c.archived = FALSE ORDER BY c.display_order
     """)
     comps = cur.fetchall()
-    # invested capital per company (USD) — the weight for hold analytics
-    cur.execute("SELECT company_id, COALESCE(SUM(investment), 0) AS invested "
-                "FROM portfolio_cashflows GROUP BY company_id")
-    invested_by_co = {r["company_id"]: float(r["invested"] or 0) for r in cur.fetchall()}
+    # cashflows per company/year (USD) — powers hold weighting + exit returns
+    cur.execute("SELECT company_id, year, COALESCE(SUM(investment),0) AS inv, "
+                "COALESCE(SUM(distribution),0) AS dist FROM portfolio_cashflows "
+                "GROUP BY company_id, year")
+    series_by_co = {}
+    for r in cur.fetchall():
+        if r["year"] is None:
+            continue
+        series_by_co.setdefault(r["company_id"], {})[r["year"]] = {
+            "inv": r["inv"] or 0, "dist": r["dist"] or 0}
+    invested_by_co = {cid: sum(s["inv"] for s in yrs.values())
+                      for cid, yrs in series_by_co.items()}
     # full phase history per company (with month precision)
     cur.execute("""
         SELECT ph.company_id, sp.phase_order, sp.name, sp.color,
@@ -836,6 +892,12 @@ def strategy():
     hist = cur.fetchall()
     cur.close()
     conn.close()
+
+    # Inputs for per-company exit valuations (Ember uses the sponsor model
+    # with its live promote; everyone else is EBITDA × multiple − net debt).
+    rate = usd_mxn_rate()
+    _er = fetch_ember_returns()
+    ember_promote = (_er["totals"]["promote"] if _er and _er.get("totals") else 0)
 
     # Pick each company's CURRENT phase from its timeline, by date: the
     # phase whose [start, end] window contains today (latest-starting one
@@ -869,6 +931,12 @@ def strategy():
         cp = cur_phase.get(c["id"])
         hold_years = _period_years(c["hold_start_year"], c["hold_start_month"])
         target = c["target_hold_years"]
+        # projected exit returns — exit at current valuation, on the target date
+        fin = load_financials(c["id"])
+        val = company_valuation(fin, ember_promote if c["slug"] == "ember" else 0,
+                                rate, c["value_unit"])
+        xr = _exit_calc(series_by_co.get(c["id"], {}), c["hold_start_year"],
+                        target, val["value_usd"] if val else None)
         comp_list.append(dict(
             id=c["id"], slug=c["slug"], name=c["name"], accent=c["accent"], industry=c["industry"],
             has_logo=c["has_logo"], logo_ver=c["logo_ver"],
@@ -882,6 +950,7 @@ def strategy():
             vintage=c["hold_start_year"],
             target_hold=target,
             over_due=(hold_years is not None and target and hold_years > target),
+            proj=xr,
         ))
 
     # group companies under each phase
@@ -920,8 +989,17 @@ def strategy():
                           vintages=vintage_list, aging=aging,
                           total_invested=total_invested, n_held=len(held))
 
+    # ── Portfolio projected exit returns (blended MOIC + capital-weighted IRR) ──
+    xrs = [c["proj"] for c in comp_list if c.get("proj")]
+    p_inv = sum(x["invested"] for x in xrs)
+    p_proceeds = sum(x["dist"] + x["exit_value"] for x in xrs)
+    iw = [(x["irr"], x["invested"]) for x in xrs if x["irr"] is not None and x["invested"]]
+    p_irr = (sum(r * w for r, w in iw) / sum(w for _, w in iw)) if iw else None
+    proj = dict(moic=(p_proceeds / p_inv if p_inv else None), irr=p_irr,
+                proceeds=p_proceeds, invested=p_inv, n=len(xrs))
+
     return render_template("strategy.html", phases=phases, comps=comp_list,
-                           hold=hold_analytics, base_year=BASE_YEAR)
+                           hold=hold_analytics, proj=proj, base_year=BASE_YEAR)
 
 
 def fetch_ember_operations():
@@ -1233,6 +1311,10 @@ def company(slug):
     cur.close()
     conn.close()
 
+    # Projected exit returns — exit at current valuation, on the target date
+    exit_value_usd = valuation["value_usd"] if valuation else None
+    exitr = exit_returns(c["id"], c["hold_start_year"], c["target_hold_years"], exit_value_usd)
+
     # Hold / control derived metrics (institutional PE model)
     hold_years = _period_years(c["hold_start_year"], c["hold_start_month"])
     hold = dict(
@@ -1255,7 +1337,7 @@ def company(slug):
         years=list(range(HIST_START, PROJ_END + 1)),
         ember_live=ember_live, ember_asof=ember_asof, ember_loans=ember_loans,
         ember_returns=ember_returns, summary=summary, fin=fin, leverage=leverage,
-        valuation=valuation, cap=cap, hold=hold,
+        valuation=valuation, cap=cap, hold=hold, exitr=exitr,
     )
 
 

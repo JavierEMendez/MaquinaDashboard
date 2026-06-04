@@ -292,6 +292,20 @@
           <div class="subtle" style="font-size:11.5px;">{% if hold.exit_label %}exit ~ {{ hold.exit_label }}{% else %}no target set{% endif %}</div></div>
         {% if hold.over_due %}<div style="align-self:center;"><span class="badge" style="border-color:#D2452F;color:#D2452F;">Past target hold</span></div>{% endif %}
       </div>
+
+      <div class="divider"></div>
+      <div style="{{ stl }}margin-bottom:10px;">Projected Exit Returns
+        <span style="text-transform:none;letter-spacing:0;font-weight:500;color:var(--mq-subtle);">· exit at current valuation{% if exitr %} in {{ exitr.exit_year }}{% endif %}</span></div>
+      {% if exitr %}
+      <div class="row wrap" style="gap:36px;align-items:flex-start;">
+        <div><div style="{{ stl }}">Invested</div><div style="{{ stv }}">{{ exitr.invested | money }}</div><div class="subtle" style="font-size:11.5px;">capital deployed</div></div>
+        <div><div style="{{ stl }}">Distributed</div><div style="{{ stv }}">{{ exitr.dist | money }}</div><div class="subtle" style="font-size:11.5px;">{{ '%.2fx'|format(exitr.dpi) }} DPI to date</div></div>
+        <div><div style="{{ stl }}">Exit Value</div><div style="{{ stv }}">{{ exitr.exit_value | money }}</div><div class="subtle" style="font-size:11.5px;">equity at exit</div></div>
+        <div><div style="{{ stl }}">Proj. MOIC</div><div style="{{ stv }}color:var(--mq-accent);">{{ '%.2fx'|format(exitr.moic) }}</div><div class="subtle" style="font-size:11.5px;">(dist + exit) ÷ invested</div></div>
+        <div><div style="{{ stl }}">Proj. IRR</div><div style="{{ stv }}{{ 'color:#1F9D6B;' if (exitr.irr is not none and exitr.irr >= 0) else ('color:#D2452F;' if exitr.irr is not none else '') }}">{{ '%.1f%%'|format(exitr.irr * 100) if exitr.irr is not none else '—' }}</div><div class="subtle" style="font-size:11.5px;">gross, to exit</div></div>
+      </div>
+      {% else %}<span class="subtle" style="font-size:12.5px;">Add invested capital (Maquina Portfolio) and a valuation (Operations tab) to project exit returns.</span>{% endif %}
+
       {% if is_admin %}
       <details class="editor" style="margin-top:16px;">
         <summary>Edit hold &amp; control dates</summary>
