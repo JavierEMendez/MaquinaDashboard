@@ -142,6 +142,21 @@ CREATE TABLE IF NOT EXISTS app_settings (
     value TEXT
 );
 
+-- Editable per-company financial / valuation inputs (Phases 3–4).
+-- Values are in each company's display units; multiples/rates are unitless.
+CREATE TABLE IF NOT EXISTS company_financials (
+    company_id INT UNIQUE REFERENCES companies(id) ON DELETE CASCADE,
+    ebitda DOUBLE PRECISION DEFAULT 0,
+    ebitda_margin DOUBLE PRECISION DEFAULT 0,
+    ebitda_multiple DOUBLE PRECISION DEFAULT 7,
+    total_debt DOUBLE PRECISION DEFAULT 0,
+    fre DOUBLE PRECISION DEFAULT 0,
+    fre_multiple DOUBLE PRECISION DEFAULT 10,
+    carry_discount DOUBLE PRECISION DEFAULT 0.15,
+    valuation_model TEXT DEFAULT 'ebitda',   -- ebitda | sponsor
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+
 -- Uploaded images live in Postgres (Railway's filesystem is ephemeral).
 -- Stored as small processed thumbnails; served via dedicated routes.
 ALTER TABLE users     ADD COLUMN IF NOT EXISTS avatar BYTEA;

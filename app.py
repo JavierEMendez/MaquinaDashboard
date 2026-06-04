@@ -82,6 +82,12 @@ def _boot():
             cur.execute("INSERT INTO app_settings (key,value) VALUES ('cat_remap_v1','1') "
                         "ON CONFLICT (key) DO NOTHING")
             conn.commit()
+        cur.execute("SELECT value FROM app_settings WHERE key = 'financials_v1'")
+        if not cur.fetchone():
+            seed_data.seed_financials(conn)
+            cur.execute("INSERT INTO app_settings (key,value) VALUES ('financials_v1','1') "
+                        "ON CONFLICT (key) DO NOTHING")
+            conn.commit()
         cur.close()
         conn.close()
         _booted = True
@@ -244,6 +250,16 @@ def company_by_slug(slug):
         "accent, description, takeover_year, display_order, archived, "
         "(logo IS NOT NULL) AS has_logo, octet_length(logo) AS logo_ver "
         "FROM companies WHERE slug = %s", (slug,))
+    row = cur.fetchone()
+    cur.close()
+    conn.close()
+    return row
+
+
+def load_financials(cid):
+    conn = db.get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM company_financials WHERE company_id = %s", (cid,))
     row = cur.fetchone()
     cur.close()
     conn.close()
@@ -738,6 +754,10 @@ def company(slug):
                        "debt": (ember_loans["totals"]["balance"] if ember_loans else None),
                        "wrate": (ember_loans["totals"]["wrate"] if ember_loans else None)}
 
+    # financial inputs (EBITDA/FRE) + leverage (Net Debt / EBITDA for operating cos)
+    fin = load_financials(c["id"])
+    leverage = (fin["total_debt"] / fin["ebitda"]) if (fin and fin["ebitda"] and fin["ebitda"] > 0) else None
+
     # strategy tab data
     conn = db.get_db()
     cur = conn.cursor()
@@ -764,7 +784,7 @@ def company(slug):
         phase_hist=phase_hist, phases_all=phases_all, base_year=BASE_YEAR,
         years=list(range(HIST_START, PROJ_END + 1)),
         ember_live=ember_live, ember_asof=ember_asof, ember_loans=ember_loans,
-        ember_returns=ember_returns, summary=summary,
+        ember_returns=ember_returns, summary=summary, fin=fin, leverage=leverage,
     )
 
 
@@ -903,6 +923,37 @@ def save_phase(slug, hid):
     conn.commit(); cur.close(); conn.close()
     flash(msg, "ok")
     return redirect(url_for("company", slug=slug, tab="strategy"))
+
+
+@app.route("/company/<slug>/financials", methods=["POST"])
+@login_required
+def update_financials(slug):
+    if not session.get("is_admin"):
+        abort(403)
+    c = _company_or_404(slug)
+    f = request.form
+
+    def num(name, d=0.0):
+        try:
+            return float(f.get(name))
+        except (TypeError, ValueError):
+            return d
+    model = "sponsor" if f.get("valuation_model") == "sponsor" else "ebitda"
+    conn = db.get_db(); cur = conn.cursor()
+    cur.execute(
+        """INSERT INTO company_financials
+             (company_id, ebitda, ebitda_margin, ebitda_multiple, total_debt, fre, fre_multiple, carry_discount, valuation_model)
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
+           ON CONFLICT (company_id) DO UPDATE SET
+             ebitda=EXCLUDED.ebitda, ebitda_margin=EXCLUDED.ebitda_margin,
+             ebitda_multiple=EXCLUDED.ebitda_multiple, total_debt=EXCLUDED.total_debt,
+             fre=EXCLUDED.fre, fre_multiple=EXCLUDED.fre_multiple,
+             carry_discount=EXCLUDED.carry_discount, valuation_model=EXCLUDED.valuation_model""",
+        (c["id"], num("ebitda"), num("ebitda_margin"), num("ebitda_multiple"), num("total_debt"),
+         num("fre"), num("fre_multiple"), num("carry_discount"), model))
+    conn.commit(); cur.close(); conn.close()
+    flash("Financial inputs updated.", "ok")
+    return redirect(url_for("company", slug=slug, tab="operations"))
 
 
 @app.route("/manage-companies")

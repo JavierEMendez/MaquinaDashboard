@@ -135,9 +135,58 @@
   </div>
   <div class="tab-panel" data-panel="operations">
     {% if ember_live %}<div class="row wrap" style="gap:8px;margin-bottom:14px;align-items:center;"><span class="badge good">● Live from Ember</span><span class="subtle" style="font-size:12px;">Operating revenues{% if ember_asof %} · as of {{ ember_asof }}{% endif %}</span></div>{% endif %}
+    {% if fin %}
+    <div class="card mb-24">
+      <div class="row between wrap" style="gap:8px;align-items:center;margin-bottom:16px;">
+        <div class="card-title">Financial Health
+          <span class="badge {{ 'accent' if fin.valuation_model == 'sponsor' }}" style="margin-left:6px;">{{ 'Sponsor (FRE + carry)' if fin.valuation_model == 'sponsor' else 'EV / EBITDA' }}</span></div>
+      </div>
+      <div class="grid grid-4">
+        {% if fin.valuation_model == 'sponsor' %}
+        <div class="kpi"><div class="kpi-top"><span class="kpi-label">FRE</span></div><div class="kpi-value">{{ fin.fre | num }} <span style="font-size:13px;color:var(--mq-subtle);">{{ c.value_unit }}</span></div><div class="kpi-foot"><span class="kpi-sub">fee-related earnings</span></div></div>
+        <div class="kpi"><div class="kpi-top"><span class="kpi-label">FRE Multiple</span></div><div class="kpi-value">{{ '%.1f'|format(fin.fre_multiple) }}x</div></div>
+        <div class="kpi"><div class="kpi-top"><span class="kpi-label">Carry Discount</span></div><div class="kpi-value">{{ '%.0f'|format(fin.carry_discount * 100) }}%</div></div>
+        <div class="kpi"><div class="kpi-top"><span class="kpi-label">EBITDA</span></div><div class="kpi-value" style="font-size:18px;color:var(--mq-subtle);">~ breakeven</div><div class="kpi-foot"><span class="kpi-sub">grows into profit</span></div></div>
+        {% else %}
+        <div class="kpi"><div class="kpi-top"><span class="kpi-label">EBITDA</span></div><div class="kpi-value {{ 'neg' if fin.ebitda < 0 }}">{{ fin.ebitda | num }} <span style="font-size:13px;color:var(--mq-subtle);">{{ c.value_unit }}</span></div></div>
+        <div class="kpi"><div class="kpi-top"><span class="kpi-label">EBITDA Margin</span></div><div class="kpi-value {{ 'neg' if fin.ebitda_margin < 0 }}">{{ '%.1f'|format(fin.ebitda_margin) }}%</div></div>
+        <div class="kpi"><div class="kpi-top"><span class="kpi-label">EBITDA Multiple</span></div><div class="kpi-value">{{ '%.1f'|format(fin.ebitda_multiple) }}x</div></div>
+        <div class="kpi"><div class="kpi-top"><span class="kpi-label">Total Debt</span></div><div class="kpi-value">{{ fin.total_debt | num }} <span style="font-size:13px;color:var(--mq-subtle);">{{ c.value_unit }}</span></div></div>
+        {% endif %}
+      </div>
+      {% if is_admin %}
+      <details class="editor" style="margin-top:14px;">
+        <summary>Edit financial inputs</summary>
+        <form class="editor-body" method="POST" action="{{ url_for('update_financials', slug=c.slug) }}">
+          <div class="grid grid-3" style="gap:10px;">
+            <div><label class="fld-label">Valuation model</label><select class="input" name="valuation_model"><option value="ebitda" {{ 'selected' if fin.valuation_model != 'sponsor' }}>EV / EBITDA</option><option value="sponsor" {{ 'selected' if fin.valuation_model == 'sponsor' }}>Sponsor (FRE + carry)</option></select></div>
+            <div><label class="fld-label">EBITDA ({{ c.value_unit }})</label><input class="input" type="number" step="any" name="ebitda" value="{{ fin.ebitda }}"></div>
+            <div><label class="fld-label">EBITDA margin (%)</label><input class="input" type="number" step="any" name="ebitda_margin" value="{{ fin.ebitda_margin }}"></div>
+            <div><label class="fld-label">EBITDA multiple (x)</label><input class="input" type="number" step="any" name="ebitda_multiple" value="{{ fin.ebitda_multiple }}"></div>
+            <div><label class="fld-label">Total debt ({{ c.value_unit }})</label><input class="input" type="number" step="any" name="total_debt" value="{{ fin.total_debt }}"></div>
+            <div><label class="fld-label">FRE ({{ c.value_unit }})</label><input class="input" type="number" step="any" name="fre" value="{{ fin.fre }}"></div>
+            <div><label class="fld-label">FRE multiple (x)</label><input class="input" type="number" step="any" name="fre_multiple" value="{{ fin.fre_multiple }}"></div>
+            <div><label class="fld-label">Carry discount (0–1)</label><input class="input" type="number" step="0.01" name="carry_discount" value="{{ fin.carry_discount }}"></div>
+          </div>
+          <button class="btn btn-primary btn-sm mt-8" type="submit">Save financial inputs</button>
+        </form>
+      </details>
+      {% endif %}
+    </div>
+    {% endif %}
     {{ category_panel('Operations') }}
   </div>
   <div class="tab-panel" data-panel="finance">
+    {% if leverage is not none or (fin and fin.total_debt) %}
+    <div class="card mb-24">
+      <div class="card-title mb-16">Leverage &amp; Debt</div>
+      <div class="grid grid-3">
+        <div class="kpi"><div class="kpi-top"><span class="kpi-label">Total Debt</span></div><div class="kpi-value">{{ fin.total_debt | num }} <span style="font-size:13px;color:var(--mq-subtle);">{{ c.value_unit }}</span></div></div>
+        <div class="kpi"><div class="kpi-top"><span class="kpi-label">Net Debt / EBITDA</span></div><div class="kpi-value {{ 'neg' if (leverage is not none and leverage > 6) }}">{{ ('%.1f'|format(leverage) ~ 'x') if leverage is not none else 'n/m' }}</div><div class="kpi-foot"><span class="kpi-sub">leverage</span></div></div>
+        <div class="kpi"><div class="kpi-top"><span class="kpi-label">EBITDA Multiple</span></div><div class="kpi-value">{{ '%.1f'|format(fin.ebitda_multiple) }}x</div></div>
+      </div>
+    </div>
+    {% endif %}
     {{ category_panel('Finance') }}
     {% if ember_loans %}
     <div class="card mt-24">

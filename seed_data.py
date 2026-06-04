@@ -76,6 +76,32 @@ def remap_categories(conn):
     cur.close()
 
 
+# ── Editable financial / valuation defaults (values in display units) ──
+# Ember is a sponsor (fee + carry) → valued on FRE × multiple + promote PV.
+# The operating companies are valued on EV/EBITDA. All fields are editable.
+FINANCIALS_DEFAULTS = {
+    "ember":        dict(valuation_model="sponsor", ebitda=50,    ebitda_margin=2.0,  ebitda_multiple=7, total_debt=0,    fre=300, fre_multiple=10, carry_discount=0.15),
+    "ranman":       dict(valuation_model="ebitda",  ebitda=13,    ebitda_margin=2.0,  ebitda_multiple=6, total_debt=180,  fre=0,   fre_multiple=10, carry_discount=0.15),
+    "ips":          dict(valuation_model="ebitda",  ebitda=4,     ebitda_margin=6.0,  ebitda_multiple=8, total_debt=20,   fre=0,   fre_multiple=10, carry_discount=0.15),
+    "mezcal-local": dict(valuation_model="ebitda",  ebitda=-2400, ebitda_margin=-20.0, ebitda_multiple=8, total_debt=8000, fre=0,  fre_multiple=10, carry_discount=0.15),
+}
+
+
+def seed_financials(conn):
+    """Insert default financial inputs for any company that lacks a row (idempotent)."""
+    cur = conn.cursor()
+    for slug, v in FINANCIALS_DEFAULTS.items():
+        cur.execute(
+            "INSERT INTO company_financials "
+            "(company_id, ebitda, ebitda_margin, ebitda_multiple, total_debt, fre, fre_multiple, carry_discount, valuation_model) "
+            "SELECT id, %s,%s,%s,%s,%s,%s,%s,%s FROM companies WHERE slug = %s "
+            "ON CONFLICT (company_id) DO NOTHING",
+            (v["ebitda"], v["ebitda_margin"], v["ebitda_multiple"], v["total_debt"],
+             v["fre"], v["fre_multiple"], v["carry_discount"], v["valuation_model"], slug))
+    conn.commit()
+    cur.close()
+
+
 COMPANIES = [
     # ── EMBER ─────────────────────────────────────────────────────
     dict(
