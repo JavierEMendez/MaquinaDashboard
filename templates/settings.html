@@ -59,6 +59,7 @@
       {% if ember.connected %}
         <p class="subtle" style="font-size:12px;margin-top:12px;line-height:1.55;">Live in this dashboard: Ember's <strong>operating revenues</strong> (Dashboard tab) and <strong>loans &amp; debt schedule</strong> (Finance tab). Units Closed / Lots Delivered show “coming soon” until added to the Ember dashboard.</p>
       {% endif %}
+      {% if ember.verticals_raw %}<div style="{{ lbl }}">Verticals (vd_*) shapes (diagnostic)</div><pre style="font-size:10px;line-height:1.4;background:var(--mq-bg-2);border:1px solid var(--mq-line);border-radius:8px;padding:10px;max-height:300px;overflow:auto;white-space:pre-wrap;word-break:break-word;color:var(--mq-muted);">{{ ember.verticals_raw }}</pre>{% endif %}
     {% else %}
       <p class="subtle" style="font-size:12px;">Ember data status is visible to administrators.</p>
     {% endif %}

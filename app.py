@@ -1623,7 +1623,7 @@ def ember_diagnostics():
     Never writes. Returns connection status, available report types, and the
     shape of the latest 'operations' report so we can map KPIs precisely."""
     info = {"configured": bool(os.environ.get("EMBER_DATABASE_URL", "").strip()),
-            "connected": False, "error": None, "report_types": []}
+            "connected": False, "error": None, "report_types": [], "verticals_raw": None}
     if not info["configured"]:
         return info
     try:
@@ -1637,6 +1637,39 @@ def ember_diagnostics():
             (r["report_type"], r["n"], r["last"].strftime("%Y-%m-%d") if r["last"] else "—")
             for r in ecur.fetchall()
         ]
+
+        # ── Verticals (vd_*) shape probe — TEMPORARY diagnostic ──
+        vd = {}
+        try:
+            ecur.execute("SELECT vertical, COUNT(*) AS n FROM vd_units GROUP BY vertical")
+            vd["units_by_vertical"] = {r["vertical"]: r["n"] for r in ecur.fetchall()}
+            ecur.execute("SELECT vertical, status, COUNT(*) AS n FROM vd_units "
+                         "GROUP BY vertical, status ORDER BY vertical, status")
+            vd["units_by_status"] = [(r["vertical"], r["status"], r["n"]) for r in ecur.fetchall()]
+            ecur.execute("SELECT * FROM vd_units LIMIT 1")
+            s = ecur.fetchone()
+            vd["unit_columns"] = sorted(s.keys()) if s else None
+        except Exception as e:
+            vd["units_error"] = str(e)[:200]
+        for tbl in ("vd_hawthorne_data", "vd_leasing_pace_data", "vd_noi_data", "vd_rents_data",
+                    "vd_phase_rollup_data", "vd_psr_data", "vd_traffic_data"):
+            try:
+                ecur.execute("SELECT vertical, data FROM " + tbl +
+                             " ORDER BY created_at DESC LIMIT 1")
+                r = ecur.fetchone()
+                if not r:
+                    vd[tbl] = None
+                elif isinstance(r.get("data"), dict):
+                    vd[tbl] = {"vertical": r["vertical"], "keys": sorted(r["data"].keys())[:25]}
+                elif isinstance(r.get("data"), list):
+                    first = r["data"][0] if r["data"] else None
+                    vd[tbl] = {"vertical": r["vertical"], "list_len": len(r["data"]),
+                               "item0": sorted(first.keys()) if isinstance(first, dict) else type(first).__name__}
+                else:
+                    vd[tbl] = {"vertical": r["vertical"], "type": type(r.get("data")).__name__}
+            except Exception as e:
+                vd[tbl] = {"error": str(e)[:150]}
+        info["verticals_raw"] = json.dumps(vd, default=str, ensure_ascii=False)[:3500]
 
         info["connected"] = True
         ecur.close(); econn.close()
