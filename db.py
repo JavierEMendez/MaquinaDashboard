@@ -195,6 +195,19 @@ ALTER TABLE companies ADD COLUMN IF NOT EXISTS hold_start_year   INT;
 ALTER TABLE companies ADD COLUMN IF NOT EXISTS hold_start_month  INT DEFAULT 1;
 ALTER TABLE companies ADD COLUMN IF NOT EXISTS takeover_month    INT DEFAULT 1;
 ALTER TABLE companies ADD COLUMN IF NOT EXISTS target_hold_years DOUBLE PRECISION;
+
+-- Maquina Cashflow page — each row is one uploaded "MAQUINA CF" workbook,
+-- parsed into JSON (maquina_cf_parser). Latest row wins on the dashboard;
+-- history is kept so prior snapshots aren't lost. A stopgap until Ember /
+-- Ranman / etc. figures flow in live.
+CREATE TABLE IF NOT EXISTS maquina_cf_uploads (
+    id SERIAL PRIMARY KEY,
+    data JSONB NOT NULL,
+    filename TEXT,
+    uploaded_by TEXT,
+    uploaded_at TIMESTAMP DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS maquina_cf_uploads_ts ON maquina_cf_uploads (uploaded_at DESC);
 """
 
 
@@ -215,3 +228,32 @@ def is_seeded():
     cur.close()
     conn.close()
     return n > 0
+
+
+def latest_maquina_cf():
+    """Return the most recent uploaded Maquina CF snapshot as a dict
+    {data, filename, uploaded_by, uploaded_at}, or None if none exist."""
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT data, filename, uploaded_by, uploaded_at "
+        "FROM maquina_cf_uploads ORDER BY uploaded_at DESC, id DESC LIMIT 1"
+    )
+    row = cur.fetchone()
+    cur.close()
+    conn.close()
+    return dict(row) if row else None
+
+
+def save_maquina_cf(data_json: str, filename: str, uploaded_by: str):
+    """Insert a parsed Maquina CF snapshot. ``data_json`` is a JSON string."""
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute(
+        "INSERT INTO maquina_cf_uploads (data, filename, uploaded_by) "
+        "VALUES (%s, %s, %s)",
+        (data_json, filename, uploaded_by),
+    )
+    conn.commit()
+    cur.close()
+    conn.close()

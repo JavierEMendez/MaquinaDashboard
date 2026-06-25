@@ -22,6 +22,7 @@ from werkzeug.security import check_password_hash, generate_password_hash
 
 import db
 import seed_data
+import maquina_cf_parser
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "maquina-dev-secret-change-me")
@@ -182,6 +183,7 @@ _ACTIVITY_PATH_LABELS = {
     "/":                 "Portfolio Dashboard",
     "/strategy":         "Maquina Strategy",
     "/maquina-cashflow":  "Maquina Portfolio",
+    "/cashflow":         "Maquina Cashflow",
     "/manage-companies":  "Manage Companies",
     "/settings":         "Settings",
     "/activity":         "Team Activity",
@@ -405,6 +407,34 @@ def _num(x, integer=False):
 app.jinja_env.filters["money"] = _money
 app.jinja_env.filters["smoney"] = _signed_money
 app.jinja_env.filters["num"] = _num
+
+
+def _act_sum(by_year, last_actual):
+    """Sum a {year: value} map across actual years only (year <= last_actual).
+    Year keys arrive as strings from JSONB; coerce defensively. Used by the
+    Maquina Cashflow tables for the lifetime-actuals 'Total' column."""
+    total = 0.0
+    for k, v in (by_year or {}).items():
+        try:
+            if int(k) <= int(last_actual):
+                total += float(v or 0)
+        except (TypeError, ValueError):
+            continue
+    return total
+
+
+def _all_sum(by_year):
+    total = 0.0
+    for v in (by_year or {}).values():
+        try:
+            total += float(v or 0)
+        except (TypeError, ValueError):
+            continue
+    return total
+
+
+app.jinja_env.filters["actsum"] = _act_sum
+app.jinja_env.filters["allsum"] = _all_sum
 
 
 def _fmt_kpi(value, unit, unit_label):
@@ -851,6 +881,54 @@ def portfolio():
         by_country=[dict(k=k, v=v) for k, v in sorted(by_country.items(), key=lambda x: -x[1])],
         years=years,
     )
+
+
+@app.route("/cashflow")
+@login_required
+def cashflow():
+    """Maquina Cashflow — beautified view of the uploaded MAQUINA CF
+    workbook (CF Consolidado + Business CF US/MX). A stopgap snapshot
+    until per-company figures flow in live."""
+    snap = db.latest_maquina_cf()
+    cf = snap["data"] if snap else None
+    return render_template(
+        "cashflow.html",
+        cf=cf,
+        uploaded_at=(snap["uploaded_at"] if snap else None),
+        uploaded_by=(snap["uploaded_by"] if snap else None),
+        src_filename=(snap["filename"] if snap else None),
+    )
+
+
+@app.route("/cashflow/upload", methods=["POST"])
+@login_required
+def cashflow_upload():
+    """Admin-only — accept a MAQUINA CF .xlsx, parse the three core sheets,
+    and persist the parsed JSON snapshot. Latest upload wins on /cashflow."""
+    if not session.get("is_admin"):
+        abort(403)
+    f = request.files.get("file")
+    if not f or not f.filename:
+        flash("Choose a MAQUINA CF .xlsx file first.", "error")
+        return redirect(url_for("cashflow"))
+    if not f.filename.lower().endswith((".xlsx", ".xlsm")):
+        flash("That isn't an Excel workbook — upload the .xlsx file.", "error")
+        return redirect(url_for("cashflow"))
+    try:
+        data = maquina_cf_parser.parse_maquina_cf(f.read(), filename=f.filename)
+    except ValueError as e:
+        flash(str(e), "error")
+        return redirect(url_for("cashflow"))
+    except Exception as e:  # pragma: no cover
+        app.logger.warning("Maquina CF parse failed: %s", e)
+        flash("Could not read that workbook — is it the standard MAQUINA CF file?", "error")
+        return redirect(url_for("cashflow"))
+    db.save_maquina_cf(json.dumps(data), f.filename, session.get("username") or "admin")
+    yrs = data.get("meta", {}).get("monthly_years") or []
+    flash("MAQUINA CF imported — "
+          + (f"actuals {yrs[0]}–{yrs[-1]} + projections through "
+             f"{data['meta']['years'][-1]}." if yrs else "snapshot saved."), "ok")
+    return redirect(url_for("cashflow"))
 
 
 @app.route("/strategy")
