@@ -433,8 +433,46 @@ def _all_sum(by_year):
     return total
 
 
+def _period_val(series, period):
+    """Value of a parsed series at one display period. Month periods read
+    from series['months'] ('YYYY-MM'); year periods from series['by_year']."""
+    if not series or not period:
+        return 0.0
+    d = series.get("months") if period.get("kind") == "month" else series.get("by_year")
+    try:
+        return float((d or {}).get(period.get("key")) or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _period_total(series, periods):
+    return sum(_period_val(series, p) for p in (periods or []))
+
+
 app.jinja_env.filters["actsum"] = _act_sum
 app.jinja_env.filters["allsum"] = _all_sum
+app.jinja_env.filters["pval"] = _period_val
+app.jinja_env.filters["ptotal"] = _period_total
+
+
+def _cf_periods(meta):
+    """Display axis for the Maquina Cashflow tables/charts: the full current
+    year (= last year with monthly detail) broken out by month, then every
+    later year as a single annual column. Older years are dropped — the view
+    is current-year-monthly + forward annual outlook."""
+    la = int(meta.get("last_actual_year") or 0)
+    years = sorted({int(y) for y in (meta.get("years") or [])})
+    periods = []
+    if la:
+        yy = str(la)[2:]
+        for mo in range(1, 13):
+            periods.append({"key": f"{la}-{mo:02d}",
+                            "label": f"{calendar.month_abbr[mo]} '{yy}",
+                            "kind": "month", "proj": False})
+    for y in years:
+        if y > la:
+            periods.append({"key": str(y), "label": str(y), "kind": "year", "proj": True})
+    return periods
 
 
 def _fmt_kpi(value, unit, unit_label):
@@ -891,9 +929,11 @@ def cashflow():
     until per-company figures flow in live."""
     snap = db.latest_maquina_cf()
     cf = snap["data"] if snap else None
+    periods = _cf_periods(cf["meta"]) if cf else []
     return render_template(
         "cashflow.html",
         cf=cf,
+        periods=periods,
         uploaded_at=(snap["uploaded_at"] if snap else None),
         uploaded_by=(snap["uploaded_by"] if snap else None),
         src_filename=(snap["filename"] if snap else None),

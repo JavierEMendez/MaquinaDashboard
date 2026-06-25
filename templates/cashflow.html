@@ -2,33 +2,33 @@
 {% block title %}Maquina Cashflow{% endblock %}
 
 {% block content %}
-{# ── reusable year-aware table macros ─────────────────────────────────── #}
-{% macro yhead(years, la) %}
-  {% for y in years %}<th class="yr-col {{ 'yr-proj' if y > la }}"{% if y > la %} style="display:none"{% endif %}>{{ y }}</th>{% endfor %}
+{# ── reusable period-aware table macros (monthly current year + annual after) ── #}
+{% macro phead(periods) %}
+  {% for p in periods %}<th class="yr-col {{ 'yr-proj' if p.proj }}">{{ p.label }}</th>{% endfor %}
   <th class="yr-total">Total</th>
 {% endmacro %}
 
-{% macro ycell(by_year, y, la) %}
-  {% set v = by_year.get(y|string, 0) if by_year else 0 %}
-  <td class="yr-col tnum {{ 'yr-proj' if y > la }}"{% if y > la %} style="display:none"{% endif %}><span class="{{ 'pos' if v > 0 else ('neg' if v < 0 else 'subtle') }}">{{ v | smoney if v else '—' }}</span></td>
+{% macro pcell(series, p) %}
+  {% set v = series | pval(p) %}
+  <td class="yr-col tnum {{ 'yr-proj' if p.proj }}"><span class="{{ 'pos' if v > 0 else ('neg' if v < 0 else 'subtle') }}">{{ v | smoney if v else '—' }}</span></td>
 {% endmacro %}
 
-{% macro yrow(label, series, years, la, kind='line') %}
+{% macro prow(label, series, periods, kind='line') %}
   <tr class="{{ 'cf-total' if kind == 'total' }} {{ 'cf-sub' if kind == 'cumm' }}">
     <td class="{{ 'child-name' if kind == 'line' }}">{{ label }}</td>
-    {% for y in years %}{{ ycell(series.by_year, y, la) }}{% endfor %}
-    <td class="yr-total tnum" style="font-weight:{{ 700 if kind == 'total' else 600 }}">{{ (series.by_year | actsum(la)) | smoney if series else '—' }}</td>
+    {% for p in periods %}{{ pcell(series, p) }}{% endfor %}
+    <td class="yr-total tnum" style="font-weight:{{ 700 if kind == 'total' else 600 }}">{{ (series | ptotal(periods)) | smoney if series else '—' }}</td>
   </tr>
 {% endmacro %}
 
-{% macro sectbl(sec, years, la) %}
+{% macro sectbl(sec, periods) %}
   {% if sec %}
   <div class="table-scroll mb-24">
     <table class="data-table">
-      <thead><tr><th>{{ sec.label }}</th>{{ yhead(years, la) }}</tr></thead>
+      <thead><tr><th>{{ sec.label }}</th>{{ phead(periods) }}</tr></thead>
       <tbody>
-        {% for e in sec.entities %}{{ yrow(e.name, e, years, la, 'line') }}{% endfor %}
-        {% if sec.total %}{{ yrow('Total · ' ~ sec.label, sec.total, years, la, 'total') }}{% endif %}
+        {% for e in sec.entities %}{{ prow(e.name, e, periods, 'line') }}{% endfor %}
+        {% if sec.total %}{{ prow('Total · ' ~ sec.label, sec.total, periods, 'total') }}{% endif %}
       </tbody>
     </table>
   </div>
@@ -44,7 +44,7 @@
         Consolidated cash position across the US &amp; Mexico books.
         {% if cf %}
           {% if cf.meta.report_date %}<strong>{{ cf.meta.report_date }}</strong> workbook · {% endif %}
-          actuals {{ cf.meta.monthly_years[0] }}–{{ cf.meta.last_actual_year }}, projections to {{ cf.meta.years[-1] }}.
+          {{ cf.meta.last_actual_year }} by month, then annual outlook to {{ cf.meta.years[-1] }}.
         {% else %}
           Upload the MAQUINA CF workbook to populate this dashboard.
         {% endif %}
@@ -53,8 +53,8 @@
     <div class="row" style="gap:10px;">
       {% if cf %}
       <div class="pillgroup" id="yrToggle">
-        <button class="pill is-active" data-yr="actual">Actuals</button>
-        <button class="pill" data-yr="all">+ Projections</button>
+        <button class="pill is-active" data-yr="all">Full outlook</button>
+        <button class="pill" data-yr="month">{{ cf.meta.last_actual_year }} only</button>
       </div>
       {% endif %}
       {% if is_admin %}
@@ -153,11 +153,11 @@
     <div class="tab-panel active" data-panel="cons">
       <div class="grid grid-2 mb-24">
         <div class="card">
-          <div class="card-head"><div><div class="card-title">Net &amp; Cumulative Cash Flow</div><div class="card-sub">Annual net flow (bars) and running position (line). Lighter = projection.</div></div></div>
+          <div class="card-head"><div><div class="card-title">Net &amp; Cumulative Cash Flow</div><div class="card-sub">{{ cf.meta.last_actual_year }} by month then annual · bars = net, line = cumulative. Lighter = projection.</div></div></div>
           <div class="chart-wrap" style="height:290px;"><canvas id="cfChart"></canvas></div>
         </div>
         <div class="card">
-          <div class="card-head"><div><div class="card-title">Contributions vs Distributions</div><div class="card-sub">Capital deployed (Inversión) vs dividends paid (Dividendo), by year.</div></div></div>
+          <div class="card-head"><div><div class="card-title">Contributions vs Distributions</div><div class="card-sub">Capital deployed (Inversión) vs dividends paid (Dividendo).</div></div></div>
           <div class="chart-wrap" style="height:290px;"><canvas id="cdChart"></canvas></div>
           <div class="row" style="gap:20px;margin-top:12px;font-size:12.5px;">
             <span class="legend-left"><span class="legend-dot" style="background:var(--mq-c1);"></span>Capital Deployed</span>
@@ -170,28 +170,28 @@
         <div class="card-head"><div><div class="card-title">Consolidated Cashflow</div><div class="card-sub">US &amp; Mexico books → consolidated. All figures USD.</div></div></div>
         <div class="table-scroll">
           <table class="data-table">
-            <thead><tr><th>Line item</th>{{ yhead(years, la) }}</tr></thead>
+            <thead><tr><th>Line item</th>{{ phead(periods) }}</tr></thead>
             <tbody>
-              <tr class="cf-section"><td colspan="{{ years|length + 2 }}">🇺🇸 US Business</td></tr>
-              {{ yrow('Investments / Dividends', cf.consolidated.us.inv_div, years, la) }}
-              {{ yrow('Equity', cf.consolidated.us.equity, years, la) }}
-              {{ yrow('GP Profit', cf.consolidated.us.gp_profit, years, la) }}
-              {{ yrow('RECAP', cf.consolidated.us.recap, years, la) }}
-              {{ yrow('Transfer to MX', cf.consolidated.us.investment_mx, years, la) }}
-              {{ yrow('Opex', cf.consolidated.us.opex, years, la) }}
-              {{ yrow('Total US Business', cf.consolidated.us.total, years, la, 'total') }}
-              {{ yrow('Cumulative US', cf.consolidated.us.cumm, years, la, 'cumm') }}
-              <tr class="cf-section"><td colspan="{{ years|length + 2 }}">🇲🇽 MX Business</td></tr>
-              {{ yrow('Investments / Dividends', cf.consolidated.mx.inv_div, years, la) }}
-              {{ yrow('Equity', cf.consolidated.mx.equity, years, la) }}
-              {{ yrow('GP Profit', cf.consolidated.mx.gp_profit, years, la) }}
-              {{ yrow('RECAP', cf.consolidated.mx.recap, years, la) }}
-              {{ yrow('Opex', cf.consolidated.mx.opex, years, la) }}
-              {{ yrow('Total MX Business', cf.consolidated.mx.total, years, la, 'total') }}
-              {{ yrow('Cumulative MX', cf.consolidated.mx.cumm, years, la, 'cumm') }}
-              <tr class="cf-section"><td colspan="{{ years|length + 2 }}">Consolidated</td></tr>
-              {{ yrow('Total Cash Flow', cf.consolidated.total_cf, years, la, 'total') }}
-              {{ yrow('Cumulative Cash Flow', cf.consolidated.cumm_cf, years, la, 'cumm') }}
+              <tr class="cf-section"><td colspan="{{ periods|length + 2 }}">🇺🇸 US Business</td></tr>
+              {{ prow('Investments / Dividends', cf.consolidated.us.inv_div, periods) }}
+              {{ prow('Equity', cf.consolidated.us.equity, periods) }}
+              {{ prow('GP Profit', cf.consolidated.us.gp_profit, periods) }}
+              {{ prow('RECAP', cf.consolidated.us.recap, periods) }}
+              {{ prow('Transfer to MX', cf.consolidated.us.investment_mx, periods) }}
+              {{ prow('Opex', cf.consolidated.us.opex, periods) }}
+              {{ prow('Total US Business', cf.consolidated.us.total, periods, 'total') }}
+              {{ prow('Cumulative US', cf.consolidated.us.cumm, periods, 'cumm') }}
+              <tr class="cf-section"><td colspan="{{ periods|length + 2 }}">🇲🇽 MX Business</td></tr>
+              {{ prow('Investments / Dividends', cf.consolidated.mx.inv_div, periods) }}
+              {{ prow('Equity', cf.consolidated.mx.equity, periods) }}
+              {{ prow('GP Profit', cf.consolidated.mx.gp_profit, periods) }}
+              {{ prow('RECAP', cf.consolidated.mx.recap, periods) }}
+              {{ prow('Opex', cf.consolidated.mx.opex, periods) }}
+              {{ prow('Total MX Business', cf.consolidated.mx.total, periods, 'total') }}
+              {{ prow('Cumulative MX', cf.consolidated.mx.cumm, periods, 'cumm') }}
+              <tr class="cf-section"><td colspan="{{ periods|length + 2 }}">Consolidated</td></tr>
+              {{ prow('Total Cash Flow', cf.consolidated.total_cf, periods, 'total') }}
+              {{ prow('Cumulative Cash Flow', cf.consolidated.cumm_cf, periods, 'cumm') }}
             </tbody>
           </table>
         </div>
@@ -201,17 +201,17 @@
         <div class="card-head"><div><div class="card-title">Reserves (Reservas)</div><div class="card-sub">Operating fund, dividends, investment &amp; liquid fund — US &amp; Mexico.</div></div></div>
         <div class="table-scroll">
           <table class="data-table">
-            <thead><tr><th>Reserve line</th>{{ yhead(years, la) }}</tr></thead>
+            <thead><tr><th>Reserve line</th>{{ phead(periods) }}</tr></thead>
             <tbody>
-              {{ yrow('Operación USA', cf.consolidated.reservas.operacion_usa, years, la) }}
-              {{ yrow('Dividendo USA', cf.consolidated.reservas.dividendo_usa, years, la) }}
-              {{ yrow('Inversión USA', cf.consolidated.reservas.inversion_usa, years, la) }}
-              {{ yrow('Fondo Líquido USA', cf.consolidated.reservas.fondo_liquido_usa, years, la) }}
-              {{ yrow('Operación MX', cf.consolidated.reservas.operacion_mx, years, la) }}
-              {{ yrow('Dividendo MX', cf.consolidated.reservas.dividendo_mx, years, la) }}
-              {{ yrow('Inversión MX', cf.consolidated.reservas.inversion_mx, years, la) }}
-              {{ yrow('Fondo Líquido MX', cf.consolidated.reservas.fondo_liquido_mx, years, la) }}
-              {{ yrow('Total Reserves', cf.consolidated.reservas.total, years, la, 'total') }}
+              {{ prow('Operación USA', cf.consolidated.reservas.operacion_usa, periods) }}
+              {{ prow('Dividendo USA', cf.consolidated.reservas.dividendo_usa, periods) }}
+              {{ prow('Inversión USA', cf.consolidated.reservas.inversion_usa, periods) }}
+              {{ prow('Fondo Líquido USA', cf.consolidated.reservas.fondo_liquido_usa, periods) }}
+              {{ prow('Operación MX', cf.consolidated.reservas.operacion_mx, periods) }}
+              {{ prow('Dividendo MX', cf.consolidated.reservas.dividendo_mx, periods) }}
+              {{ prow('Inversión MX', cf.consolidated.reservas.inversion_mx, periods) }}
+              {{ prow('Fondo Líquido MX', cf.consolidated.reservas.fondo_liquido_mx, periods) }}
+              {{ prow('Total Reserves', cf.consolidated.reservas.total, periods, 'total') }}
             </tbody>
           </table>
         </div>
@@ -221,21 +221,21 @@
     {# ───────── United States tab ───────── #}
     <div class="tab-panel" data-panel="us">
       <div class="card mb-24">
-        <div class="card-head"><div><div class="card-title">US Business — Net &amp; Cumulative</div><div class="card-sub">Annual net cash flow and running position for the US book.</div></div></div>
+        <div class="card-head"><div><div class="card-title">US Business — Net &amp; Cumulative</div><div class="card-sub">Net cash flow + running position — {{ cf.meta.last_actual_year }} monthly, annual after.</div></div></div>
         <div class="chart-wrap" style="height:260px;"><canvas id="usChart"></canvas></div>
       </div>
       {% set order = [('inv_div','Investments / Dividends'),('equity','Equity (Contributions)'),('gp_profit','GP Profit'),('recap','RECAP'),('investment_mx','Transfer to MX'),('opex','Opex')] %}
-      {% for key, _lbl in order %}{{ sectbl(cf.us.sections.get(key), years, la) }}{% endfor %}
+      {% for key, _lbl in order %}{{ sectbl(cf.us.sections.get(key), periods) }}{% endfor %}
     </div>
 
     {# ───────── Mexico tab ───────── #}
     <div class="tab-panel" data-panel="mx">
       <div class="card mb-24">
-        <div class="card-head"><div><div class="card-title">MX Business — Net &amp; Cumulative</div><div class="card-sub">Annual net cash flow and running position for the Mexico book.</div></div></div>
+        <div class="card-head"><div><div class="card-title">MX Business — Net &amp; Cumulative</div><div class="card-sub">Net cash flow + running position — {{ cf.meta.last_actual_year }} monthly, annual after.</div></div></div>
         <div class="chart-wrap" style="height:260px;"><canvas id="mxChart"></canvas></div>
       </div>
       {% set order = [('inv_div','Investments / Dividends'),('equity','Equity (Contributions)'),('gp_profit','GP Profit'),('recap','RECAP'),('opex','Opex')] %}
-      {% for key, _lbl in order %}{{ sectbl(cf.mx.sections.get(key), years, la) }}{% endfor %}
+      {% for key, _lbl in order %}{{ sectbl(cf.mx.sections.get(key), periods) }}{% endfor %}
     </div>
   </div>
 
@@ -259,42 +259,43 @@
 {% if cf %}
 <script>
   const CF = {{ cf | tojson }};
-  const M = CF.meta, YEARS = M.years, LA = M.last_actual_year;
+  const PERIODS = {{ periods | tojson }};
+  const LABELS = PERIODS.map(p => p.label);
   const $1e6 = 1e6;
-  const projIdx = YEARS.indexOf(LA);
+  const projStart = PERIODS.findIndex(p => p.proj);   // first annual-projection index (-1 if none)
 
-  // value array (in $M) for a {year:val} map, aligned to YEARS
-  function vals(byYear){ return YEARS.map(y => ((byYear && byYear[y]) || 0) / $1e6); }
-  // per-bar color: green/red by sign, faded for projection years
-  function signCols(arr){
-    return arr.map((v, i) => {
-      const c = v >= 0 ? MQ.good() : MQ.bad();
-      return YEARS[i] > LA ? MQ.hexA(c, 0.32) : c;
-    });
+  // value of a parsed series at one period: month → series.months, year → series.by_year
+  function pOne(series, p){
+    if(!series) return 0;
+    const d = p.kind === 'month' ? series.months : series.by_year;
+    return (d && d[p.key]) || 0;
   }
-  function fixedCols(hex){
-    return YEARS.map((_, i) => YEARS[i] > LA ? MQ.hexA(hex, 0.32) : hex);
-  }
-  const fmtM = v => (v < 0 ? '-$' : '$') + Math.abs(v).toFixed(1) + 'M';
+  function pvals(series){ return PERIODS.map(p => pOne(series, p) / $1e6); }            // $M aligned to PERIODS
+  function pvals2(a, b){ return PERIODS.map(p => (pOne(a, p) + pOne(b, p)) / $1e6); }    // sum of two series
+  const isProj = i => projStart >= 0 && i >= projStart;
+  // per-bar color: green/red by sign, faded for projection periods
+  function signCols(arr){ return arr.map((v, i) => { const c = v >= 0 ? MQ.good() : MQ.bad(); return isProj(i) ? MQ.hexA(c, 0.32) : c; }); }
+  function fixedCols(hex){ return PERIODS.map((_, i) => isProj(i) ? MQ.hexA(hex, 0.32) : hex); }
+  const fmtM = v => (v < 0 ? '-$' : '$') + Math.abs(v).toFixed(2) + 'M';
   const baseScales = () => ({
-    x: { grid:{display:false}, ticks:{color:MQ.muted(), font:{size:10}} },
+    x: { grid:{display:false}, ticks:{color:MQ.muted(), font:{size:9}, autoSkip:false, maxRotation:60, minRotation:45} },
     y: { grid:{color:MQ.grid()}, ticks:{color:MQ.muted(), font:{size:10}, callback:v=>'$'+v+'M'} }
   });
 
-  // Net (bars) + Cumulative (line) for a {us|mx|consolidated} block.
-  function netCummChart(canvasId, netByYear, cummByYear, hex){
+  // Net (bars) + Cumulative (line) for a {us|mx|consolidated} block, monthly then annual.
+  function netCummChart(canvasId, netSeries, cummSeries, hex){
     const ctx = document.getElementById(canvasId); if(!ctx) return null;
-    const net = vals(netByYear), cumm = vals(cummByYear);
+    const net = pvals(netSeries), cumm = pvals(cummSeries);
     return new Chart(ctx, {
       data: {
-        labels: YEARS,
+        labels: LABELS,
         datasets: [
           { type:'bar', label:'Net CF', data:net, backgroundColor:signCols(net),
             borderRadius:3, order:2 },
           { type:'line', label:'Cumulative', data:cumm, borderColor:hex,
             backgroundColor:MQ.hexA(hex,0.06), borderWidth:2.5, tension:0.3,
             pointRadius:0, fill:true, order:1,
-            segment:{ borderDash: c => c.p0DataIndex >= projIdx ? [6,4] : undefined } }
+            segment:{ borderDash: c => isProj(c.p0DataIndex) ? [6,4] : undefined } }
         ]
       },
       options: { responsive:true, maintainAspectRatio:false,
@@ -305,20 +306,19 @@
     });
   }
 
-  MQ.register(()=>netCummChart('cfChart', CF.consolidated.total_cf.by_year, CF.consolidated.cumm_cf.by_year, MQ.palette(0)));
-  MQ.register(()=>netCummChart('usChart', CF.consolidated.us.total.by_year, CF.consolidated.us.cumm.by_year, MQ.palette(1)));
-  MQ.register(()=>netCummChart('mxChart', CF.consolidated.mx.total.by_year, CF.consolidated.mx.cumm.by_year, MQ.palette(5)));
+  MQ.register(()=>netCummChart('cfChart', CF.consolidated.total_cf, CF.consolidated.cumm_cf, MQ.palette(0)));
+  MQ.register(()=>netCummChart('usChart', CF.consolidated.us.total, CF.consolidated.us.cumm, MQ.palette(1)));
+  MQ.register(()=>netCummChart('mxChart', CF.consolidated.mx.total, CF.consolidated.mx.cumm, MQ.palette(5)));
 
-  // Contributions (Inversión US+MX) vs Distributions (Dividendo US+MX).
+  // Contributions (Inversión US+MX) vs Distributions (Dividendo US+MX), monthly then annual.
   MQ.register(function(){
     const ctx = document.getElementById('cdChart'); if(!ctx) return null;
     const R = CF.consolidated.reservas;
-    const sumY = (a,b) => YEARS.map(y => (((a&&a[y])||0) + ((b&&b[y])||0)) / $1e6);
-    const contrib = sumY(R.inversion_usa.by_year, R.inversion_mx.by_year);
-    const distrib = sumY(R.dividendo_usa.by_year, R.dividendo_mx.by_year);
+    const contrib = pvals2(R.inversion_usa, R.inversion_mx);
+    const distrib = pvals2(R.dividendo_usa, R.dividendo_mx);
     return new Chart(ctx, {
       type:'bar',
-      data:{ labels:YEARS, datasets:[
+      data:{ labels:LABELS, datasets:[
         { label:'Capital Deployed', data:contrib, backgroundColor:fixedCols(MQ.palette(0)), borderRadius:3 },
         { label:'Distributions',    data:distrib, backgroundColor:fixedCols(MQ.palette(2)), borderRadius:3 }
       ]},
