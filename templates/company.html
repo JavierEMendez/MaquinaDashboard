@@ -262,6 +262,44 @@
   </div>
   <div class="tab-panel" data-panel="operations">
     {% if ember_live %}<div class="row wrap" style="gap:8px;margin-bottom:14px;align-items:center;"><span class="badge good">● Live from Ember</span><span class="subtle" style="font-size:12px;">Operating revenues{% if ember_asof %} · as of {{ ember_asof }}{% endif %}</span></div>{% endif %}
+
+    {# ── Operating Budget (firm P&L) — Ember-only, read from EmberApps /budget ── #}
+    {% if ember_budget %}
+    {% set EB = ember_budget %}
+    {% set EBY = EB.meta.years %}
+    {% macro ebrow(label, series, years, signed=False, cls='') %}
+      <tr class="{{ cls }}"><td>{{ label }}</td>
+      {% for y in years %}{% set v = (series.by_year.get(y|string, 0)) if series else 0 %}<td class="{{ 'neg' if v < 0 else ('pos' if (signed and v > 0)) }}">{{ (v | smoney) if signed else (v | money) }}</td>{% endfor %}</tr>
+    {% endmacro %}
+    <div class="card mb-24">
+      <div class="row between wrap" style="gap:8px;align-items:center;margin-bottom:4px;">
+        <div class="card-title">Operating Budget · Firm P&amp;L <span class="badge good" style="margin-left:6px;">● From Ember budget</span></div>
+        <span class="subtle" style="font-size:12px;">{{ EB.meta.report_date }} · {{ EB.kpis.horizon_label }}</span>
+      </div>
+      <div class="card-sub mb-16">Corporate revenue, personnel &amp; overhead → net income &amp; cashflow. Source: EmberApps Operating Budget upload.</div>
+      <div class="grid grid-4 mb-16">
+        <div class="kpi"><div class="kpi-top"><span class="kpi-label">Revenue</span></div><div class="kpi-value">{{ EB.kpis.revenue_life | money }}</div><div class="kpi-foot"><span class="kpi-sub">{{ EB.kpis.horizon_label }}</span></div></div>
+        <div class="kpi"><div class="kpi-top"><span class="kpi-label">Personnel + Overhead</span></div><div class="kpi-value neg">{{ EB.kpis.costs_life | money }}</div><div class="kpi-foot"><span class="kpi-sub">total operating costs</span></div></div>
+        <div class="kpi"><div class="kpi-top"><span class="kpi-label">Net Income</span></div><div class="kpi-value {{ 'pos' if EB.kpis.net_income_life >= 0 else 'neg' }}">{{ EB.kpis.net_income_life | smoney }}</div><div class="kpi-foot"><span class="kpi-sub">revenue − costs</span></div></div>
+        <div class="kpi"><div class="kpi-top"><span class="kpi-label">Net Cash Flow</span></div><div class="kpi-value {{ 'pos' if EB.kpis.cash_flow_life >= 0 else 'neg' }}">{{ EB.kpis.cash_flow_life | smoney }}</div><div class="kpi-foot"><span class="kpi-sub">{{ EB.kpis.horizon_label }}</span></div></div>
+      </div>
+      <div class="table-scroll">
+        <table class="data-table">
+          <thead><tr><th>Line item</th>{% for y in EBY %}<th>{{ y }}</th>{% endfor %}</tr></thead>
+          <tbody>
+            {{ ebrow('Revenue', EB.revenue.total, EBY) }}
+            {{ ebrow('Personnel (People)', EB.people, EBY) }}
+            {{ ebrow('Other Operating Costs', EB.operations.total, EBY) }}
+            {{ ebrow('Total Costs', EB.total_costs, EBY, false, 'parent-row') }}
+            {{ ebrow('Net Income', EB.net_income, EBY, true, 'parent-row') }}
+            {{ ebrow('Cash Flow', EB.cash_flow, EBY, true) }}
+            {{ ebrow('Cumulative Cash Flow', EB.cumulative, EBY, true) }}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% endif %}
+
     {% if fin %}
     <div class="card mb-24">
       <div class="row between wrap" style="gap:8px;align-items:center;margin-bottom:16px;">

@@ -1147,6 +1147,31 @@ def fetch_ember_operations():
         return None
 
 
+def fetch_ember_budget():
+    """Latest Ember Operating Budget (firm P&L forecast) from the Ember DB
+    (report_type='ember_budget', uploaded on EmberApps' /budget page). Returns
+    the parsed dict (revenue/people/operations/net_income/cash_flow + kpis) or
+    None when unavailable, so callers fall back to the overhead proxy. Raw USD."""
+    try:
+        econn = db.get_ember_db()
+        if not econn:
+            return None
+        ecur = econn.cursor()
+        ecur.execute("SELECT data FROM reports WHERE report_type = 'ember_budget' "
+                     "ORDER BY uploaded_at DESC LIMIT 1")
+        row = ecur.fetchone()
+        ecur.close(); econn.close()
+        if not row or not row.get("data"):
+            return None
+        d = row["data"]
+        if isinstance(d, str):
+            d = json.loads(d)
+        return d if (d and d.get("meta")) else None
+    except Exception as e:  # pragma: no cover
+        app.logger.warning("Ember budget fetch failed: %s", e)
+        return None
+
+
 def fetch_ember_loans():
     """Latest Ember loans report → {loans:[...], totals:{...}, as_of}. Raw USD.
     Returns None on any problem (caller falls back to seeded data)."""
@@ -1375,6 +1400,7 @@ def company(slug):
     ember_live, ember_asof, ember_loans, ember_returns, summary = False, None, None, None, None
     cap = None        # Ember Capital (Projects tab) — Ember only
     verticals = sales = None  # Commercial tab — Ember only
+    ember_budget = None  # Operating Budget (firm P&L) — Ember only, from Ember DB
     if c["slug"] == "ember":
         ember_loans = fetch_ember_loans()
         ember_returns = fetch_ember_returns()
@@ -1382,18 +1408,36 @@ def company(slug):
         verticals = fetch_ember_verticals()
         sales = fetch_ember_sales()
         op = fetch_ember_operations()
+        ember_budget = fetch_ember_budget()
+        # Real net from the Ember Operating Budget (firm P&L) when uploaded;
+        # else fall back to the Project-Personnel ×1.10 overhead proxy.
+        budget_net, budget_net_label = None, None
+        if ember_budget:
+            niy = (ember_budget.get("net_income") or {}).get("by_year") or {}
+            if niy:
+                cy = str(BASE_YEAR)
+                yk = cy if cy in niy else sorted(niy.keys())[0]
+                try:
+                    budget_net = float(niy.get(yk) or 0)
+                    budget_net_label = "per Ember budget · " + str(yk)
+                except (TypeError, ValueError):
+                    budget_net = None
         if op and op["totals"]:
             ember_live, ember_asof = True, op["as_of"]
             yrs, rows, totals = op["years"], op["rows"], op["totals"]
             yr0 = str(yrs[0])
             first = lambda lbl: (rows.get(lbl) or [None])[0]
-            # Overhead proxy until Ember uploads full overhead: Project Personnel + 10%.
-            net_ocf = totals[0] - (rows.get("Project Personnel") or [0])[0] * 1.10
+            if budget_net is not None:
+                net_ocf, net_label = budget_net, budget_net_label
+            else:
+                # Overhead proxy until Ember uploads full overhead: Project Personnel + 10%.
+                net_ocf = totals[0] - (rows.get("Project Personnel") or [0])[0] * 1.10
+                net_label = "net of est. overhead · " + yr0
             by_category["Operations"] = [
                 dict(name="Corporate Revenues", current=totals[0], unit="currency", unit_label=yr0, trend=None, in_chart=True),
                 dict(name="Development Fees", current=first("Development Fees"), unit="currency", unit_label=yr0, trend=None, in_chart=False),
                 dict(name="Bookkeeping Fee", current=first("Bookkeeping"), unit="currency", unit_label=yr0, trend=None, in_chart=False),
-                dict(name="Net Operating Cashflow", current=net_ocf, unit="currency", unit_label="net of est. overhead · " + yr0, trend=None, in_chart=False),
+                dict(name="Net Operating Cashflow", current=net_ocf, unit="currency", unit_label=net_label, trend=None, in_chart=False),
             ]
             series = [dict(label=lbl, color_idx=i, category="Operations",
                            actual=vals, projection=[None] * len(yrs), unit="currency", unit_label="USD")
@@ -1459,7 +1503,7 @@ def company(slug):
         ember_live=ember_live, ember_asof=ember_asof, ember_loans=ember_loans,
         ember_returns=ember_returns, summary=summary, fin=fin, leverage=leverage,
         valuation=valuation, cap=cap, hold=hold, exitr=exitr,
-        verticals=verticals, sales=sales,
+        verticals=verticals, sales=sales, ember_budget=ember_budget,
     )
 
 
