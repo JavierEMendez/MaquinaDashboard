@@ -1172,6 +1172,76 @@ def fetch_ember_budget():
         return None
 
 
+def _apply_ops_revenue_annual(budget, op):
+    """Mirror of EmberApps' /budget revenue overlay (annual): replace the
+    budget's revenue with the live Operating Revenues figures (op =
+    fetch_ember_operations(), which is annual) and re-derive net income
+    (= revenue − costs), cash flow (shifted by the revenue delta) and
+    cumulative — all by year. Ember's operations feed has no monthly detail
+    and the Ember-page budget panel is by-year, so annual is sufficient.
+    Original Excel revenue kept under revenue.excel. No-op if either side is
+    missing, so the page falls back to the stored (Excel) budget."""
+    if not budget or not op:
+        return budget
+    years_o = op.get("years") or []
+    totals_o = op.get("totals") or []
+    ops_rev_y = {str(y): float(t or 0) for y, t in zip(years_o, totals_o)}
+    if not ops_rev_y:
+        return budget
+    import copy
+    b = copy.deepcopy(budget)
+    years = [str(y) for y in (b.get("meta", {}).get("years", []) or [])]
+    old_total = (b.get("revenue", {}) or {}).get("total", {}) or {}
+    old_y = old_total.get("by_year", {}) or {}
+    new_y = {y: round(ops_rev_y.get(y, float(old_y.get(y, 0) or 0)), 2) for y in years}
+    dyear = {y: new_y[y] - float(old_y.get(y, 0) or 0) for y in years}
+
+    lines = []
+    for label, vals in (op.get("rows") or {}).items():
+        lines.append({"name": label,
+                      "by_year": {str(y): float(v or 0) for y, v in zip(years_o, vals or [])},
+                      "months": {}})
+    b.setdefault("revenue", {})
+    b["revenue"]["excel"] = old_total
+    b["revenue"]["total"] = {"months": old_total.get("months", {}) or {}, "by_year": new_y}
+    if lines:
+        b["revenue"]["lines"] = lines
+    b["revenue"]["source"] = "operations"
+
+    tcy = (b.get("total_costs", {}) or {}).get("by_year", {}) or {}
+    b["net_income"] = {**(b.get("net_income") or {}),
+                       "by_year": {y: round(new_y[y] - float(tcy.get(y, 0) or 0), 2) for y in years}}
+
+    cf = b.get("cash_flow", {}) or {}
+    cfy = dict(cf.get("by_year", {}) or {})
+    for y in years:
+        cfy[y] = round(float(cfy.get(y, 0) or 0) + dyear[y], 2)
+    b["cash_flow"] = {**cf, "by_year": cfy}
+
+    # cumulative by year = beginning balance + running sum of cash flow
+    old_cum_y = (b.get("cumulative", {}) or {}).get("by_year", {}) or {}
+    syears = sorted(years, key=lambda x: int(x)) if years else []
+    begin = 0.0
+    if syears:
+        f = syears[0]
+        begin = float(old_cum_y.get(f, 0) or 0) - float((cf.get("by_year", {}) or {}).get(f, 0) or 0)
+    run = begin
+    cum_y = {}
+    for y in syears:
+        run = round(run + cfy.get(y, 0.0), 2)
+        cum_y[y] = run
+    b["cumulative"] = {**(b.get("cumulative") or {}), "by_year": cum_y}
+
+    kp = b.get("kpis", {}) or {}
+    kp["revenue_life"] = round(sum(new_y.values()), 2)
+    kp["net_income_life"] = round(sum(b["net_income"]["by_year"].values()), 2)
+    kp["cash_flow_life"] = round(sum(cfy.values()), 2)
+    kp["revenue_source"] = "operations"
+    b["kpis"] = kp
+    b.setdefault("meta", {})["revenue_source"] = "operations"
+    return b
+
+
 def fetch_ember_loans():
     """Latest Ember loans report → {loans:[...], totals:{...}, as_of}. Raw USD.
     Returns None on any problem (caller falls back to seeded data)."""
@@ -1409,6 +1479,11 @@ def company(slug):
         sales = fetch_ember_sales()
         op = fetch_ember_operations()
         ember_budget = fetch_ember_budget()
+        # Match EmberApps' /budget: revenue comes from Operating Revenues, not
+        # the Excel — overlay it so net income / cashflow / the panel are
+        # consistent across both apps.
+        if ember_budget and op:
+            ember_budget = _apply_ops_revenue_annual(ember_budget, op)
         # Real net from the Ember Operating Budget (firm P&L) when uploaded;
         # else fall back to the Project-Personnel ×1.10 overhead proxy.
         budget_net, budget_net_label = None, None

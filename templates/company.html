@@ -276,7 +276,7 @@
         <div class="card-title">Operating Budget · Firm P&amp;L <span class="badge good" style="margin-left:6px;">● From Ember budget</span></div>
         <span class="subtle" style="font-size:12px;">{{ EB.meta.report_date }} · {{ EB.kpis.horizon_label }}</span>
       </div>
-      <div class="card-sub mb-16">Corporate revenue, personnel &amp; overhead → net income &amp; cashflow. Source: EmberApps Operating Budget upload.</div>
+      <div class="card-sub mb-16">Corporate revenue, personnel &amp; overhead → net income &amp; cashflow. Costs from the EmberApps Operating Budget upload{% if EB.revenue.source == 'operations' %}; <strong>revenue from the live Operating Revenues report</strong>{% endif %}.</div>
       <div class="grid grid-4 mb-16">
         <div class="kpi"><div class="kpi-top"><span class="kpi-label">Revenue</span></div><div class="kpi-value">{{ EB.kpis.revenue_life | money }}</div><div class="kpi-foot"><span class="kpi-sub">{{ EB.kpis.horizon_label }}</span></div></div>
         <div class="kpi"><div class="kpi-top"><span class="kpi-label">Personnel + Overhead</span></div><div class="kpi-value neg">{{ EB.kpis.costs_life | money }}</div><div class="kpi-foot"><span class="kpi-sub">total operating costs</span></div></div>
