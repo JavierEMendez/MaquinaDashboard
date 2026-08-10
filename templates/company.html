@@ -63,6 +63,7 @@
     <button class="tab" data-tab="operations">Operations</button>
     <button class="tab" data-tab="finance">Finance</button>
     {% if cap %}<button class="tab" data-tab="projects">Projects</button>{% endif %}
+    {% if comp %}<button class="tab" data-tab="comparticion">Compartición</button>{% endif %}
     <button class="tab" data-tab="strategy">Strategy</button>
   </div>
 
@@ -431,6 +432,97 @@
   </div>
   {% endif %}
 
+  {# ───────── Compartición de Ingresos (Meta scenario model) ───────── #}
+  {% if comp %}
+  <div class="tab-panel" data-panel="comparticion">
+    <div class="row wrap between" style="gap:8px;margin-bottom:16px;align-items:center;">
+      <div>
+        <div class="card-title" style="font-size:16px;">Compartición de Ingresos — Valoran / Meta proposal</div>
+        <div class="subtle" style="font-size:12.5px;margin-top:2px;">Maquina's share of toll revenues <strong>above the concession-title baseline</strong> on Ventura–El Peyote and La Pitahaya–Libramiento Oriente. Move the sliders to run scenarios — everything recomputes live.</div>
+      </div>
+      <span class="badge accent">Scenario model</span>
+    </div>
+
+    <div class="grid grid-4 mb-24">
+      <div class="kpi"><div class="kpi-top"><span class="kpi-label">NPV to Maquina</span></div>
+        <div class="kpi-value" id="comp-npv" style="color:var(--mq-accent);">—</div>
+        <div class="kpi-foot"><span class="kpi-sub" id="comp-npv-sub">post-tax · real discount · pesos 2025</span></div></div>
+      <div class="kpi"><div class="kpi-top"><span class="kpi-label">≈ USD</span></div>
+        <div class="kpi-value" id="comp-usd">—</div>
+        <div class="kpi-foot"><span class="kpi-sub">at {{ '%.2f'|format(comp.rate) }} MXN/USD</span></div></div>
+      <div class="kpi"><div class="kpi-top"><span class="kpi-label">Nominal Total 2024–50</span></div>
+        <div class="kpi-value" id="comp-nom">—</div>
+        <div class="kpi-foot"><span class="kpi-sub">pre-tax, undiscounted</span></div></div>
+      <div class="kpi"><div class="kpi-top"><span class="kpi-label">Share of Excess</span></div>
+        <div class="kpi-value" id="comp-eff">—</div>
+        <div class="kpi-foot"><span class="kpi-sub">blended · deck cites ~70% with restricción</span></div></div>
+    </div>
+
+    <div class="card mb-24">
+      <div class="card-head"><div><div class="card-title">Annual Compartición by Band vs Revenues</div>
+        <div class="card-sub">Bars: Maquina's share by band (mdp, nominal). Lines: model revenues vs indexed concession-title baseline (right axis).</div></div></div>
+      <div class="chart-wrap" style="height:340px;"><canvas id="compChart"></canvas></div>
+    </div>
+
+    <div class="grid grid-2 mb-24" style="align-items:start;">
+      <div class="card">
+        <div class="row between wrap" style="gap:8px;margin-bottom:14px;">
+          <div class="card-title">Scenario Controls</div>
+          <div class="row" style="gap:6px;">
+            <button class="btn btn-sm btn-ghost" type="button" onclick="compPreset('base')">Base (Excel)</button>
+            <button class="btn btn-sm btn-ghost" type="button" onclick="compPreset('cons')">Conservador</button>
+            <button class="btn btn-sm btn-ghost" type="button" onclick="compPreset('opt')">Optimista</button>
+          </div>
+        </div>
+        <div class="row" style="gap:18px;margin-bottom:12px;">
+          <label class="row" style="gap:7px;font-size:13px;color:var(--mq-muted);cursor:pointer;"><input type="checkbox" id="comp-road-v" checked style="accent-color:var(--mq-accent);"> Ventura–El Peyote</label>
+          <label class="row" style="gap:7px;font-size:13px;color:var(--mq-muted);cursor:pointer;"><input type="checkbox" id="comp-road-p" checked style="accent-color:var(--mq-accent);"> La Pitahaya–Libr. Oriente</label>
+        </div>
+        {% set srow = 'display:grid;grid-template-columns:172px 1fr 60px;gap:10px;align-items:center;padding:5px 0;' %}
+        {% set slbl = 'font-size:12px;color:var(--mq-muted);' %}
+        {% set sval = 'font-size:12px;font-weight:700;color:var(--mq-ink-2);text-align:right;font-variant-numeric:tabular-nums;' %}
+        <div style="font-size:10px;letter-spacing:0.13em;text-transform:uppercase;color:var(--mq-subtle);font-weight:700;margin:8px 0 2px;">Traffic &amp; revenue</div>
+        <div style="{{ srow }}"><span style="{{ slbl }}">Revenue level — Ventura</span><input type="range" id="comp-lvl-v" min="60" max="140" step="1" value="100" style="accent-color:var(--mq-accent);"><span style="{{ sval }}" id="lbl-lvl-v">100%</span></div>
+        <div style="{{ srow }}"><span style="{{ slbl }}">Revenue level — Pitahaya</span><input type="range" id="comp-lvl-p" min="60" max="140" step="1" value="100" style="accent-color:var(--mq-accent);"><span style="{{ sval }}" id="lbl-lvl-p">100%</span></div>
+        <div style="{{ srow }}"><span style="{{ slbl }}">Traffic growth Δ (tcma)</span><input type="range" id="comp-growth" min="-3" max="3" step="0.25" value="0" style="accent-color:var(--mq-accent);"><span style="{{ sval }}" id="lbl-growth">+0.0%</span></div>
+        <div style="{{ srow }}"><span style="{{ slbl }}">Inflation (INPC) Δ vs base</span><input type="range" id="comp-infl" min="-2" max="2" step="0.25" value="0" style="accent-color:var(--mq-accent);"><span style="{{ sval }}" id="lbl-infl">+0.0%</span></div>
+        <div style="font-size:10px;letter-spacing:0.13em;text-transform:uppercase;color:var(--mq-subtle);font-weight:700;margin:12px 0 2px;">Valuation</div>
+        <div style="{{ srow }}"><span style="{{ slbl }}">Real discount rate</span><input type="range" id="comp-disc" min="6" max="12" step="0.25" value="9" style="accent-color:var(--mq-accent);"><span style="{{ sval }}" id="lbl-disc">9.0%</span></div>
+        <div style="{{ srow }}"><span style="{{ slbl }}">Tax rate</span><input type="range" id="comp-tax" min="0" max="35" step="1" value="30" style="accent-color:var(--mq-accent);"><span style="{{ sval }}" id="lbl-tax">30%</span></div>
+        <div style="font-size:10px;letter-spacing:0.13em;text-transform:uppercase;color:var(--mq-subtle);font-weight:700;margin:12px 0 2px;">Deal terms — bands over baseline</div>
+        <div style="{{ srow }}"><span style="{{ slbl }}">Band 1 ends at (excess ≤)</span><input type="range" id="comp-th1" min="10" max="60" step="1" value="30" style="accent-color:var(--mq-accent);"><span style="{{ sval }}" id="lbl-th1">30%</span></div>
+        <div style="{{ srow }}"><span style="{{ slbl }}">Band 2 ends at</span><input type="range" id="comp-th2" min="20" max="80" step="1" value="50" style="accent-color:var(--mq-accent);"><span style="{{ sval }}" id="lbl-th2">50%</span></div>
+        <div style="{{ srow }}"><span style="{{ slbl }}">Band 3 ends at</span><input type="range" id="comp-th3" min="30" max="100" step="1" value="75" style="accent-color:var(--mq-accent);"><span style="{{ sval }}" id="lbl-th3">75%</span></div>
+        <div style="{{ srow }}"><span style="{{ slbl }}">Share — Band 1</span><input type="range" id="comp-sh1" min="0" max="100" step="1" value="5" style="accent-color:var(--mq-accent);"><span style="{{ sval }}" id="lbl-sh1">5%</span></div>
+        <div style="{{ srow }}"><span style="{{ slbl }}">Share — Band 2</span><input type="range" id="comp-sh2" min="0" max="100" step="1" value="40" style="accent-color:var(--mq-accent);"><span style="{{ sval }}" id="lbl-sh2">40%</span></div>
+        <div style="{{ srow }}"><span style="{{ slbl }}">Share — Band 3</span><input type="range" id="comp-sh3" min="0" max="100" step="1" value="60" style="accent-color:var(--mq-accent);"><span style="{{ sval }}" id="lbl-sh3">60%</span></div>
+        <div style="{{ srow }}"><span style="{{ slbl }}">Share — Band 4 (&gt;Band 3)</span><input type="range" id="comp-sh4" min="0" max="100" step="1" value="75" style="accent-color:var(--mq-accent);"><span style="{{ sval }}" id="lbl-sh4">75%</span></div>
+      </div>
+
+      <div class="card">
+        <div class="card-title mb-16">Breakdown &amp; References</div>
+        <div class="table-scroll" style="max-height:none;">
+          <table class="data-table">
+            <thead><tr><th style="text-align:left;">Highway</th><th>First sharing yr</th><th>Nominal total</th><th>NPV (post-tax)</th></tr></thead>
+            <tbody>
+              <tr><td style="text-align:left;">Ventura – El Peyote</td><td id="comp-v-first">—</td><td id="comp-v-nom">—</td><td id="comp-v-npv">—</td></tr>
+              <tr><td style="text-align:left;">La Pitahaya – Libr. Oriente</td><td id="comp-p-first">—</td><td id="comp-p-nom">—</td><td id="comp-p-npv">—</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="divider"></div>
+        <div style="font-size:10px;letter-spacing:0.13em;text-transform:uppercase;color:var(--mq-subtle);font-weight:700;margin-bottom:8px;">Valoran deck reference (diapositiva 4 · post-tax @ 9% real)</div>
+        {% for a in comp.deck_anchors %}
+        <div class="row between" style="font-size:12.5px;padding:4px 0;border-bottom:1px solid var(--mq-line);">
+          <span class="muted">{{ a.label }}</span><span class="tnum" style="font-weight:600;">{{ '{:,.0f}'.format(a.mdp) }} mdp</span>
+        </div>
+        {% endfor %}
+        <p class="subtle" style="font-size:11.5px;line-height:1.6;margin-top:12px;">Method: yearly excess = max(0, model revenues − concession-title baseline indexed by INPC). The excess is banded against the baseline and shared at the band percentages. NPV deflates nominal flows to 2025 pesos and discounts at the real rate, post-tax. Base series extracted 1-for-1 from the proposal workbook (base-case nominal total $219,695 mdp — ties to the Excel).</p>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
   {# ───────── Strategy ───────── #}
   <div class="tab-panel" data-panel="strategy">
     {# ---- Investment & Control (hold / takeover / target) ---- #}
@@ -680,6 +772,147 @@
           plugins:{ tooltip:{ callbacks:{ label:c=>c.dataset.label+': $'+c.parsed.y.toFixed(1)+'M' } } } } });
     }
     if(document.getElementById('distChart')) MQ.register(distChart);
+  })();
+  {% endif %}
+
+  {% if comp %}
+  // ── Compartición de Ingresos: live scenario engine (Meta) ──────────
+  // Replicates the proposal workbook's band math exactly at defaults.
+  // Series are in MILLIONS of MXN ("mdp" = millones de pesos).
+  (function(){
+    const COMP = {{ comp | tojson }};
+    const N = COMP.years.length, Y = COMP.years;
+    const $ = id => document.getElementById(id);
+    const SLIDERS = ['lvl-v','lvl-p','growth','infl','disc','tax','th1','th2','th3','sh1','sh2','sh3','sh4'];
+    let compChart = null;
+
+    function cfg(){
+      // clamp band thresholds so they stay ordered
+      let t1 = +$('comp-th1').value, t2 = Math.max(+$('comp-th2').value, t1+1), t3 = Math.max(+$('comp-th3').value, t2+1);
+      return {
+        roads: { ventura: $('comp-road-v').checked, pitahaya: $('comp-road-p').checked },
+        level: { ventura: +$('comp-lvl-v').value/100, pitahaya: +$('comp-lvl-p').value/100 },
+        growth: +$('comp-growth').value/100, infl: +$('comp-infl').value/100,
+        disc: +$('comp-disc').value/100, tax: +$('comp-tax').value/100,
+        th: [t1/100, t2/100, t3/100],
+        sh: [+$('comp-sh1').value/100, +$('comp-sh2').value/100, +$('comp-sh3').value/100, +$('comp-sh4').value/100],
+        _t: [t1, t2, t3]
+      };
+    }
+
+    function calc(c){
+      const bands = [Array(N).fill(0), Array(N).fill(0), Array(N).fill(0), Array(N).fill(0)];
+      const modelT = Array(N).fill(0), baseT = Array(N).fill(0);
+      const per = {};
+      let totShare = 0, totExcess = 0, npvAll = 0;
+      const ix2025 = COMP.index[1] * Math.pow(1 + c.infl, Y[1] - 2024);
+      for (const key of ['ventura','pitahaya']){
+        const road = { nom: 0, npv: 0, first: null };
+        per[key] = road;
+        if (!c.roads[key]) continue;
+        const R = COMP[key];
+        for (let i = 0; i < N; i++){
+          const ix = COMP.index[i] * Math.pow(1 + c.infl, Y[i] - 2024);
+          const base = R.tdc[i] * ix;
+          const real = R.model[i] / COMP.index[i];             // base-case real revenues
+          const model = real * ix * c.level[key] * Math.pow(1 + c.growth, Math.max(0, Y[i] - 2025));
+          const exc = Math.max(0, model - base);
+          const b = [
+            Math.min(exc, base * c.th[0]),
+            Math.min(Math.max(exc - base * c.th[0], 0), base * (c.th[1] - c.th[0])),
+            Math.min(Math.max(exc - base * c.th[1], 0), base * (c.th[2] - c.th[1])),
+            Math.max(exc - base * c.th[2], 0)
+          ];
+          let s = 0;
+          for (let k = 0; k < 4; k++){ const v = b[k] * c.sh[k]; bands[k][i] += v; s += v; }
+          modelT[i] += model; baseT[i] += base;
+          totShare += s; totExcess += exc; road.nom += s;
+          if (s > 1e-6 && road.first === null) road.first = Y[i];
+          if (Y[i] >= 2025){
+            const pv = (s * (1 - c.tax)) / (ix / ix2025) / Math.pow(1 + c.disc, Y[i] - 2025);
+            road.npv += pv; npvAll += pv;
+          }
+        }
+      }
+      return { bands, modelT, baseT, per, totShare, totExcess, npvAll };
+    }
+
+    const fmtMdp = x => '$' + Math.round(x).toLocaleString('en-US') + ' mdp';
+    const fmtUsd = x => { const usd = x * 1e6 / COMP.rate; return usd >= 1e9 ? '$' + (usd/1e9).toFixed(2) + 'B' : '$' + (usd/1e6).toFixed(0) + 'M'; };
+
+    function syncLabels(c){
+      $('lbl-lvl-v').textContent = Math.round(c.level.ventura*100) + '%';
+      $('lbl-lvl-p').textContent = Math.round(c.level.pitahaya*100) + '%';
+      $('lbl-growth').textContent = (c.growth>=0?'+':'') + (c.growth*100).toFixed(1) + '%';
+      $('lbl-infl').textContent = (c.infl>=0?'+':'') + (c.infl*100).toFixed(1) + '%';
+      $('lbl-disc').textContent = (c.disc*100).toFixed(1) + '%';
+      $('lbl-tax').textContent = Math.round(c.tax*100) + '%';
+      $('lbl-th1').textContent = c._t[0] + '%'; $('lbl-th2').textContent = c._t[1] + '%'; $('lbl-th3').textContent = c._t[2] + '%';
+      $('lbl-sh1').textContent = Math.round(c.sh[0]*100) + '%'; $('lbl-sh2').textContent = Math.round(c.sh[1]*100) + '%';
+      $('lbl-sh3').textContent = Math.round(c.sh[2]*100) + '%'; $('lbl-sh4').textContent = Math.round(c.sh[3]*100) + '%';
+    }
+
+    function recompute(){
+      const c = cfg(), r = calc(c);
+      syncLabels(c);
+      $('comp-npv').textContent = fmtMdp(r.npvAll);
+      $('comp-npv-sub').textContent = 'post-tax ' + Math.round(c.tax*100) + '% · ' + (c.disc*100).toFixed(1) + '% real · pesos 2025';
+      $('comp-usd').textContent = fmtUsd(r.npvAll);
+      $('comp-nom').textContent = fmtMdp(r.totShare);
+      $('comp-eff').textContent = r.totExcess ? (r.totShare / r.totExcess * 100).toFixed(1) + '%' : '—';
+      $('comp-v-first').textContent = r.per.ventura.first || '—';
+      $('comp-v-nom').textContent = fmtMdp(r.per.ventura.nom);
+      $('comp-v-npv').textContent = fmtMdp(r.per.ventura.npv);
+      $('comp-p-first').textContent = r.per.pitahaya.first || '—';
+      $('comp-p-nom').textContent = fmtMdp(r.per.pitahaya.nom);
+      $('comp-p-npv').textContent = fmtMdp(r.per.pitahaya.npv);
+      if (compChart){
+        for (let k = 0; k < 4; k++) compChart.data.datasets[k].data = r.bands[k];
+        compChart.data.datasets[4].data = r.modelT;
+        compChart.data.datasets[5].data = r.baseT;
+        compChart.update('none');
+      }
+      return r;
+    }
+
+    function buildCompChart(){
+      const ctx = $('compChart'); if (!ctx) return null;
+      const r = calc(cfg());
+      const bandDs = ['Banda 1 (5%)','Banda 2 (40%)','Banda 3 (60%)','Banda 4 (75%)'].map((lbl, k) => ({
+        type:'bar', label:lbl, data:r.bands[k], stack:'share',
+        backgroundColor:MQ.hexA(MQ.palette(k), 0.75), borderWidth:0, yAxisID:'y' }));
+      compChart = new Chart(ctx, { data: { labels: Y, datasets: [
+          ...bandDs,
+          { type:'line', label:'Ingresos del modelo', data:r.modelT, borderColor:MQ.palette(4), borderWidth:2.2, pointRadius:0, tension:0.3, yAxisID:'y2' },
+          { type:'line', label:'Base Título de Concesión', data:r.baseT, borderColor:MQ.muted(), borderDash:[6,4], borderWidth:1.8, pointRadius:0, tension:0.3, yAxisID:'y2' }
+        ]},
+        options: { responsive:true, maintainAspectRatio:false, interaction:{mode:'index',intersect:false},
+          scales: {
+            x:{ stacked:true, grid:{display:false}, ticks:{ color:MQ.muted(), maxTicksLimit:14 } },
+            y:{ stacked:true, position:'left', grid:{color:MQ.grid()}, title:{display:true,text:'Compartición (mdp)',color:MQ.muted(),font:{size:10}}, ticks:{ color:MQ.muted(), callback:v=>'$'+(v/1000).toFixed(1)+'k' } },
+            y2:{ position:'right', grid:{display:false}, title:{display:true,text:'Ingresos (mdp)',color:MQ.muted(),font:{size:10}}, ticks:{ color:MQ.muted(), callback:v=>'$'+(v/1000).toFixed(0)+'k' } } },
+          plugins:{ legend:{ display:true, position:'bottom', labels:{ color:MQ.muted(), boxWidth:10, font:{size:11} } },
+            tooltip:{ callbacks:{ label:c=>c.dataset.label+': $'+Math.round(c.parsed.y).toLocaleString()+' mdp' } } } } });
+      recompute();
+      return compChart;
+    }
+
+    window.compPreset = function(name){
+      const set = (id, v) => { $(id).value = v; };
+      set('comp-lvl-v', 100); set('comp-lvl-p', 100); set('comp-growth', 0); set('comp-infl', 0);
+      set('comp-disc', 9); set('comp-tax', 30);
+      set('comp-th1', 30); set('comp-th2', 50); set('comp-th3', 75);
+      set('comp-sh1', 5); set('comp-sh2', 40); set('comp-sh3', 60); set('comp-sh4', 75);
+      $('comp-road-v').checked = true; $('comp-road-p').checked = true;
+      if (name === 'cons'){ set('comp-lvl-v', 90); set('comp-lvl-p', 90); set('comp-growth', -1); }
+      if (name === 'opt'){ set('comp-lvl-v', 110); set('comp-lvl-p', 110); set('comp-growth', 1); }
+      recompute();
+    };
+
+    SLIDERS.forEach(s => $('comp-' + s).addEventListener('input', recompute));
+    $('comp-road-v').addEventListener('change', recompute);
+    $('comp-road-p').addEventListener('change', recompute);
+    if ($('compChart')) MQ.register(buildCompChart);
   })();
   {% endif %}
 

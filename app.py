@@ -108,6 +108,23 @@ def _boot():
             cur.execute("INSERT INTO app_settings (key,value) VALUES ('hold_dates_v1','1') "
                         "ON CONFLICT (key) DO NOTHING")
             conn.commit()
+        # Add Meta (toll-road infrastructure, Valoran) to the portfolio once.
+        cur.execute("SELECT value FROM app_settings WHERE key = 'meta_company_v1'")
+        if not cur.fetchone():
+            cur.execute("SELECT id FROM companies WHERE slug = 'meta'")
+            if not cur.fetchone():
+                cur.execute(
+                    "INSERT INTO companies (slug,name,industry,country,country_code,currency,"
+                    "value_unit,accent,description,takeover_year,display_order) VALUES "
+                    "('meta','Meta','Infrastructure','Mexico','MX','MXN','MMXN','#7A5AF8',"
+                    "'Toll-road infrastructure concessions (Valoran) — highway development "
+                    "and operation in Mexico.',NULL,5) RETURNING id")
+                mid = cur.fetchone()["id"]
+                cur.execute("INSERT INTO company_financials (company_id, valuation_model) "
+                            "VALUES (%s,'ebitda') ON CONFLICT (company_id) DO NOTHING", (mid,))
+            cur.execute("INSERT INTO app_settings (key,value) VALUES ('meta_company_v1','1') "
+                        "ON CONFLICT (key) DO NOTHING")
+            conn.commit()
         # 12-month retention on the activity ledger (once per process boot).
         cur.execute("DELETE FROM activity_log WHERE ts < NOW() - INTERVAL '12 months'")
         conn.commit()
@@ -696,6 +713,36 @@ def _exit_calc(series, entry_year, target_hold_years, exit_value_usd):
         cfs.append(net)
     return dict(invested=invested, dist=dist, exit_value=ev, exit_year=exit_y,
                 moic=(dist + ev) / invested, dpi=dist / invested, irr=annual_irr(cfs))
+
+
+# ─── META: COMPARTICIÓN DE INGRESOS (highway revenue-sharing model) ─
+# Extracted 1-for-1 from Valoran's proposal workbook (Libro1.xlsx →
+# "Compartición" sheet, validated to the peso against the Excel).
+# Series in MILLIONS of MXN. tdc = concession-title baseline revenues in
+# Dec-2024 pesos (already actualized +33.07% / +29.59% from title base
+# dates); model = projected toll revenues (nominal); index = INPC index
+# from Valoran's Premisas (≈3.8–4.0%/yr). Nominal baseline_t = tdc_t ×
+# index_t. Excess over baseline is split into bands vs the baseline
+# (0–30–50–75%+) shared to Maquina at 5/40/60/75%. The client-side
+# engine in company.html recomputes everything from the sliders.
+META_COMP = {
+    "years": [2024, 2025, 2026, 2027, 2028, 2029, 2030, 2031, 2032, 2033, 2034, 2035, 2036, 2037, 2038, 2039, 2040, 2041, 2042, 2043, 2044, 2045, 2046, 2047, 2048, 2049, 2050],
+    "index": [1.003113, 1.041231, 1.079965, 1.123163, 1.16809, 1.214814, 1.263406, 1.313942, 1.3665, 1.42116, 1.478007, 1.537127, 1.598612, 1.662556, 1.729059, 1.798221, 1.87015, 1.944956, 2.022754, 2.103664, 2.187811, 2.275323, 2.366336, 2.46099, 2.559429, 2.661806, 2.768279],
+    "ventura": {
+        "name": "Ventura – El Peyote",
+        "tdc": [616.268, 647.086, 678.89, 711.394, 746.653, 778.562, 811.681, 845.496, 882.432, 915.271, 951.261, 988.007, 1026.543, 1060.184, 1097.358, 1135.276, 1171.352, 1201.585, 1235.587, 1270.168, 1308.912, 1341.102, 1377.476, 1414.733, 1456.986, 1453.005, 1453.005],
+        "model": [0.0, 1460.097, 1711.77, 1955.562, 2221.795, 2480.762, 2777.693, 3110.452, 3492.834, 3841.887, 4703.467, 5269.347, 5902.226, 6534.313, 7215.311, 7931.869, 8715.477, 9496.574, 10331.293, 11226.384, 12187.705, 13136.902, 14167.155, 15273.952, 16466.302, 17607.056, 14954.654]},
+    "pitahaya": {
+        "name": "La Pitahaya – Libramiento Oriente (incl. Ramal Villa de Reyes)",
+        "tdc": [719.828, 864.321, 1122.797, 1166.857, 1216.325, 1260.855, 1310.892, 1363.119, 1421.301, 1474.097, 1533.217, 1594.918, 1641.939, 1681.028, 1725.871, 1771.797, 1824.214, 1868.073, 1917.82, 1969.444, 2027.927, 2076.881, 2132.716, 2190.25, 2196.249, 2190.25, 2190.25],
+        "model": [0.0, 0.0, 0.0, 0.0, 804.485, 3270.647, 3834.922, 4321.547, 4883.447, 5294.338, 6516.7, 7345.837, 8230.207, 9113.28, 10064.432, 11065.143, 12159.653, 13250.961, 14416.778, 15667.802, 17011.05, 18338.067, 19778.657, 21327.96, 22996.818, 24593.447, 20892.732]},
+    # Valoran deck (diapositiva 4) reference valuations, post-tax @ 9% real:
+    "deck_anchors": [
+        {"mdp": 30000, "label": "Aforo real 2025 · tcma 3.0%"},
+        {"mdp": 34000, "label": "Aforo real 2025 · tcma 3.5% + restricción progresiva"},
+        {"mdp": 38000, "label": "Escenario SDG con restricción (−10%)"},
+        {"mdp": 43000, "label": "Escenario SDG con restricción"}],
+}
 
 
 def exit_returns(cid, entry_year, target_hold_years, exit_value_usd):
@@ -1471,6 +1518,9 @@ def company(slug):
     cap = None        # Ember Capital (Projects tab) — Ember only
     verticals = sales = None  # Commercial tab — Ember only
     ember_budget = None  # Operating Budget (firm P&L) — Ember only, from Ember DB
+    comp = None       # Compartición de Ingresos scenario model — Meta only
+    if c["slug"] == "meta":
+        comp = dict(META_COMP, rate=usd_mxn_rate())
     if c["slug"] == "ember":
         ember_loans = fetch_ember_loans()
         ember_returns = fetch_ember_returns()
@@ -1578,7 +1628,7 @@ def company(slug):
         ember_live=ember_live, ember_asof=ember_asof, ember_loans=ember_loans,
         ember_returns=ember_returns, summary=summary, fin=fin, leverage=leverage,
         valuation=valuation, cap=cap, hold=hold, exitr=exitr,
-        verticals=verticals, sales=sales, ember_budget=ember_budget,
+        verticals=verticals, sales=sales, ember_budget=ember_budget, comp=comp,
     )
 
 
