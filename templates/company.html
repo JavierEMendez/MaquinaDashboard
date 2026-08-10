@@ -818,7 +818,8 @@
       let totShare = 0, totExcess = 0, npvAll = 0;
       const ix2025 = COMP.index[1] * Math.pow(1 + c.infl, Y[1] - 2024);
       for (const key of ['ventura','pitahaya']){
-        const road = { nom: 0, npv: 0, first: null };
+        const road = { nom: 0, npv: 0, first: null,
+                       shareY: Array(N).fill(0), retainedY: Array(N).fill(0) };
         per[key] = road;
         if (!c.roads[key]) continue;
         const R = COMP[key];
@@ -837,6 +838,7 @@
           let s = 0;
           for (let k = 0; k < 4; k++){ const v = b[k] * c.sh[k]; bands[k][i] += v; s += v; }
           modelT[i] += model; baseT[i] += base; shareT[i] += s;
+          road.shareY[i] = s; road.retainedY[i] = model - s;
           totShare += s; totExcess += exc; road.nom += s;
           if (s > 1e-6 && road.first === null) road.first = Y[i];
           if (Y[i] >= 2025){
@@ -891,9 +893,11 @@
           ds[4].data = r.modelT;
           ds[5].data = r.baseT;
         } else {
-          ds[0].data = r.retainedT;
-          ds[1].data = r.shareT;
-          ds[2].data = r.baseT;
+          ds[0].data = r.per.ventura.retainedY;
+          ds[1].data = r.per.pitahaya.retainedY;
+          ds[2].data = r.per.ventura.shareY;
+          ds[3].data = r.per.pitahaya.shareY;
+          ds[4].data = r.baseT;
         }
         compChart.update('none');
       }
@@ -921,10 +925,14 @@
           y2:{ position:'right', grid:{display:false}, title:{display:true,text:'Ingresos (mdp)',color:MQ.muted(),font:{size:10}}, ticks:{ color:MQ.muted(), callback:v=>'$'+(v/1000).toFixed(0)+'k' } } };
       } else {
         datasets = [
-          { type:'bar', label:'Meta retained (non-promote)', data:r.retainedT, stack:'total',
-            backgroundColor:MQ.hexA(MQ.palette(5), 0.55), borderWidth:0, yAxisID:'y' },
-          { type:'bar', label:'Promote to Maquina', data:r.shareT, stack:'total',
-            backgroundColor:MQ.hexA(MQ.palette(0), 0.9), borderWidth:0, yAxisID:'y' },
+          { type:'bar', label:'Ventura — retained', data:r.per.ventura.retainedY, stack:'total',
+            backgroundColor:MQ.hexA(MQ.palette(1), 0.38), borderWidth:0, yAxisID:'y' },
+          { type:'bar', label:'Pitahaya — retained', data:r.per.pitahaya.retainedY, stack:'total',
+            backgroundColor:MQ.hexA(MQ.palette(2), 0.38), borderWidth:0, yAxisID:'y' },
+          { type:'bar', label:'Ventura — promote', data:r.per.ventura.shareY, stack:'total',
+            backgroundColor:MQ.hexA(MQ.palette(1), 0.95), borderWidth:0, yAxisID:'y' },
+          { type:'bar', label:'Pitahaya — promote', data:r.per.pitahaya.shareY, stack:'total',
+            backgroundColor:MQ.hexA(MQ.palette(2), 0.95), borderWidth:0, yAxisID:'y' },
           { type:'line', label:'Base Título de Concesión', data:r.baseT, borderColor:MQ.muted(), borderDash:[6,4], borderWidth:1.8, pointRadius:0, tension:0.3, yAxisID:'y' }];
         scales = {
           x:{ stacked:true, grid:{display:false}, ticks:{ color:MQ.muted(), maxTicksLimit:14 } },
@@ -943,7 +951,7 @@
       bs.className = 'btn btn-sm ' + (mode === 'stack' ? 'btn-primary' : 'btn-ghost');
       $('comp-chart-sub').textContent = mode === 'hurdle'
         ? "Bars: Maquina's promote by hurdle (mdp, nominal). Lines: model revenues vs indexed concession-title baseline (right axis)."
-        : "Stacked: Meta's retained cashflow + Maquina's promote = total project distributions (mdp, nominal). Dashed: concession-title baseline.";
+        : "Stacked per highway: retained cashflow (light) with Maquina's promote on top (solid) = total project distributions (mdp, nominal). Dashed: concession-title baseline.";
       try { if (compChart) compChart.destroy(); } catch(e) {}
       buildCompChart();
     };
