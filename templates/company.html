@@ -63,7 +63,7 @@
     <button class="tab" data-tab="operations">Operations</button>
     <button class="tab" data-tab="finance">Finance</button>
     {% if cap %}<button class="tab" data-tab="projects">Projects</button>{% endif %}
-    {% if comp %}<button class="tab" data-tab="comparticion">Compartición</button>{% endif %}
+    {% if comp %}<button class="tab" data-tab="promote">Promote Analysis</button>{% endif %}
     <button class="tab" data-tab="strategy">Strategy</button>
   </div>
 
@@ -432,13 +432,13 @@
   </div>
   {% endif %}
 
-  {# ───────── Compartición de Ingresos (Meta scenario model) ───────── #}
+  {# ───────── Promote Analysis (Meta scenario model) ───────── #}
   {% if comp %}
-  <div class="tab-panel" data-panel="comparticion">
+  <div class="tab-panel" data-panel="promote">
     <div class="row wrap between" style="gap:8px;margin-bottom:16px;align-items:center;">
       <div>
-        <div class="card-title" style="font-size:16px;">Compartición de Ingresos — Valoran / Meta proposal</div>
-        <div class="subtle" style="font-size:12.5px;margin-top:2px;">Maquina's share of toll revenues <strong>above the concession-title baseline</strong> on Ventura–El Peyote and La Pitahaya–Libramiento Oriente. Move the sliders to run scenarios — everything recomputes live.</div>
+        <div class="card-title" style="font-size:16px;">Promote Analysis — Valoran / Meta proposal (Compartición de Ingresos)</div>
+        <div class="subtle" style="font-size:12.5px;margin-top:2px;">Maquina's promote on toll revenues <strong>above the concession-title baseline</strong> on Ventura–El Peyote and La Pitahaya–Libramiento Oriente. Move the sliders to run scenarios — everything recomputes live.</div>
       </div>
       <span class="badge accent">Scenario model</span>
     </div>
@@ -459,8 +459,14 @@
     </div>
 
     <div class="card mb-24">
-      <div class="card-head"><div><div class="card-title">Annual Compartición by Band vs Revenues</div>
-        <div class="card-sub">Bars: Maquina's share by band (mdp, nominal). Lines: model revenues vs indexed concession-title baseline (right axis).</div></div></div>
+      <div class="card-head">
+        <div><div class="card-title">Annual Promote vs Project Distributions</div>
+          <div class="card-sub" id="comp-chart-sub">Bars: Maquina's promote by hurdle (mdp, nominal). Lines: model revenues vs indexed concession-title baseline (right axis).</div></div>
+        <div class="row" style="gap:6px;">
+          <button class="btn btn-sm btn-primary" id="comp-view-hurdle" type="button" onclick="compView('hurdle')">Promote by Hurdle</button>
+          <button class="btn btn-sm btn-ghost" id="comp-view-stack" type="button" onclick="compView('stack')">Promote on Distributions</button>
+        </div>
+      </div>
       <div class="chart-wrap" style="height:340px;"><canvas id="compChart"></canvas></div>
     </div>
 
@@ -489,14 +495,14 @@
         <div style="font-size:10px;letter-spacing:0.13em;text-transform:uppercase;color:var(--mq-subtle);font-weight:700;margin:12px 0 2px;">Valuation</div>
         <div style="{{ srow }}"><span style="{{ slbl }}">Real discount rate</span><input type="range" id="comp-disc" min="6" max="12" step="0.25" value="9" style="accent-color:var(--mq-accent);"><span style="{{ sval }}" id="lbl-disc">9.0%</span></div>
         <div style="{{ srow }}"><span style="{{ slbl }}">Tax rate</span><input type="range" id="comp-tax" min="0" max="35" step="1" value="30" style="accent-color:var(--mq-accent);"><span style="{{ sval }}" id="lbl-tax">30%</span></div>
-        <div style="font-size:10px;letter-spacing:0.13em;text-transform:uppercase;color:var(--mq-subtle);font-weight:700;margin:12px 0 2px;">Deal terms — bands over baseline</div>
-        <div style="{{ srow }}"><span style="{{ slbl }}">Band 1 ends at (excess ≤)</span><input type="range" id="comp-th1" min="10" max="60" step="1" value="30" style="accent-color:var(--mq-accent);"><span style="{{ sval }}" id="lbl-th1">30%</span></div>
-        <div style="{{ srow }}"><span style="{{ slbl }}">Band 2 ends at</span><input type="range" id="comp-th2" min="20" max="80" step="1" value="50" style="accent-color:var(--mq-accent);"><span style="{{ sval }}" id="lbl-th2">50%</span></div>
-        <div style="{{ srow }}"><span style="{{ slbl }}">Band 3 ends at</span><input type="range" id="comp-th3" min="30" max="100" step="1" value="75" style="accent-color:var(--mq-accent);"><span style="{{ sval }}" id="lbl-th3">75%</span></div>
-        <div style="{{ srow }}"><span style="{{ slbl }}">Share — Band 1</span><input type="range" id="comp-sh1" min="0" max="100" step="1" value="5" style="accent-color:var(--mq-accent);"><span style="{{ sval }}" id="lbl-sh1">5%</span></div>
-        <div style="{{ srow }}"><span style="{{ slbl }}">Share — Band 2</span><input type="range" id="comp-sh2" min="0" max="100" step="1" value="40" style="accent-color:var(--mq-accent);"><span style="{{ sval }}" id="lbl-sh2">40%</span></div>
-        <div style="{{ srow }}"><span style="{{ slbl }}">Share — Band 3</span><input type="range" id="comp-sh3" min="0" max="100" step="1" value="60" style="accent-color:var(--mq-accent);"><span style="{{ sval }}" id="lbl-sh3">60%</span></div>
-        <div style="{{ srow }}"><span style="{{ slbl }}">Share — Band 4 (&gt;Band 3)</span><input type="range" id="comp-sh4" min="0" max="100" step="1" value="75" style="accent-color:var(--mq-accent);"><span style="{{ sval }}" id="lbl-sh4">75%</span></div>
+        <div style="font-size:10px;letter-spacing:0.13em;text-transform:uppercase;color:var(--mq-subtle);font-weight:700;margin:12px 0 2px;">Deal terms — hurdles over baseline</div>
+        <div style="{{ srow }}"><span style="{{ slbl }}">Hurdle 1 ends at (excess ≤)</span><input type="range" id="comp-th1" min="10" max="60" step="1" value="30" style="accent-color:var(--mq-accent);"><span style="{{ sval }}" id="lbl-th1">30%</span></div>
+        <div style="{{ srow }}"><span style="{{ slbl }}">Hurdle 2 ends at</span><input type="range" id="comp-th2" min="20" max="80" step="1" value="50" style="accent-color:var(--mq-accent);"><span style="{{ sval }}" id="lbl-th2">50%</span></div>
+        <div style="{{ srow }}"><span style="{{ slbl }}">Hurdle 3 ends at</span><input type="range" id="comp-th3" min="30" max="100" step="1" value="75" style="accent-color:var(--mq-accent);"><span style="{{ sval }}" id="lbl-th3">75%</span></div>
+        <div style="{{ srow }}"><span style="{{ slbl }}">Promote — Hurdle 1</span><input type="range" id="comp-sh1" min="0" max="100" step="1" value="5" style="accent-color:var(--mq-accent);"><span style="{{ sval }}" id="lbl-sh1">5%</span></div>
+        <div style="{{ srow }}"><span style="{{ slbl }}">Promote — Hurdle 2</span><input type="range" id="comp-sh2" min="0" max="100" step="1" value="40" style="accent-color:var(--mq-accent);"><span style="{{ sval }}" id="lbl-sh2">40%</span></div>
+        <div style="{{ srow }}"><span style="{{ slbl }}">Promote — Hurdle 3</span><input type="range" id="comp-sh3" min="0" max="100" step="1" value="60" style="accent-color:var(--mq-accent);"><span style="{{ sval }}" id="lbl-sh3">60%</span></div>
+        <div style="{{ srow }}"><span style="{{ slbl }}">Promote — Hurdle 4 (&gt;Hurdle 3)</span><input type="range" id="comp-sh4" min="0" max="100" step="1" value="75" style="accent-color:var(--mq-accent);"><span style="{{ sval }}" id="lbl-sh4">75%</span></div>
       </div>
 
       <div class="card">
@@ -511,6 +517,11 @@
           </table>
         </div>
         <div class="divider"></div>
+        <div style="font-size:10px;letter-spacing:0.13em;text-transform:uppercase;color:var(--mq-subtle);font-weight:700;margin-bottom:8px;">Distribution split 2024–50 (nominal)</div>
+        <div class="row between" style="font-size:12.5px;padding:4px 0;"><span class="muted">Total project distributions</span><span class="tnum" style="font-weight:600;" id="comp-tot-dist">—</span></div>
+        <div class="row between" style="font-size:12.5px;padding:4px 0;"><span class="muted">Promote to Maquina</span><span class="tnum" style="font-weight:600;color:var(--mq-accent);" id="comp-tot-prom">—</span></div>
+        <div class="row between" style="font-size:12.5px;padding:4px 0;border-bottom:1px solid var(--mq-line);"><span class="muted">Meta retained (non-promote)</span><span class="tnum" style="font-weight:600;" id="comp-tot-ret">—</span></div>
+        <div style="margin:12px 0;"></div>
         <div style="font-size:10px;letter-spacing:0.13em;text-transform:uppercase;color:var(--mq-subtle);font-weight:700;margin-bottom:8px;">Valoran deck reference (diapositiva 4 · post-tax @ 9% real)</div>
         {% for a in comp.deck_anchors %}
         <div class="row between" style="font-size:12.5px;padding:4px 0;border-bottom:1px solid var(--mq-line);">
@@ -802,7 +813,7 @@
 
     function calc(c){
       const bands = [Array(N).fill(0), Array(N).fill(0), Array(N).fill(0), Array(N).fill(0)];
-      const modelT = Array(N).fill(0), baseT = Array(N).fill(0);
+      const modelT = Array(N).fill(0), baseT = Array(N).fill(0), shareT = Array(N).fill(0);
       const per = {};
       let totShare = 0, totExcess = 0, npvAll = 0;
       const ix2025 = COMP.index[1] * Math.pow(1 + c.infl, Y[1] - 2024);
@@ -825,7 +836,7 @@
           ];
           let s = 0;
           for (let k = 0; k < 4; k++){ const v = b[k] * c.sh[k]; bands[k][i] += v; s += v; }
-          modelT[i] += model; baseT[i] += base;
+          modelT[i] += model; baseT[i] += base; shareT[i] += s;
           totShare += s; totExcess += exc; road.nom += s;
           if (s > 1e-6 && road.first === null) road.first = Y[i];
           if (Y[i] >= 2025){
@@ -834,7 +845,8 @@
           }
         }
       }
-      return { bands, modelT, baseT, per, totShare, totExcess, npvAll };
+      const retainedT = modelT.map((m, i) => m - shareT[i]);
+      return { bands, modelT, baseT, shareT, retainedT, per, totShare, totExcess, npvAll };
     }
 
     const fmtMdp = x => '$' + Math.round(x).toLocaleString('en-US') + ' mdp';
@@ -852,6 +864,8 @@
       $('lbl-sh3').textContent = Math.round(c.sh[2]*100) + '%'; $('lbl-sh4').textContent = Math.round(c.sh[3]*100) + '%';
     }
 
+    let viewMode = 'hurdle';   // 'hurdle' = promote by hurdle · 'stack' = promote on total distributions
+
     function recompute(){
       const c = cfg(), r = calc(c);
       syncLabels(c);
@@ -866,36 +880,73 @@
       $('comp-p-first').textContent = r.per.pitahaya.first || '—';
       $('comp-p-nom').textContent = fmtMdp(r.per.pitahaya.nom);
       $('comp-p-npv').textContent = fmtMdp(r.per.pitahaya.npv);
+      const totDist = r.modelT.reduce((a, b) => a + b, 0);
+      $('comp-tot-dist').textContent = fmtMdp(totDist);
+      $('comp-tot-prom').textContent = fmtMdp(r.totShare);
+      $('comp-tot-ret').textContent = fmtMdp(totDist - r.totShare);
       if (compChart){
-        for (let k = 0; k < 4; k++) compChart.data.datasets[k].data = r.bands[k];
-        compChart.data.datasets[4].data = r.modelT;
-        compChart.data.datasets[5].data = r.baseT;
+        const ds = compChart.data.datasets;
+        if (viewMode === 'hurdle'){
+          for (let k = 0; k < 4; k++){ ds[k].data = r.bands[k]; ds[k].label = hurdleLbl(c, k); }
+          ds[4].data = r.modelT;
+          ds[5].data = r.baseT;
+        } else {
+          ds[0].data = r.retainedT;
+          ds[1].data = r.shareT;
+          ds[2].data = r.baseT;
+        }
         compChart.update('none');
       }
       return r;
     }
 
+    const hurdleLbl = (c, k) => 'Hurdle ' + (k+1) + ' · ' + Math.round(c.sh[k]*100) + '%';
+
     function buildCompChart(){
       const ctx = $('compChart'); if (!ctx) return null;
-      const r = calc(cfg());
-      const bandDs = ['Banda 1 (5%)','Banda 2 (40%)','Banda 3 (60%)','Banda 4 (75%)'].map((lbl, k) => ({
-        type:'bar', label:lbl, data:r.bands[k], stack:'share',
-        backgroundColor:MQ.hexA(MQ.palette(k), 0.75), borderWidth:0, yAxisID:'y' }));
-      compChart = new Chart(ctx, { data: { labels: Y, datasets: [
-          ...bandDs,
-          { type:'line', label:'Ingresos del modelo', data:r.modelT, borderColor:MQ.palette(4), borderWidth:2.2, pointRadius:0, tension:0.3, yAxisID:'y2' },
-          { type:'line', label:'Base Título de Concesión', data:r.baseT, borderColor:MQ.muted(), borderDash:[6,4], borderWidth:1.8, pointRadius:0, tension:0.3, yAxisID:'y2' }
-        ]},
-        options: { responsive:true, maintainAspectRatio:false, interaction:{mode:'index',intersect:false},
-          scales: {
-            x:{ stacked:true, grid:{display:false}, ticks:{ color:MQ.muted(), maxTicksLimit:14 } },
-            y:{ stacked:true, position:'left', grid:{color:MQ.grid()}, title:{display:true,text:'Compartición (mdp)',color:MQ.muted(),font:{size:10}}, ticks:{ color:MQ.muted(), callback:v=>'$'+(v/1000).toFixed(1)+'k' } },
-            y2:{ position:'right', grid:{display:false}, title:{display:true,text:'Ingresos (mdp)',color:MQ.muted(),font:{size:10}}, ticks:{ color:MQ.muted(), callback:v=>'$'+(v/1000).toFixed(0)+'k' } } },
-          plugins:{ legend:{ display:true, position:'bottom', labels:{ color:MQ.muted(), boxWidth:10, font:{size:11} } },
-            tooltip:{ callbacks:{ label:c=>c.dataset.label+': $'+Math.round(c.parsed.y).toLocaleString()+' mdp' } } } } });
+      const c = cfg(), r = calc(c);
+      const common = { responsive:true, maintainAspectRatio:false, interaction:{mode:'index',intersect:false},
+        plugins:{ legend:{ display:true, position:'bottom', labels:{ color:MQ.muted(), boxWidth:10, font:{size:11} } },
+          tooltip:{ callbacks:{ label:cc=>cc.dataset.label+': $'+Math.round(cc.parsed.y).toLocaleString()+' mdp' } } } };
+      let datasets, scales;
+      if (viewMode === 'hurdle'){
+        datasets = [0,1,2,3].map(k => ({
+          type:'bar', label:hurdleLbl(c, k), data:r.bands[k], stack:'share',
+          backgroundColor:MQ.hexA(MQ.palette(k), 0.75), borderWidth:0, yAxisID:'y' }));
+        datasets.push({ type:'line', label:'Ingresos del modelo', data:r.modelT, borderColor:MQ.palette(4), borderWidth:2.2, pointRadius:0, tension:0.3, yAxisID:'y2' });
+        datasets.push({ type:'line', label:'Base Título de Concesión', data:r.baseT, borderColor:MQ.muted(), borderDash:[6,4], borderWidth:1.8, pointRadius:0, tension:0.3, yAxisID:'y2' });
+        scales = {
+          x:{ stacked:true, grid:{display:false}, ticks:{ color:MQ.muted(), maxTicksLimit:14 } },
+          y:{ stacked:true, position:'left', grid:{color:MQ.grid()}, title:{display:true,text:'Promote (mdp)',color:MQ.muted(),font:{size:10}}, ticks:{ color:MQ.muted(), callback:v=>'$'+(v/1000).toFixed(1)+'k' } },
+          y2:{ position:'right', grid:{display:false}, title:{display:true,text:'Ingresos (mdp)',color:MQ.muted(),font:{size:10}}, ticks:{ color:MQ.muted(), callback:v=>'$'+(v/1000).toFixed(0)+'k' } } };
+      } else {
+        datasets = [
+          { type:'bar', label:'Meta retained (non-promote)', data:r.retainedT, stack:'total',
+            backgroundColor:MQ.hexA(MQ.palette(5), 0.55), borderWidth:0, yAxisID:'y' },
+          { type:'bar', label:'Promote to Maquina', data:r.shareT, stack:'total',
+            backgroundColor:MQ.hexA(MQ.palette(0), 0.9), borderWidth:0, yAxisID:'y' },
+          { type:'line', label:'Base Título de Concesión', data:r.baseT, borderColor:MQ.muted(), borderDash:[6,4], borderWidth:1.8, pointRadius:0, tension:0.3, yAxisID:'y' }];
+        scales = {
+          x:{ stacked:true, grid:{display:false}, ticks:{ color:MQ.muted(), maxTicksLimit:14 } },
+          y:{ stacked:true, position:'left', grid:{color:MQ.grid()}, title:{display:true,text:'Distribuciones totales (mdp)',color:MQ.muted(),font:{size:10}}, ticks:{ color:MQ.muted(), callback:v=>'$'+(v/1000).toFixed(0)+'k' } } };
+      }
+      compChart = new Chart(ctx, { data:{ labels:Y, datasets }, options:{ ...common, scales } });
       recompute();
       return compChart;
     }
+
+    window.compView = function(mode){
+      if (mode === viewMode) return;
+      viewMode = mode;
+      const bh = $('comp-view-hurdle'), bs = $('comp-view-stack');
+      bh.className = 'btn btn-sm ' + (mode === 'hurdle' ? 'btn-primary' : 'btn-ghost');
+      bs.className = 'btn btn-sm ' + (mode === 'stack' ? 'btn-primary' : 'btn-ghost');
+      $('comp-chart-sub').textContent = mode === 'hurdle'
+        ? "Bars: Maquina's promote by hurdle (mdp, nominal). Lines: model revenues vs indexed concession-title baseline (right axis)."
+        : "Stacked: Meta's retained cashflow + Maquina's promote = total project distributions (mdp, nominal). Dashed: concession-title baseline.";
+      try { if (compChart) compChart.destroy(); } catch(e) {}
+      buildCompChart();
+    };
 
     window.compPreset = function(name){
       const set = (id, v) => { $(id).value = v; };
