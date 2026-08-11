@@ -525,6 +525,49 @@
         <p class="subtle" style="font-size:11.5px;line-height:1.6;margin-top:12px;">Method: yearly excess = max(0, model revenues − concession-title baseline indexed by INPC). The excess is layered against the baseline hurdles and promoted at the hurdle percentages. NPV deflates nominal flows to 2026 pesos and discounts at the real rate, post-tax. Base series extracted 1-for-1 from Valoran's updated workbook ("Aux. Compartición": H2-2026 stub period, then annual through concession end 2050 — base-case nominal total <strong>$2,849 mdp</strong>, ties to the Excel).</p>
       </div>
     </div>
+
+    {# ── Proposal comparison: v1 (original) vs v2 (updated) — static reference ── #}
+    {% set cmp = comp.compare %}
+    <div class="card mb-24">
+      <div class="card-head"><div>
+        <div class="card-title">Proposal Comparison — Original (v1) vs Updated (v2)</div>
+        <div class="card-sub">Base cases of the two workbooks as received from Valoran. Fixed reference for team review — the scenario sliders above don't affect this section. NPV at 9% real, 30% tax.</div>
+      </div></div>
+
+      <div class="grid grid-3 mb-24">
+        <div class="summary-card"><div class="lbl">Nominal Promote (life of deal)</div>
+          <div class="val">${{ '{:,.0f}'.format(cmp.v1.nom) }} → ${{ '{:,.0f}'.format(cmp.v2.nom) }} <span style="font-size:12px;font-weight:500;color:var(--mq-subtle);">mdp</span></div>
+          <div style="font-size:11.5px;font-weight:700;color:#D2452F;margin-top:4px;">{{ cmp.d_nom }}%</div></div>
+        <div class="summary-card"><div class="lbl">NPV (post-tax · 9% real)</div>
+          <div class="val">${{ '{:,.0f}'.format(cmp.v1.npv) }} → ${{ '{:,.0f}'.format(cmp.v2.npv) }} <span style="font-size:12px;font-weight:500;color:var(--mq-subtle);">mdp</span></div>
+          <div style="font-size:11.5px;font-weight:700;color:#D2452F;margin-top:4px;">{{ cmp.d_npv }}%</div></div>
+        <div class="summary-card"><div class="lbl">Blended Share of Excess</div>
+          <div class="val">{{ cmp.v1.soe }}% → {{ cmp.v2.soe }}%</div>
+          <div class="subtle" style="font-size:11.5px;margin-top:4px;">promote mix moved from Hurdle 4 to Hurdles 1–2</div></div>
+      </div>
+
+      <div class="chart-wrap" style="height:320px;"><canvas id="compareChart"></canvas></div>
+      <p class="subtle" style="font-size:11.5px;line-height:1.6;margin-top:10px;">Model revenues as a % of the indexed título baseline — the single assumption that drives the promote. Dotted guides mark where each hurdle ends (130% / 150% / 175% of baseline). v1 (dashed) lived far above the Hurdle-3 line, paying 75% on every marginal peso; v2 (solid) barely clears Hurdle 1. Opening years are partial; v2's H2-2026 stub is excluded from the % lines.</p>
+
+      <div class="divider"></div>
+      <div class="table-scroll" style="max-height:none;">
+        <table class="data-table">
+          <thead><tr><th style="text-align:left;">Assumption / Result</th><th style="text-align:left;">v1 — original (Libro1.xlsx · "Compartición")</th><th style="text-align:left;">v2 — updated (Libro1 1.xlsx · "Aux. Compartición")</th></tr></thead>
+          <tbody>
+            <tr><td style="text-align:left;color:var(--mq-ink-2);font-weight:600;">Revenue model vs título — Ventura</td><td style="text-align:left;">{{ cmp.v1.rng_v }} <span class="subtle">(2–4.5× the plan)</span></td><td style="text-align:left;">{{ cmp.v2.rng_v }}</td></tr>
+            <tr><td style="text-align:left;color:var(--mq-ink-2);font-weight:600;">Revenue model vs título — Pitahaya</td><td style="text-align:left;">{{ cmp.v1.rng_p }}</td><td style="text-align:left;">{{ cmp.v2.rng_p }}</td></tr>
+            <tr><td style="text-align:left;color:var(--mq-ink-2);font-weight:600;">Sharing window</td><td style="text-align:left;">2024–2050, annual</td><td style="text-align:left;">H2-2026 stub + 2027–2050</td></tr>
+            <tr><td style="text-align:left;color:var(--mq-ink-2);font-weight:600;">First promote year (Ventura / Pitahaya)</td><td style="text-align:left;">{{ cmp.v1.first.ventura }} / {{ cmp.v1.first.pitahaya }}</td><td style="text-align:left;">{{ cmp.v2.first.ventura }} / {{ cmp.v2.first.pitahaya }}</td></tr>
+            <tr><td style="text-align:left;color:var(--mq-ink-2);font-weight:600;">Promote mix by hurdle</td><td style="text-align:left;">H1 {{ cmp.v1.mix[0] }}% · H2 {{ cmp.v1.mix[1] }}% · H3 {{ cmp.v1.mix[2] }}% · <strong>H4 {{ cmp.v1.mix[3] }}%</strong></td><td style="text-align:left;"><strong>H1 {{ cmp.v2.mix[0] }}% · H2 {{ cmp.v2.mix[1] }}%</strong> · H3 {{ cmp.v2.mix[2] }}% · H4 {{ cmp.v2.mix[3] }}%</td></tr>
+            <tr><td style="text-align:left;color:var(--mq-ink-2);font-weight:600;">Blended share of excess</td><td style="text-align:left;">{{ cmp.v1.soe }}%</td><td style="text-align:left;">{{ cmp.v2.soe }}%</td></tr>
+            <tr><td style="text-align:left;color:var(--mq-ink-2);font-weight:600;">Nominal promote</td><td style="text-align:left;">${{ '{:,.0f}'.format(cmp.v1.nom) }} mdp</td><td style="text-align:left;">${{ '{:,.0f}'.format(cmp.v2.nom) }} mdp <span style="color:#D2452F;font-weight:700;">({{ cmp.d_nom }}%)</span></td></tr>
+            <tr><td style="text-align:left;color:var(--mq-ink-2);font-weight:600;">NPV @ 9% real · 30% tax</td><td style="text-align:left;">${{ '{:,.0f}'.format(cmp.v1.npv) }} mdp</td><td style="text-align:left;">${{ '{:,.0f}'.format(cmp.v2.npv) }} mdp <span style="color:#D2452F;font-weight:700;">({{ cmp.d_npv }}%)</span></td></tr>
+            <tr><td style="text-align:left;color:var(--mq-ink-2);font-weight:600;">Unchanged between versions</td><td colspan="2" style="text-align:left;" class="subtle">Título baselines and actualization (+33.07% Ventura / +29.59% Pitahaya) · hurdle thresholds 30/50/75% · promote rates 5/40/60/75% · INPC indexation ~3.5–4%/yr</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="subtle" style="font-size:11.5px;line-height:1.6;margin-top:12px;">Takeaway: the deal terms didn't change — the <strong>revenue model did</strong>. v1 projected revenues at 2–4.5× the concession-title plan, pushing nearly all excess into Hurdle 4 at a 75% promote. v2 re-cut revenues to ~1.1–1.5× the plan, so the excess barely clears Hurdle 1 and the promote falls ~99%. The valuation is therefore extremely sensitive to which traffic model you believe — see the Revenue level and growth sliders above.</p>
+    </div>
   </div>
   {% endif %}
 
@@ -964,6 +1007,32 @@
     $('comp-road-v').addEventListener('change', recompute);
     $('comp-road-p').addEventListener('change', recompute);
     if ($('compChart')) MQ.register(buildCompChart);
+
+    // ── Static v1-vs-v2 comparison chart (independent of the sliders) ──
+    const CMP = COMP.compare;
+    function buildCompareChart(){
+      const ctx = document.getElementById('compareChart'); if (!ctx) return null;
+      const hurdleLine = (pct, label) => ({
+        type:'line', label:label, data:CMP.axis.map(() => pct),
+        borderColor:MQ.hexA(MQ.muted(), 0.55), borderDash:[2,4], borderWidth:1,
+        pointRadius:0, fill:false });
+      return new Chart(ctx, { data:{ labels:CMP.axis, datasets:[
+          { type:'line', label:'v1 · Ventura', data:CMP.chart.v1_v, borderColor:MQ.palette(1), borderDash:[7,4], borderWidth:2, pointRadius:0, tension:0.3, spanGaps:true },
+          { type:'line', label:'v1 · Pitahaya', data:CMP.chart.v1_p, borderColor:MQ.palette(2), borderDash:[7,4], borderWidth:2, pointRadius:0, tension:0.3, spanGaps:true },
+          { type:'line', label:'v2 · Ventura', data:CMP.chart.v2_v, borderColor:MQ.palette(1), borderWidth:2.6, pointRadius:0, tension:0.3, spanGaps:true },
+          { type:'line', label:'v2 · Pitahaya', data:CMP.chart.v2_p, borderColor:MQ.palette(2), borderWidth:2.6, pointRadius:0, tension:0.3, spanGaps:true },
+          hurdleLine(130, 'Hurdle 1 ends (130%)'),
+          hurdleLine(150, 'Hurdle 2 ends (150%)'),
+          hurdleLine(175, 'Hurdle 3 ends (175%)')
+        ]},
+        options:{ responsive:true, maintainAspectRatio:false, interaction:{mode:'index',intersect:false},
+          scales:{ x:{ grid:{display:false}, ticks:{ color:MQ.muted(), maxTicksLimit:14 } },
+            y:{ grid:{color:MQ.grid()}, title:{display:true,text:'Model revenue as % of título baseline',color:MQ.muted(),font:{size:10}}, ticks:{ color:MQ.muted(), callback:v=>v+'%' } } },
+          plugins:{ legend:{ display:true, position:'bottom', labels:{ color:MQ.muted(), boxWidth:10, font:{size:10}, filter:it => !it.text.startsWith('Hurdle') } },
+            tooltip:{ filter:it => !it.dataset.label.startsWith('Hurdle'),
+              callbacks:{ label:cc => cc.dataset.label + ': ' + (cc.parsed.y === null ? '—' : cc.parsed.y.toFixed(0) + '% of título') } } } } });
+    }
+    if (document.getElementById('compareChart')) MQ.register(buildCompareChart);
   })();
   {% endif %}
 

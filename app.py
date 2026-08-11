@@ -745,6 +745,99 @@ META_COMP = {
 }
 
 
+# v1 reference case — the ORIGINAL proposal workbook (Libro1.xlsx,
+# "Compartición" sheet), kept only for the static v1-vs-v2 comparison
+# card on the Promote Analysis tab. Same units/semantics as META_COMP.
+META_COMP_V1 = {
+    "years": [2024, 2025, 2026, 2027, 2028, 2029, 2030, 2031, 2032, 2033, 2034, 2035, 2036, 2037, 2038, 2039, 2040, 2041, 2042, 2043, 2044, 2045, 2046, 2047, 2048, 2049, 2050],
+    "index": [1.003113, 1.041231, 1.079965, 1.123163, 1.16809, 1.214814, 1.263406, 1.313942, 1.3665, 1.42116, 1.478007, 1.537127, 1.598612, 1.662556, 1.729059, 1.798221, 1.87015, 1.944956, 2.022754, 2.103664, 2.187811, 2.275323, 2.366336, 2.46099, 2.559429, 2.661806, 2.768279],
+    "ventura": {
+        "tdc": [616.268, 647.086, 678.89, 711.394, 746.653, 778.562, 811.681, 845.496, 882.432, 915.271, 951.261, 988.007, 1026.543, 1060.184, 1097.358, 1135.276, 1171.352, 1201.585, 1235.587, 1270.168, 1308.912, 1341.102, 1377.476, 1414.733, 1456.986, 1453.005, 1453.005],
+        "model": [0.0, 1460.097, 1711.77, 1955.562, 2221.795, 2480.762, 2777.693, 3110.452, 3492.834, 3841.887, 4703.467, 5269.347, 5902.226, 6534.313, 7215.311, 7931.869, 8715.477, 9496.574, 10331.293, 11226.384, 12187.705, 13136.902, 14167.155, 15273.952, 16466.302, 17607.056, 14954.654]},
+    "pitahaya": {
+        "tdc": [719.828, 864.321, 1122.797, 1166.857, 1216.325, 1260.855, 1310.892, 1363.119, 1421.301, 1474.097, 1533.217, 1594.918, 1641.939, 1681.028, 1725.871, 1771.797, 1824.214, 1868.073, 1917.82, 1969.444, 2027.927, 2076.881, 2132.716, 2190.25, 2196.249, 2190.25, 2190.25],
+        "model": [0.0, 0.0, 0.0, 0.0, 804.485, 3270.647, 3834.922, 4321.547, 4883.447, 5294.338, 6516.7, 7345.837, 8230.207, 9113.28, 10064.432, 11065.143, 12159.653, 13250.961, 14416.778, 15667.802, 17011.05, 18338.067, 19778.657, 21327.96, 22996.818, 24593.447, 20892.732]},
+}
+
+
+def _promote_case(mc, npv_base_idx, disc=0.09, tax=0.30):
+    """Run one workbook's base case through the promote waterfall.
+    Returns totals, NPV, effective share of excess, hurdle mix, first
+    sharing year and model-vs-baseline %. Values in mdp (millions MXN)."""
+    TH, SH = (0.30, 0.50, 0.75), (0.05, 0.40, 0.60, 0.75)
+    years, ix = mc["years"], mc["index"]
+    n = len(years)
+    promote = [0.0] * n
+    hurdles = [0.0] * 4
+    pct, first = {}, {}
+    total = excess = npv = 0.0
+    for key in ("ventura", "pitahaya"):
+        R = mc[key]
+        pr = []
+        first[key] = None
+        for i in range(n):
+            b = R["tdc"][i] * ix[i]
+            m = R["model"][i]
+            pr.append(round(m / b * 100, 1) if (m and b) else None)
+            e = max(0.0, m - b)
+            l1 = min(e, b * TH[0])
+            l2 = min(max(e - b * TH[0], 0), b * (TH[1] - TH[0]))
+            l3 = min(max(e - b * TH[1], 0), b * (TH[2] - TH[1]))
+            l4 = max(e - b * TH[2], 0)
+            parts = (l1 * SH[0], l2 * SH[1], l3 * SH[2], l4 * SH[3])
+            s = sum(parts)
+            for k in range(4):
+                hurdles[k] += parts[k]
+            promote[i] += s
+            total += s
+            excess += e
+            if s > 1e-9 and first[key] is None:
+                first[key] = years[i]
+            npv += s * (1 - tax) / (ix[i] / ix[npv_base_idx]) / ((1 + disc) ** max(0, years[i] - years[npv_base_idx]))
+        pct[key] = pr
+
+    def _rng(vals):
+        xs = [v for v in vals if v is not None]
+        return "%.0f%%–%.0f%%" % (min(xs), max(xs)) if xs else "—"
+    return dict(years=years, promote=[round(x, 1) for x in promote], pct=pct,
+                total_nom=round(total, 1), npv=round(npv, 1),
+                share_of_excess=(round(total / excess * 100, 1) if excess else None),
+                hurdle_mix=[(round(h / total * 100, 1) if total else 0) for h in hurdles],
+                first=first, rng_v=_rng(pct["ventura"]), rng_p=_rng(pct["pitahaya"]))
+
+
+def _build_meta_compare():
+    """Static v1-vs-v2 comparison payload for the Promote Analysis tab."""
+    v1 = _promote_case(META_COMP_V1, npv_base_idx=1)   # discount to 2025 (first flow year)
+    v2 = _promote_case(META_COMP, npv_base_idx=0)      # discount to H2-2026
+    # v2's H2-2026 stub compares a half-year of revenue against the FULL-year
+    # título value (the workbook's own XLOOKUP logic) — not a comparable %.
+    for k in ("ventura", "pitahaya"):
+        v2["pct"][k][0] = None
+
+    def _rng(vals):
+        xs = [v for v in vals if v is not None]
+        return "%.0f%%–%.0f%%" % (min(xs), max(xs)) if xs else "—"
+    v2["rng_v"] = _rng(v2["pct"]["ventura"])
+    v2["rng_p"] = _rng(v2["pct"]["pitahaya"])
+    pad = [None] * (len(META_COMP_V1["years"]) - len(META_COMP["years"]))
+    return dict(
+        axis=[str(y) for y in META_COMP_V1["years"]],
+        chart=dict(
+            v1_v=v1["pct"]["ventura"], v1_p=v1["pct"]["pitahaya"],
+            v2_v=pad + v2["pct"]["ventura"], v2_p=pad + v2["pct"]["pitahaya"]),
+        v1=dict(nom=v1["total_nom"], npv=v1["npv"], soe=v1["share_of_excess"],
+                mix=v1["hurdle_mix"], first=v1["first"], rng_v=v1["rng_v"], rng_p=v1["rng_p"]),
+        v2=dict(nom=v2["total_nom"], npv=v2["npv"], soe=v2["share_of_excess"],
+                mix=v2["hurdle_mix"], first=v2["first"], rng_v=v2["rng_v"], rng_p=v2["rng_p"]),
+        d_nom=round((v2["total_nom"] / v1["total_nom"] - 1) * 100, 1),
+        d_npv=round((v2["npv"] / v1["npv"] - 1) * 100, 1),
+    )
+
+
+META_COMPARE = _build_meta_compare()
+
+
 def exit_returns(cid, entry_year, target_hold_years, exit_value_usd):
     """DB wrapper around _exit_calc for a single company."""
     conn = db.get_db()
@@ -1520,7 +1613,7 @@ def company(slug):
     ember_budget = None  # Operating Budget (firm P&L) — Ember only, from Ember DB
     comp = None       # Compartición de Ingresos scenario model — Meta only
     if c["slug"] == "meta":
-        comp = dict(META_COMP, rate=usd_mxn_rate())
+        comp = dict(META_COMP, rate=usd_mxn_rate(), compare=META_COMPARE)
     if c["slug"] == "ember":
         ember_loans = fetch_ember_loans()
         ember_returns = fetch_ember_returns()
