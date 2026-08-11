@@ -446,16 +446,16 @@
     <div class="grid grid-4 mb-24">
       <div class="kpi"><div class="kpi-top"><span class="kpi-label">NPV to Maquina</span></div>
         <div class="kpi-value" id="comp-npv" style="color:var(--mq-accent);">—</div>
-        <div class="kpi-foot"><span class="kpi-sub" id="comp-npv-sub">post-tax · real discount · pesos 2025</span></div></div>
+        <div class="kpi-foot"><span class="kpi-sub" id="comp-npv-sub">post-tax · real discount · pesos 2026</span></div></div>
       <div class="kpi"><div class="kpi-top"><span class="kpi-label">≈ USD</span></div>
         <div class="kpi-value" id="comp-usd">—</div>
         <div class="kpi-foot"><span class="kpi-sub">at {{ '%.2f'|format(comp.rate) }} MXN/USD</span></div></div>
-      <div class="kpi"><div class="kpi-top"><span class="kpi-label">Nominal Total 2024–50</span></div>
+      <div class="kpi"><div class="kpi-top"><span class="kpi-label">Nominal Total 2026–50</span></div>
         <div class="kpi-value" id="comp-nom">—</div>
         <div class="kpi-foot"><span class="kpi-sub">pre-tax, undiscounted</span></div></div>
       <div class="kpi"><div class="kpi-top"><span class="kpi-label">Share of Excess</span></div>
         <div class="kpi-value" id="comp-eff">—</div>
-        <div class="kpi-foot"><span class="kpi-sub">blended · deck cites ~70% with restricción</span></div></div>
+        <div class="kpi-foot"><span class="kpi-sub">blended across hurdles</span></div></div>
     </div>
 
     <div class="card mb-24">
@@ -517,18 +517,12 @@
           </table>
         </div>
         <div class="divider"></div>
-        <div style="font-size:10px;letter-spacing:0.13em;text-transform:uppercase;color:var(--mq-subtle);font-weight:700;margin-bottom:8px;">Distribution split 2024–50 (nominal)</div>
+        <div style="font-size:10px;letter-spacing:0.13em;text-transform:uppercase;color:var(--mq-subtle);font-weight:700;margin-bottom:8px;">Distribution split 2026–50 (nominal)</div>
         <div class="row between" style="font-size:12.5px;padding:4px 0;"><span class="muted">Total project distributions</span><span class="tnum" style="font-weight:600;" id="comp-tot-dist">—</span></div>
         <div class="row between" style="font-size:12.5px;padding:4px 0;"><span class="muted">Promote to Maquina</span><span class="tnum" style="font-weight:600;color:var(--mq-accent);" id="comp-tot-prom">—</span></div>
         <div class="row between" style="font-size:12.5px;padding:4px 0;border-bottom:1px solid var(--mq-line);"><span class="muted">Meta retained (non-promote)</span><span class="tnum" style="font-weight:600;" id="comp-tot-ret">—</span></div>
         <div style="margin:12px 0;"></div>
-        <div style="font-size:10px;letter-spacing:0.13em;text-transform:uppercase;color:var(--mq-subtle);font-weight:700;margin-bottom:8px;">Valoran deck reference (diapositiva 4 · post-tax @ 9% real)</div>
-        {% for a in comp.deck_anchors %}
-        <div class="row between" style="font-size:12.5px;padding:4px 0;border-bottom:1px solid var(--mq-line);">
-          <span class="muted">{{ a.label }}</span><span class="tnum" style="font-weight:600;">{{ '{:,.0f}'.format(a.mdp) }} mdp</span>
-        </div>
-        {% endfor %}
-        <p class="subtle" style="font-size:11.5px;line-height:1.6;margin-top:12px;">Method: yearly excess = max(0, model revenues − concession-title baseline indexed by INPC). The excess is banded against the baseline and shared at the band percentages. NPV deflates nominal flows to 2025 pesos and discounts at the real rate, post-tax. Base series extracted 1-for-1 from the proposal workbook (base-case nominal total $219,695 mdp — ties to the Excel).</p>
+        <p class="subtle" style="font-size:11.5px;line-height:1.6;margin-top:12px;">Method: yearly excess = max(0, model revenues − concession-title baseline indexed by INPC). The excess is layered against the baseline hurdles and promoted at the hurdle percentages. NPV deflates nominal flows to 2026 pesos and discounts at the real rate, post-tax. Base series extracted 1-for-1 from Valoran's updated workbook ("Aux. Compartición": H2-2026 stub period, then annual through concession end 2050 — base-case nominal total <strong>$2,849 mdp</strong>, ties to the Excel).</p>
       </div>
     </div>
   </div>
@@ -816,7 +810,7 @@
       const modelT = Array(N).fill(0), baseT = Array(N).fill(0), shareT = Array(N).fill(0);
       const per = {};
       let totShare = 0, totExcess = 0, npvAll = 0;
-      const ix2025 = COMP.index[1] * Math.pow(1 + c.infl, Y[1] - 2024);
+      const ix0 = COMP.index[0];   // first period (H2-2026) — NPV deflation base
       for (const key of ['ventura','pitahaya']){
         const road = { nom: 0, npv: 0, first: null,
                        shareY: Array(N).fill(0), retainedY: Array(N).fill(0) };
@@ -824,10 +818,10 @@
         if (!c.roads[key]) continue;
         const R = COMP[key];
         for (let i = 0; i < N; i++){
-          const ix = COMP.index[i] * Math.pow(1 + c.infl, Y[i] - 2024);
+          const ix = COMP.index[i] * Math.pow(1 + c.infl, Y[i] - 2026);
           const base = R.tdc[i] * ix;
           const real = R.model[i] / COMP.index[i];             // base-case real revenues
-          const model = real * ix * c.level[key] * Math.pow(1 + c.growth, Math.max(0, Y[i] - 2025));
+          const model = real * ix * c.level[key] * Math.pow(1 + c.growth, Math.max(0, Y[i] - 2027));
           const exc = Math.max(0, model - base);
           const b = [
             Math.min(exc, base * c.th[0]),
@@ -841,10 +835,8 @@
           road.shareY[i] = s; road.retainedY[i] = model - s;
           totShare += s; totExcess += exc; road.nom += s;
           if (s > 1e-6 && road.first === null) road.first = Y[i];
-          if (Y[i] >= 2025){
-            const pv = (s * (1 - c.tax)) / (ix / ix2025) / Math.pow(1 + c.disc, Y[i] - 2025);
-            road.npv += pv; npvAll += pv;
-          }
+          const pv = (s * (1 - c.tax)) / (ix / ix0) / Math.pow(1 + c.disc, Y[i] - 2026);
+          road.npv += pv; npvAll += pv;
         }
       }
       const retainedT = modelT.map((m, i) => m - shareT[i]);
@@ -872,7 +864,7 @@
       const c = cfg(), r = calc(c);
       syncLabels(c);
       $('comp-npv').textContent = fmtMdp(r.npvAll);
-      $('comp-npv-sub').textContent = 'post-tax ' + Math.round(c.tax*100) + '% · ' + (c.disc*100).toFixed(1) + '% real · pesos 2025';
+      $('comp-npv-sub').textContent = 'post-tax ' + Math.round(c.tax*100) + '% · ' + (c.disc*100).toFixed(1) + '% real · pesos 2026';
       $('comp-usd').textContent = fmtUsd(r.npvAll);
       $('comp-nom').textContent = fmtMdp(r.totShare);
       $('comp-eff').textContent = r.totExcess ? (r.totShare / r.totExcess * 100).toFixed(1) + '%' : '—';
@@ -938,7 +930,7 @@
           x:{ stacked:true, grid:{display:false}, ticks:{ color:MQ.muted(), maxTicksLimit:14 } },
           y:{ stacked:true, position:'left', grid:{color:MQ.grid()}, title:{display:true,text:'Distribuciones totales (mdp)',color:MQ.muted(),font:{size:10}}, ticks:{ color:MQ.muted(), callback:v=>'$'+(v/1000).toFixed(0)+'k' } } };
       }
-      compChart = new Chart(ctx, { data:{ labels:Y, datasets }, options:{ ...common, scales } });
+      compChart = new Chart(ctx, { data:{ labels:(COMP.labels || Y), datasets }, options:{ ...common, scales } });
       recompute();
       return compChart;
     }
