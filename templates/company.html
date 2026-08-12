@@ -726,6 +726,40 @@
       </div>
     </div>
 
+    {# ── Distributions by investor (Meta's 5 LPs; Maquina also earns the promote) ── #}
+    <div class="card mb-24">
+      <div class="card-head"><div>
+        <div class="card-title">Distributions by Investor</div>
+        <div class="card-sub">Total cash out to each of Meta's five investors over the deal (mdp, nominal), split into the at-baseline slice, the above-baseline slice, and Maquina's promote on top. Live — responds to the sliders above.</div>
+      </div></div>
+
+      <div class="chart-wrap" style="height:300px;"><canvas id="investorChart"></canvas></div>
+
+      <div class="divider"></div>
+      <div class="row between wrap" style="gap:8px;align-items:baseline;margin-bottom:10px;">
+        <div style="font-size:10px;letter-spacing:0.13em;text-transform:uppercase;color:var(--mq-subtle);font-weight:700;">Investors &amp; equity split
+          <span style="text-transform:none;letter-spacing:0;font-weight:500;">— assumptions; set the real names and percentages here</span></div>
+        <span class="subtle" style="font-size:12px;">Total <strong id="inv-sum">100</strong>%</span>
+      </div>
+      {% set irow = 'display:grid;grid-template-columns:1fr 92px;gap:10px;align-items:center;padding:4px 0;' %}
+      <div class="grid grid-2" style="gap:10px 26px;">
+        {% for n in range(1, 6) %}
+        <div style="{{ irow }}">
+          <input class="input" type="text" id="inv-name-{{ n }}" value="{{ 'Maquina' if n == 1 else 'Investor ' ~ n }}"
+                 style="font-size:12.5px;{{ 'font-weight:700;' if n == 1 }}">
+          <div class="row" style="gap:4px;align-items:center;">
+            <input class="input" type="number" id="inv-pct-{{ n }}" min="0" max="100" step="0.5" value="20" style="font-size:12.5px;text-align:right;">
+            <span class="subtle" style="font-size:12px;">%</span>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      <p class="subtle" style="font-size:11.5px;line-height:1.6;margin-top:12px;">
+        Each investor receives their equity share of Meta's retained distributions — the at-baseline slice plus the above-baseline slice net of the promote.
+        <strong>Maquina additionally receives the entire promote</strong>, which is why bar 1 carries a third segment. Shares are normalised if they don't total 100%.
+      </p>
+    </div>
+
     {# ── Toll economics: model tarifa vs título-implied, per passage ── #}
     <div class="card mb-24">
       <div class="card-head"><div>
@@ -1256,6 +1290,7 @@
     function calc(c){
       const bands = [Array(N).fill(0), Array(N).fill(0), Array(N).fill(0), Array(N).fill(0)];
       const modelT = Array(N).fill(0), baseT = Array(N).fill(0), shareT = Array(N).fill(0);
+      let totBaseDist = 0;   // sum of min(model, baseline) = the at-baseline slice
       const per = {};
       let totShare = 0, totExcess = 0, npvAll = 0;
       const ix0 = COMP.index[0];   // first period (H2-2026) — NPV deflation base
@@ -1282,6 +1317,7 @@
           let s = 0;
           for (let k = 0; k < 4; k++){ const v = b[k] * c.sh[k]; bands[k][i] += v; s += v; }
           modelT[i] += model; baseT[i] += base; shareT[i] += s;
+          totBaseDist += Math.min(model, base);
           road.shareY[i] = s; road.retainedY[i] = model - s;
           // Toll economics: the growth slider moves VEHICLES, so passages scale
           // with it and cancel out of the model tarifa (level/inflation remain).
@@ -1303,7 +1339,7 @@
         }
       }
       const retainedT = modelT.map((m, i) => m - shareT[i]);
-      return { bands, modelT, baseT, shareT, retainedT, per, totShare, totExcess, npvAll };
+      return { bands, modelT, baseT, shareT, retainedT, per, totShare, totExcess, npvAll, totBaseDist };
     }
 
     const fmtMdp = x => '$' + Math.round(x).toLocaleString('en-US') + ' mdp';
@@ -1322,6 +1358,61 @@
     }
 
     let viewMode = 'hurdle';   // 'hurdle' = promote by hurdle · 'stack' = promote on total distributions
+    let invChart = null;
+
+    // ── Distributions by investor ──────────────────────────────────
+    // Meta's retained cash (at-baseline + above-baseline net of promote) is
+    // split by equity share; Maquina additionally takes the whole promote.
+    function investors(){
+      const out = [];
+      let sum = 0;
+      for (let n = 1; n <= 5; n++){
+        const nm = ($('inv-name-' + n) || {}).value || ('Investor ' + n);
+        const pc = Math.max(0, +(($('inv-pct-' + n) || {}).value || 0));
+        out.push({ name: nm, pct: pc }); sum += pc;
+      }
+      const el = $('inv-sum'); if (el) el.textContent = (Math.round(sum * 10) / 10);
+      // normalise so the split always allocates 100% of retained cash
+      out.forEach(o => o.share = sum > 0 ? o.pct / sum : 0.2);
+      return out;
+    }
+
+    function investorSeries(r){
+      const inv = investors();
+      const promote = r.totShare;
+      const atBase = r.totBaseDist;                       // min(model, baseline)
+      const above = Math.max(0, r.totExcess - promote);   // excess Meta keeps
+      return {
+        labels: inv.map(o => o.name),
+        base:   inv.map(o => atBase * o.share),
+        above:  inv.map(o => above * o.share),
+        promote: inv.map((o, i) => i === 0 ? promote : 0)
+      };
+    }
+
+    function buildInvestorChart(){
+      const ctx = $('investorChart'); if (!ctx) return null;
+      const s = investorSeries(calc(cfg()));
+      invChart = new Chart(ctx, {
+        type: 'bar',
+        data: { labels: s.labels, datasets: [
+          { label: 'At baseline (Título)', data: s.base,    backgroundColor: MQ.hexA(MQ.palette(5), 0.55), borderWidth: 0, stack: 'd' },
+          { label: 'Above baseline',       data: s.above,   backgroundColor: MQ.hexA(MQ.palette(2), 0.85), borderWidth: 0, stack: 'd' },
+          { label: 'Promote to Maquina',   data: s.promote, backgroundColor: MQ.hexA(MQ.palette(0), 0.95), borderWidth: 0, stack: 'd' } ]},
+        options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+          interaction: { mode: 'index', intersect: false },
+          scales: {
+            x: { stacked: true, grid: { color: MQ.grid() },
+                 title: { display: true, text: 'Distributions (mdp, nominal)', color: MQ.muted(), font: { size: 10 } },
+                 ticks: { color: MQ.muted(), callback: v => '$' + (v / 1000).toFixed(1) + 'k' } },
+            y: { stacked: true, grid: { display: false }, ticks: { color: MQ.muted(), font: { size: 12 } } } },
+          plugins: { legend: { display: true, position: 'bottom', labels: { color: MQ.muted(), boxWidth: 10, font: { size: 11 } } },
+            tooltip: { callbacks: {
+              label: c => c.dataset.label + ': $' + Math.round(c.parsed.x).toLocaleString() + ' mdp',
+              footer: items => 'Total: $' + Math.round(items.reduce((a, i) => a + i.parsed.x, 0)).toLocaleString() + ' mdp' } } } } });
+      return invChart;
+    }
+
 
     function recompute(){
       const c = cfg(), r = calc(c);
@@ -1339,6 +1430,14 @@
       $('comp-p-nom').textContent = fmtMdp(r.per.pitahaya.nom);
       $('comp-p-npv').textContent = fmtMdp(r.per.pitahaya.npv);
       renderTollTable(r, c);
+      if (invChart){
+        const s = investorSeries(r);
+        invChart.data.labels = s.labels;
+        invChart.data.datasets[0].data = s.base;
+        invChart.data.datasets[1].data = s.above;
+        invChart.data.datasets[2].data = s.promote;
+        invChart.update('none');
+      }
       const totDist = r.modelT.reduce((a, b) => a + b, 0);
       $('comp-tot-dist').textContent = fmtMdp(totDist);
       $('comp-tot-prom').textContent = fmtMdp(r.totShare);
@@ -1465,6 +1564,12 @@
     $('comp-road-v').addEventListener('change', recompute);
     $('comp-road-p').addEventListener('change', recompute);
     if ($('compChart')) MQ.register(buildCompChart);
+    if ($('investorChart')) MQ.register(buildInvestorChart);
+    for (let n = 1; n <= 5; n++){
+      ['inv-name-' + n, 'inv-pct-' + n].forEach(id => {
+        const el = $(id); if (el) el.addEventListener('input', recompute);
+      });
+    }
 
     // ── Static v1-vs-v2 comparison chart (independent of the sliders) ──
     const CMP = COMP.compare;
