@@ -181,6 +181,14 @@ ALTER TABLE companies ADD COLUMN IF NOT EXISTS logo BYTEA;
 ALTER TABLE companies ADD COLUMN IF NOT EXISTS logo_mime TEXT;
 ALTER TABLE company_risks ADD COLUMN IF NOT EXISTS commentary TEXT;
 
+-- Risk matrix: each category is plotted as Likelihood (x) x Impact (y).
+-- The existing *_risk columns are the IMPACT axis; these add LIKELIHOOD so
+-- every category can be positioned (and dragged) independently.
+ALTER TABLE company_risks ADD COLUMN IF NOT EXISTS market_likelihood  INT DEFAULT 5;
+ALTER TABLE company_risks ADD COLUMN IF NOT EXISTS team_likelihood    INT DEFAULT 5;
+ALTER TABLE company_risks ADD COLUMN IF NOT EXISTS finance_likelihood INT DEFAULT 5;
+ALTER TABLE company_risks ADD COLUMN IF NOT EXISTS product_likelihood INT DEFAULT 5;
+
 -- Month precision on lifecycle phases (e.g. Dec 2025 → Dec 2027).
 -- Defaults keep legacy year-only rows as full-year spans (Jan–Dec).
 ALTER TABLE company_phase_history ADD COLUMN IF NOT EXISTS start_month INT DEFAULT 1;

@@ -922,38 +922,69 @@
           <span class="risk-val">{{ val }}</span>
         </div>
         {% endfor %}
-        {# ── 2x2 risk matrix: internal (execution) vs external (market) ── #}
-        {% set ix = (risk.external_risk if risk else 5) %}
-        {% set iy = (risk.internal_risk if risk else 5) %}
+        {# ── 2x2 risk matrix: one draggable dot per category ──
+           x = Likelihood (*_likelihood), y = Impact (the existing *_risk rating). #}
+        {% set rl = risk or {} %}
+        {% set RISKS = [
+             ('market',  'Market',  rl.get('market_risk',  5) or 0, rl.get('market_likelihood',  5) or 0, '#D2452F'),
+             ('team',    'Team',    rl.get('team_risk',    5) or 0, rl.get('team_likelihood',    5) or 0, '#0568B3'),
+             ('finance', 'Finance', rl.get('finance_risk', 5) or 0, rl.get('finance_likelihood', 5) or 0, '#1F9D6B'),
+             ('product', 'Product', rl.get('product_risk', 5) or 0, rl.get('product_likelihood', 5) or 0, '#C98A00')] %}
         <div class="divider"></div>
-        <div style="font-size:10px;letter-spacing:0.14em;text-transform:uppercase;color:var(--mq-subtle);font-weight:700;margin-bottom:10px;">Risk Matrix</div>
-        <div style="position:relative;padding:0 0 24px 30px;">
-          <div style="position:relative;width:100%;aspect-ratio:1/1;max-width:300px;border:1px solid var(--mq-line);border-radius:8px;background:var(--mq-surface-2);overflow:hidden;">
-            {# quadrant tints + labels #}
-            <div style="position:absolute;left:0;top:0;width:50%;height:50%;background:rgba(201,138,0,0.07);border-right:1px dashed var(--mq-line);border-bottom:1px dashed var(--mq-line);"></div>
-            <div style="position:absolute;right:0;top:0;width:50%;height:50%;background:rgba(210,69,47,0.09);border-bottom:1px dashed var(--mq-line);"></div>
-            <div style="position:absolute;left:0;bottom:0;width:50%;height:50%;background:rgba(31,157,107,0.08);border-right:1px dashed var(--mq-line);"></div>
-            <div style="position:absolute;right:0;bottom:0;width:50%;height:50%;background:rgba(201,138,0,0.07);"></div>
-            {% set qs = 'position:absolute;font-size:9px;letter-spacing:0.06em;text-transform:uppercase;color:var(--mq-subtle);font-weight:700;' %}
-            <span style="{{ qs }}left:7px;top:6px;">Execution risk</span>
-            <span style="{{ qs }}right:7px;top:6px;color:#D2452F;">High both</span>
-            <span style="{{ qs }}left:7px;bottom:6px;color:#1F9D6B;">Lower risk</span>
-            <span style="{{ qs }}right:7px;bottom:6px;">Market risk</span>
-            {# company marker #}
-            <div title="{{ c.name }} · internal {{ iy }} / external {{ ix }}"
-                 style="position:absolute;left:{{ (ix/10*100)|round(1) }}%;bottom:{{ (iy/10*100)|round(1) }}%;transform:translate(-50%,50%);">
-              <span style="display:block;width:14px;height:14px;border-radius:50%;background:{{ c.accent }};border:2px solid var(--mq-surface);box-shadow:0 0 0 1px {{ c.accent }};"></span>
+        <div class="row between wrap" style="gap:8px;align-items:baseline;margin-bottom:10px;">
+          <div style="font-size:10px;letter-spacing:0.14em;text-transform:uppercase;color:var(--mq-subtle);font-weight:700;">Risk Matrix</div>
+          <span class="subtle" style="font-size:11.5px;">{% if is_admin %}Drag a dot to reposition, then save.{% else %}Likelihood × Impact, 0–10.{% endif %}</span>
+        </div>
+        <form method="POST" action="{{ url_for('update_risk', slug=c.slug) }}" id="riskMatrixForm">
+          {# preserve the fields this form doesn't edit #}
+          <input type="hidden" name="internal_risk" value="{{ (rl.get('internal_risk', 5) or 0)|round|int }}">
+          <input type="hidden" name="external_risk" value="{{ (rl.get('external_risk', 5) or 0)|round|int }}">
+          <input type="hidden" name="commentary" value="{{ rl.get('commentary') or '' }}">
+          <div class="row wrap" style="gap:24px;align-items:flex-start;">
+            <div style="padding-left:26px;padding-bottom:22px;position:relative;">
+              <div id="riskMatrix" style="position:relative;width:300px;height:300px;border:1px solid var(--mq-line);border-radius:8px;background:var(--mq-surface-2);overflow:hidden;{{ 'cursor:crosshair;' if is_admin }}">
+                <div style="position:absolute;left:0;top:0;width:50%;height:50%;background:rgba(201,138,0,0.07);border-right:1px dashed var(--mq-line);border-bottom:1px dashed var(--mq-line);"></div>
+                <div style="position:absolute;right:0;top:0;width:50%;height:50%;background:rgba(210,69,47,0.10);border-bottom:1px dashed var(--mq-line);"></div>
+                <div style="position:absolute;left:0;bottom:0;width:50%;height:50%;background:rgba(31,157,107,0.08);border-right:1px dashed var(--mq-line);"></div>
+                <div style="position:absolute;right:0;bottom:0;width:50%;height:50%;background:rgba(201,138,0,0.07);"></div>
+                {% set qs = 'position:absolute;font-size:9px;letter-spacing:0.06em;text-transform:uppercase;color:var(--mq-subtle);font-weight:700;pointer-events:none;' %}
+                <span style="{{ qs }}left:7px;top:6px;">Monitor</span>
+                <span style="{{ qs }}right:7px;top:6px;color:#D2452F;">Critical</span>
+                <span style="{{ qs }}left:7px;bottom:6px;color:#1F9D6B;">Low</span>
+                <span style="{{ qs }}right:7px;bottom:6px;">Manage</span>
+                {% for key, label, impact, likely, col in RISKS %}
+                <div class="risk-dot" data-key="{{ key }}" data-x="{{ likely }}" data-y="{{ impact }}"
+                     title="{{ label }} — likelihood {{ likely }}, impact {{ impact }}"
+                     style="position:absolute;left:{{ (likely/10*100)|round(1) }}%;bottom:{{ (impact/10*100)|round(1) }}%;
+                            transform:translate(-50%,50%);{{ 'cursor:grab;' if is_admin }}touch-action:none;z-index:3;">
+                  <span style="display:flex;align-items:center;gap:5px;">
+                    <span style="width:15px;height:15px;border-radius:50%;background:{{ col }};border:2px solid var(--mq-surface);box-shadow:0 0 0 1px {{ col }};flex-shrink:0;"></span>
+                    <span style="font-size:10.5px;font-weight:700;color:var(--mq-ink-2);white-space:nowrap;text-shadow:0 0 3px var(--mq-surface),0 0 3px var(--mq-surface);">{{ label }}</span>
+                  </span>
+                </div>
+                <input type="hidden" name="{{ key }}_risk" id="in-{{ key }}-y" value="{{ impact }}">
+                <input type="hidden" name="{{ key }}_likelihood" id="in-{{ key }}-x" value="{{ likely }}">
+                {% endfor %}
+              </div>
+              <div style="position:absolute;left:0;top:0;height:300px;display:flex;align-items:center;">
+                <span style="font-size:10px;letter-spacing:0.08em;text-transform:uppercase;color:var(--mq-subtle);font-weight:700;writing-mode:vertical-rl;transform:rotate(180deg);">Impact →</span>
+              </div>
+              <div style="width:300px;text-align:center;font-size:10px;letter-spacing:0.08em;text-transform:uppercase;color:var(--mq-subtle);font-weight:700;margin-top:6px;">Likelihood →</div>
+            </div>
+            <div style="flex:1;min-width:210px;">
+              {% for key, label, impact, likely, col in RISKS %}
+              <div class="row between" style="font-size:12.5px;padding:7px 0;border-bottom:1px solid var(--mq-line);">
+                <span class="legend-left"><span class="legend-dot" style="background:{{ col }};"></span>{{ label }}</span>
+                <span class="subtle tnum" id="lbl-{{ key }}">L {{ likely }} · I {{ impact }}</span>
+              </div>
+              {% endfor %}
+              {% if is_admin %}
+              <button class="btn btn-primary btn-sm mt-16" type="submit">Save risk matrix</button>
+              <p class="subtle" style="font-size:11px;margin-top:8px;line-height:1.5;">Impact is the same 0–10 rating shown in the sliders above; likelihood is set here.</p>
+              {% endif %}
             </div>
           </div>
-          <div style="position:absolute;left:0;top:0;height:calc(100% - 24px);display:flex;align-items:center;">
-            <span style="font-size:10px;letter-spacing:0.08em;text-transform:uppercase;color:var(--mq-subtle);font-weight:700;writing-mode:vertical-rl;transform:rotate(180deg);">Internal risk →</span>
-          </div>
-          <div style="max-width:300px;text-align:center;font-size:10px;letter-spacing:0.08em;text-transform:uppercase;color:var(--mq-subtle);font-weight:700;margin-top:6px;">External risk →</div>
-        </div>
-        <div class="row" style="gap:18px;font-size:12.5px;margin-top:2px;">
-          <span class="muted">Internal <strong style="color:var(--mq-ink-2);">{{ iy }}</strong>/10</span>
-          <span class="muted">External <strong style="color:var(--mq-ink-2);">{{ ix }}</strong>/10</span>
-        </div>
+        </form>
 
         {% if risk and risk.commentary %}
         <div class="divider"></div>
@@ -1110,6 +1141,52 @@
             tooltip:{ callbacks:{ label:c=>c.label+': $'+(c.parsed/1e6).toFixed(1)+'M' } } } } });
     }
     if (document.getElementById('capClassChart')) MQ.register(classChart);
+  })();
+  {% endif %}
+
+  {% if is_admin %}
+  // ── Risk matrix: drag each category dot to set Likelihood (x) / Impact (y) ──
+  (function(){
+    const box = document.getElementById('riskMatrix'); if (!box) return;
+    let active = null;
+    const clamp = v => Math.max(0, Math.min(10, v));
+    function place(dot, x, y){
+      dot.dataset.x = x; dot.dataset.y = y;
+      dot.style.left = (x / 10 * 100) + '%';
+      dot.style.bottom = (y / 10 * 100) + '%';
+      const k = dot.dataset.key;
+      const ix = document.getElementById('in-' + k + '-x');
+      const iy = document.getElementById('in-' + k + '-y');
+      if (ix) ix.value = x;
+      if (iy) iy.value = y;
+      const lb = document.getElementById('lbl-' + k);
+      if (lb) lb.textContent = 'L ' + x + ' · I ' + y;
+      dot.title = dot.title.split(' — ')[0] + ' — likelihood ' + x + ', impact ' + y;
+    }
+    function fromEvent(e){
+      const r = box.getBoundingClientRect();
+      const px = (e.clientX - r.left) / r.width * 10;
+      const py = (r.bottom - e.clientY) / r.height * 10;
+      return [clamp(Math.round(px)), clamp(Math.round(py))];
+    }
+    box.querySelectorAll('.risk-dot').forEach(dot => {
+      dot.addEventListener('pointerdown', e => {
+        active = dot; dot.setPointerCapture(e.pointerId);
+        dot.style.cursor = 'grabbing'; dot.style.zIndex = 9;
+        e.preventDefault();
+      });
+      dot.addEventListener('pointermove', e => {
+        if (active !== dot) return;
+        const [x, y] = fromEvent(e); place(dot, x, y);
+      });
+      const end = e => {
+        if (active !== dot) return;
+        active = null; dot.style.cursor = 'grab'; dot.style.zIndex = 3;
+        try { dot.releasePointerCapture(e.pointerId); } catch (err) {}
+      };
+      dot.addEventListener('pointerup', end);
+      dot.addEventListener('pointercancel', end);
+    });
   })();
   {% endif %}
 

@@ -2006,16 +2006,22 @@ def update_risk(slug):
     conn = db.get_db(); cur = conn.cursor()
     cur.execute(
         """INSERT INTO company_risks
-             (company_id, market_risk, team_risk, finance_risk, product_risk, internal_risk, external_risk, commentary)
-           VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
+             (company_id, market_risk, team_risk, finance_risk, product_risk,
+              internal_risk, external_risk, commentary,
+              market_likelihood, team_likelihood, finance_likelihood, product_likelihood)
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
            ON CONFLICT (company_id) DO UPDATE SET
              market_risk=EXCLUDED.market_risk, team_risk=EXCLUDED.team_risk,
              finance_risk=EXCLUDED.finance_risk, product_risk=EXCLUDED.product_risk,
              internal_risk=EXCLUDED.internal_risk, external_risk=EXCLUDED.external_risk,
-             commentary=EXCLUDED.commentary""",
+             commentary=EXCLUDED.commentary,
+             market_likelihood=EXCLUDED.market_likelihood, team_likelihood=EXCLUDED.team_likelihood,
+             finance_likelihood=EXCLUDED.finance_likelihood, product_likelihood=EXCLUDED.product_likelihood""",
         (c["id"], _rating(f.get("market_risk")), _rating(f.get("team_risk")),
          _rating(f.get("finance_risk")), _rating(f.get("product_risk")),
-         _rating(f.get("internal_risk")), _rating(f.get("external_risk")), commentary))
+         _rating(f.get("internal_risk")), _rating(f.get("external_risk")), commentary,
+         _rating(f.get("market_likelihood")), _rating(f.get("team_likelihood")),
+         _rating(f.get("finance_likelihood")), _rating(f.get("product_likelihood"))))
     conn.commit(); cur.close(); conn.close()
     flash("Risk ratings updated.", "ok")
     return redirect(url_for("company", slug=slug, tab="strategy"))
