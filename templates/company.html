@@ -77,7 +77,7 @@
           <div style="font-family:var(--font-display);font-size:30px;font-weight:700;color:var(--mq-ink-2);line-height:1.15;">{{ valuation.value_usd | money }}</div>
           <div class="subtle" style="font-size:12px;margin-top:3px;">
             {% if valuation.model == 'sponsor' %}
-              Sponsor model · FRE {{ fin.fre | num }} {{ c.value_unit }} × {{ '%.0f'|format(fin.fre_multiple) }} = {{ valuation.fre_value | num }} {{ c.value_unit }} + promote PV {{ valuation.promote_pv | money }}
+              Sponsor model · FRE {{ fin.fre | num }} {{ c.value_unit }} × {{ '%.0f'|format(fin.fre_multiple) }} = {{ valuation.fre_value | num }} {{ c.value_unit }} + promote PV {{ valuation.promote_pv | money }}{% if fre_basis %}<br><span style="font-size:11px;">FRE derived from the Operating Budget — {{ fre_basis }}. Not editable.</span>{% endif %}
             {% else %}
               {{ valuation.equity | num }} {{ c.value_unit }} equity · EV {{ valuation.ev | num }} {{ c.value_unit }} ({{ '%.1f'|format(fin.ebitda_multiple) }}× EBITDA) − debt {{ fin.total_debt | num }} {{ c.value_unit }}
             {% endif %}
@@ -112,7 +112,14 @@
             <div><label class="fld-label">EBITDA margin (%)</label><input class="input" type="number" step="any" name="ebitda_margin" value="{{ fin.ebitda_margin }}"></div>
             <div><label class="fld-label">EBITDA multiple (x)</label><input class="input" type="number" step="any" name="ebitda_multiple" value="{{ fin.ebitda_multiple }}"></div>
             <div><label class="fld-label">Total debt ({{ c.value_unit }})</label><input class="input" type="number" step="any" name="total_debt" value="{{ fin.total_debt }}"></div>
+            {% if fre_basis %}
+            <div><label class="fld-label">FRE ({{ c.value_unit }})</label>
+              <input class="input" type="number" value="{{ fin.fre | round(1) }}" disabled title="Derived from the Operating Budget — {{ fre_basis }}">
+              <input type="hidden" name="fre" value="{{ fin.fre }}">
+              <span class="subtle" style="font-size:10.5px;display:block;margin-top:3px;">from budget · {{ fre_basis }}</span></div>
+            {% else %}
             <div><label class="fld-label">FRE ({{ c.value_unit }})</label><input class="input" type="number" step="any" name="fre" value="{{ fin.fre }}"></div>
+            {% endif %}
             <div><label class="fld-label">FRE multiple (x)</label><input class="input" type="number" step="any" name="fre_multiple" value="{{ fin.fre_multiple }}"></div>
             <div><label class="fld-label">Carry discount (0–1)</label><input class="input" type="number" step="0.01" name="carry_discount" value="{{ fin.carry_discount }}"></div>
           </div>

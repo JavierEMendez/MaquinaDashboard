@@ -589,6 +589,19 @@ def _to_usd(value, value_unit, rate):
     return value
 
 
+def _to_display(usd, value_unit, rate):
+    """Inverse of _to_usd — raw USD back into a company's display units."""
+    if usd is None:
+        return 0.0
+    if value_unit == "KUSD":
+        return usd / 1000.0
+    if value_unit == "MMXN":
+        return usd * rate / 1e6
+    if value_unit == "KMXN":
+        return usd * rate / 1e3
+    return usd
+
+
 def company_valuation(fin, promote_total_usd, rate, value_unit):
     """Two-model equity valuation. Returns display-unit pieces + normalized USD.
     Sponsor: FRE × multiple + PV(promotes) (~3yr horizon). Else: EV − net debt."""
@@ -1421,6 +1434,43 @@ def _ops_revenue_axis(ops):
     return {"by_year": by_year, "by_month": by_month, "lines": lines}
 
 
+def _ember_fre(budget):
+    """Derive Fee-Related Earnings from the live Operating Budget instead of a
+    hand-typed input. FRE = the firm's fee-business profit = budget net income
+    (fee revenue less personnel and overhead); the budget carries no carry or
+    investment gains, so net income IS fee-related earnings here.
+
+    Prefers the last COMPLETE calendar year in the budget — a partial opening
+    year (e.g. Apr-Dec 2026) overstates a run-rate. Falls back to annualising
+    the whole horizon. Returns (usd_per_year, basis_label) or None."""
+    if not budget:
+        return None
+    meta = budget.get("meta") or {}
+    months = meta.get("months") or []
+    ni = (budget.get("net_income") or {}).get("by_year") or {}
+    if not ni:
+        return None
+    per_year = {}
+    for mk in months:
+        per_year[mk[:4]] = per_year.get(mk[:4], 0) + 1
+    full = sorted([y for y, n in per_year.items() if n >= 12])
+    if full:
+        y = full[-1]
+        try:
+            return float(ni.get(y) or 0), "%s budget net income" % y
+        except (TypeError, ValueError):
+            return None
+    # no complete year — annualise the horizon
+    n = len(months)
+    if not n:
+        return None
+    try:
+        total = sum(float(v or 0) for v in ni.values())
+    except (TypeError, ValueError):
+        return None
+    return total * 12.0 / n, "annualised from %d months" % n
+
+
 def _apply_ops_revenue(budget, ops):
     """Replace the Operating Budget's revenue with the live Operating Revenues
     figures and re-derive Net Income (= revenue - costs), Cash Flow (shifted by
@@ -1870,6 +1920,13 @@ def company(slug):
 
     # financial inputs (EBITDA/FRE) + leverage + two-model equity valuation
     fin = load_financials(c["id"])
+    # Ember's FRE comes from the live Operating Budget, not a typed input.
+    fre_basis = None
+    if fin and c["slug"] == "ember":
+        _f = _ember_fre(ember_budget)
+        if _f:
+            fre_usd, fre_basis = _f
+            fin = dict(fin, fre=_to_display(fre_usd, c["value_unit"], usd_mxn_rate()))
     leverage = (fin["total_debt"] / fin["ebitda"]) if (fin and fin["ebitda"] and fin["ebitda"] > 0) else None
     valuation = company_valuation(
         fin, (ember_returns["totals"]["promote"] if ember_returns else 0),
@@ -1921,7 +1978,7 @@ def company(slug):
         years=list(range(HIST_START, PROJ_END + 1)),
         ember_live=ember_live, ember_asof=ember_asof, ember_loans=ember_loans,
         ember_returns=ember_returns, summary=summary, fin=fin, leverage=leverage,
-        valuation=valuation, cap=cap, hold=hold, exitr=exitr,
+        valuation=valuation, cap=cap, hold=hold, exitr=exitr, fre_basis=fre_basis,
         verticals=verticals, sales=sales, ember_budget=ember_budget, comp=comp,
     )
 
