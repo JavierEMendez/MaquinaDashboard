@@ -452,7 +452,7 @@
         <div class="kpi-foot"><span class="kpi-sub">at {{ '%.2f'|format(comp.rate) }} MXN/USD</span></div></div>
       <div class="kpi"><div class="kpi-top"><span class="kpi-label">Nominal Total 2026–50</span></div>
         <div class="kpi-value" id="comp-nom">—</div>
-        <div class="kpi-foot"><span class="kpi-sub">pre-tax, undiscounted</span></div></div>
+        <div class="kpi-foot"><span class="kpi-sub" id="comp-nom-usd">pre-tax, undiscounted</span></div></div>
       <div class="kpi"><div class="kpi-top"><span class="kpi-label">Share of Excess</span></div>
         <div class="kpi-value" id="comp-eff">—</div>
         <div class="kpi-foot"><span class="kpi-sub">blended across hurdles</span></div></div>
@@ -461,7 +461,7 @@
     <div class="card mb-24">
       <div class="card-head">
         <div><div class="card-title">Annual Promote vs Project Distributions</div>
-          <div class="card-sub" id="comp-chart-sub">Bars: Maquina's promote by hurdle (mdp, nominal). Lines: model revenues vs indexed concession-title baseline (right axis).</div></div>
+          <div class="card-sub" id="comp-chart-sub">Bars: Maquina's promote by hurdle (mdp, nominal). Lines: <strong>each highway vs its own</strong> indexed título baseline, right axis — a road only pays when it clears its own line (no netting between roads).</div></div>
         <div class="row" style="gap:6px;">
           <button class="btn btn-sm btn-primary" id="comp-view-hurdle" type="button" onclick="compView('hurdle')">Promote by Hurdle</button>
           <button class="btn btn-sm btn-ghost" id="comp-view-stack" type="button" onclick="compView('stack')">Promote on Distributions</button>
@@ -484,18 +484,22 @@
           <label class="row" style="gap:7px;font-size:13px;color:var(--mq-muted);cursor:pointer;"><input type="checkbox" id="comp-road-v" checked style="accent-color:var(--mq-accent);"> Ventura–El Peyote</label>
           <label class="row" style="gap:7px;font-size:13px;color:var(--mq-muted);cursor:pointer;"><input type="checkbox" id="comp-road-p" checked style="accent-color:var(--mq-accent);"> La Pitahaya–Libr. Oriente</label>
         </div>
-        {% set srow = 'display:grid;grid-template-columns:172px 1fr 60px;gap:10px;align-items:center;padding:5px 0;' %}
-        {% set slbl = 'font-size:12px;color:var(--mq-muted);' %}
+        {% set srow = 'display:grid;grid-template-columns:210px 1fr 60px;gap:10px;align-items:center;padding:6px 0;' %}
+        {% set slbl = 'font-size:12px;color:var(--mq-muted);display:block;' %}
+        {% set sbase = 'font-size:10.5px;color:var(--mq-subtle);display:block;line-height:1.4;margin-top:1px;' %}
         {% set sval = 'font-size:12px;font-weight:700;color:var(--mq-ink-2);text-align:right;font-variant-numeric:tabular-nums;' %}
-        <div style="font-size:10px;letter-spacing:0.13em;text-transform:uppercase;color:var(--mq-subtle);font-weight:700;margin:8px 0 2px;">Traffic &amp; revenue</div>
-        <div style="{{ srow }}"><span style="{{ slbl }}">Revenue level — Ventura</span><input type="range" id="comp-lvl-v" min="60" max="140" step="1" value="100" style="accent-color:var(--mq-accent);"><span style="{{ sval }}" id="lbl-lvl-v">100%</span></div>
-        <div style="{{ srow }}"><span style="{{ slbl }}">Revenue level — Pitahaya</span><input type="range" id="comp-lvl-p" min="60" max="140" step="1" value="100" style="accent-color:var(--mq-accent);"><span style="{{ sval }}" id="lbl-lvl-p">100%</span></div>
-        <div style="{{ srow }}"><span style="{{ slbl }}">Traffic growth Δ (tcma)</span><input type="range" id="comp-growth" min="-3" max="3" step="0.25" value="0" style="accent-color:var(--mq-accent);"><span style="{{ sval }}" id="lbl-growth">+0.0%</span></div>
-        <div style="{{ srow }}"><span style="{{ slbl }}">Inflation (INPC) Δ vs base</span><input type="range" id="comp-infl" min="-2" max="2" step="0.25" value="0" style="accent-color:var(--mq-accent);"><span style="{{ sval }}" id="lbl-infl">+0.0%</span></div>
+        {% set bs = comp.base %}
+        <div style="font-size:10px;letter-spacing:0.13em;text-transform:uppercase;color:var(--mq-subtle);font-weight:700;margin:8px 0 2px;">Traffic &amp; revenue
+          <span style="text-transform:none;letter-spacing:0;font-weight:500;">— sliders are deltas vs the workbook's own assumptions, shown beneath each</span></div>
+        <div style="{{ srow }}"><span><span style="{{ slbl }}">Revenue level — Ventura</span><span style="{{ sbase }}">base 100% = Valoran model · ${{ '{:,.0f}'.format(bs.ventura.start) }}→${{ '{:,.0f}'.format(bs.ventura.end) }} mdp ({{ bs.ventura.start_year }}–2050)</span></span><input type="range" id="comp-lvl-v" min="60" max="140" step="1" value="100" style="accent-color:var(--mq-accent);"><span style="{{ sval }}" id="lbl-lvl-v">100%</span></div>
+        <div style="{{ srow }}"><span><span style="{{ slbl }}">Revenue level — Pitahaya</span><span style="{{ sbase }}">base 100% = Valoran model · ${{ '{:,.0f}'.format(bs.pitahaya.start) }}→${{ '{:,.0f}'.format(bs.pitahaya.end) }} mdp ({{ bs.pitahaya.start_year }}–2050)</span></span><input type="range" id="comp-lvl-p" min="60" max="140" step="1" value="100" style="accent-color:var(--mq-accent);"><span style="{{ sval }}" id="lbl-lvl-p">100%</span></div>
+        <div style="{{ srow }}"><span><span style="{{ slbl }}">Traffic growth Δ (tcma)</span><span style="{{ sbase }}">base +{{ '%.1f'|format(bs.ventura.real_cagr) }}%/yr real (traffic + tariff) = {{ '%.1f'|format(bs.ventura.nom_cagr) }}% nominal</span></span><input type="range" id="comp-growth" min="-3" max="3" step="0.25" value="0" style="accent-color:var(--mq-accent);"><span style="{{ sval }}" id="lbl-growth">+0.0%</span></div>
+        <div style="{{ srow }}"><span><span style="{{ slbl }}">Inflation (INPC) Δ</span><span style="{{ sbase }}">base {{ '%.1f'|format(bs.infl_first) }}%/yr early → {{ '%.1f'|format(bs.infl_last) }}% steady ({{ '%.1f'|format(bs.infl_cagr) }}% CAGR)</span></span><input type="range" id="comp-infl" min="-2" max="2" step="0.25" value="0" style="accent-color:var(--mq-accent);"><span style="{{ sval }}" id="lbl-infl">+0.0%</span></div>
         <div style="font-size:10px;letter-spacing:0.13em;text-transform:uppercase;color:var(--mq-subtle);font-weight:700;margin:12px 0 2px;">Valuation</div>
-        <div style="{{ srow }}"><span style="{{ slbl }}">Real discount rate</span><input type="range" id="comp-disc" min="6" max="12" step="0.25" value="9" style="accent-color:var(--mq-accent);"><span style="{{ sval }}" id="lbl-disc">9.0%</span></div>
-        <div style="{{ srow }}"><span style="{{ slbl }}">Tax rate</span><input type="range" id="comp-tax" min="0" max="35" step="1" value="30" style="accent-color:var(--mq-accent);"><span style="{{ sval }}" id="lbl-tax">30%</span></div>
-        <div style="font-size:10px;letter-spacing:0.13em;text-transform:uppercase;color:var(--mq-subtle);font-weight:700;margin:12px 0 2px;">Deal terms — hurdles over baseline</div>
+        <div style="{{ srow }}"><span><span style="{{ slbl }}">Real discount rate</span><span style="{{ sbase }}">base 9.0% real — Valoran deck premise</span></span><input type="range" id="comp-disc" min="6" max="12" step="0.25" value="9" style="accent-color:var(--mq-accent);"><span style="{{ sval }}" id="lbl-disc">9.0%</span></div>
+        <div style="{{ srow }}"><span><span style="{{ slbl }}">Tax rate</span><span style="{{ sbase }}">base 30% — Mexican ISR corporate rate</span></span><input type="range" id="comp-tax" min="0" max="35" step="1" value="30" style="accent-color:var(--mq-accent);"><span style="{{ sval }}" id="lbl-tax">30%</span></div>
+        <div style="font-size:10px;letter-spacing:0.13em;text-transform:uppercase;color:var(--mq-subtle);font-weight:700;margin:12px 0 2px;">Deal terms — hurdles over baseline
+          <span style="text-transform:none;letter-spacing:0;font-weight:500;">— base = proposal: 30/50/75% hurdles at 5/40/60/75%</span></div>
         <div style="{{ srow }}"><span style="{{ slbl }}">Hurdle 1 ends at (excess ≤)</span><input type="range" id="comp-th1" min="10" max="60" step="1" value="30" style="accent-color:var(--mq-accent);"><span style="{{ sval }}" id="lbl-th1">30%</span></div>
         <div style="{{ srow }}"><span style="{{ slbl }}">Hurdle 2 ends at</span><input type="range" id="comp-th2" min="20" max="80" step="1" value="50" style="accent-color:var(--mq-accent);"><span style="{{ sval }}" id="lbl-th2">50%</span></div>
         <div style="{{ srow }}"><span style="{{ slbl }}">Hurdle 3 ends at</span><input type="range" id="comp-th3" min="30" max="100" step="1" value="75" style="accent-color:var(--mq-accent);"><span style="{{ sval }}" id="lbl-th3">75%</span></div>
@@ -520,6 +524,7 @@
         <div style="font-size:10px;letter-spacing:0.13em;text-transform:uppercase;color:var(--mq-subtle);font-weight:700;margin-bottom:8px;">Distribution split 2026–50 (nominal)</div>
         <div class="row between" style="font-size:12.5px;padding:4px 0;"><span class="muted">Total project distributions</span><span class="tnum" style="font-weight:600;" id="comp-tot-dist">—</span></div>
         <div class="row between" style="font-size:12.5px;padding:4px 0;"><span class="muted">Promote to Maquina</span><span class="tnum" style="font-weight:600;color:var(--mq-accent);" id="comp-tot-prom">—</span></div>
+        <div class="row between" style="font-size:12.5px;padding:4px 0;"><span class="muted" style="padding-left:12px;">— in USD</span><span class="tnum" style="font-weight:600;color:var(--mq-accent);" id="comp-tot-prom-usd">—</span></div>
         <div class="row between" style="font-size:12.5px;padding:4px 0;border-bottom:1px solid var(--mq-line);"><span class="muted">Meta retained (non-promote)</span><span class="tnum" style="font-weight:600;" id="comp-tot-ret">—</span></div>
         <div style="margin:12px 0;"></div>
         <p class="subtle" style="font-size:11.5px;line-height:1.6;margin-top:12px;">Method: yearly excess = max(0, model revenues − concession-title baseline indexed by INPC). The excess is layered against the baseline hurdles and promoted at the hurdle percentages. NPV deflates nominal flows to 2026 pesos and discounts at the real rate, post-tax. Base series extracted 1-for-1 from Valoran's updated workbook ("Aux. Compartición": H2-2026 stub period, then annual through concession end 2050 — base-case nominal total <strong>$2,849 mdp</strong>, ties to the Excel).</p>
@@ -856,7 +861,8 @@
       const ix0 = COMP.index[0];   // first period (H2-2026) — NPV deflation base
       for (const key of ['ventura','pitahaya']){
         const road = { nom: 0, npv: 0, first: null,
-                       shareY: Array(N).fill(0), retainedY: Array(N).fill(0) };
+                       shareY: Array(N).fill(0), retainedY: Array(N).fill(0),
+                       modelY: Array(N).fill(null), baseY: Array(N).fill(null) };
         per[key] = road;
         if (!c.roads[key]) continue;
         const R = COMP[key];
@@ -876,6 +882,9 @@
           for (let k = 0; k < 4; k++){ const v = b[k] * c.sh[k]; bands[k][i] += v; s += v; }
           modelT[i] += model; baseT[i] += base; shareT[i] += s;
           road.shareY[i] = s; road.retainedY[i] = model - s;
+          // Only chart a road's baseline once it is actually producing
+          // revenue — a closed road's título baseline is not a comparator.
+          if (model > 0){ road.modelY[i] = model; road.baseY[i] = base; }
           totShare += s; totExcess += exc; road.nom += s;
           if (s > 1e-6 && road.first === null) road.first = Y[i];
           const pv = (s * (1 - c.tax)) / (ix / ix0) / Math.pow(1 + c.disc, Y[i] - 2026);
@@ -910,6 +919,7 @@
       $('comp-npv-sub').textContent = 'post-tax ' + Math.round(c.tax*100) + '% · ' + (c.disc*100).toFixed(1) + '% real · pesos 2026';
       $('comp-usd').textContent = fmtUsd(r.npvAll);
       $('comp-nom').textContent = fmtMdp(r.totShare);
+      $('comp-nom-usd').textContent = '≈ ' + fmtUsd(r.totShare) + ' USD · pre-tax, undiscounted';
       $('comp-eff').textContent = r.totExcess ? (r.totShare / r.totExcess * 100).toFixed(1) + '%' : '—';
       $('comp-v-first').textContent = r.per.ventura.first || '—';
       $('comp-v-nom').textContent = fmtMdp(r.per.ventura.nom);
@@ -920,13 +930,16 @@
       const totDist = r.modelT.reduce((a, b) => a + b, 0);
       $('comp-tot-dist').textContent = fmtMdp(totDist);
       $('comp-tot-prom').textContent = fmtMdp(r.totShare);
+      $('comp-tot-prom-usd').textContent = fmtUsd(r.totShare) + ' USD';
       $('comp-tot-ret').textContent = fmtMdp(totDist - r.totShare);
       if (compChart){
         const ds = compChart.data.datasets;
         if (viewMode === 'hurdle'){
           for (let k = 0; k < 4; k++){ ds[k].data = r.bands[k]; ds[k].label = hurdleLbl(c, k); }
-          ds[4].data = r.modelT;
-          ds[5].data = r.baseT;
+          ds[4].data = r.per.ventura.modelY;
+          ds[5].data = r.per.ventura.baseY;
+          ds[6].data = r.per.pitahaya.modelY;
+          ds[7].data = r.per.pitahaya.baseY;
         } else {
           ds[0].data = r.per.ventura.retainedY;
           ds[1].data = r.per.pitahaya.retainedY;
@@ -952,8 +965,12 @@
         datasets = [0,1,2,3].map(k => ({
           type:'bar', label:hurdleLbl(c, k), data:r.bands[k], stack:'share',
           backgroundColor:MQ.hexA(MQ.palette(k), 0.75), borderWidth:0, yAxisID:'y' }));
-        datasets.push({ type:'line', label:'Ingresos del modelo', data:r.modelT, borderColor:MQ.palette(4), borderWidth:2.2, pointRadius:0, tension:0.3, yAxisID:'y2' });
-        datasets.push({ type:'line', label:'Base Título de Concesión', data:r.baseT, borderColor:MQ.muted(), borderDash:[6,4], borderWidth:1.8, pointRadius:0, tension:0.3, yAxisID:'y2' });
+        // Per-highway lines — each road is measured against ITS OWN baseline
+        // (there is no netting between roads), so aggregate lines would mislead.
+        datasets.push({ type:'line', label:'Ventura — ingresos modelo', data:r.per.ventura.modelY, borderColor:MQ.palette(1), borderWidth:2.2, pointRadius:0, tension:0.3, spanGaps:false, yAxisID:'y2' });
+        datasets.push({ type:'line', label:'Ventura — base TdC', data:r.per.ventura.baseY, borderColor:MQ.hexA(MQ.palette(1), 0.55), borderDash:[6,4], borderWidth:1.6, pointRadius:0, tension:0.3, spanGaps:false, yAxisID:'y2' });
+        datasets.push({ type:'line', label:'Pitahaya — ingresos modelo', data:r.per.pitahaya.modelY, borderColor:MQ.palette(2), borderWidth:2.2, pointRadius:0, tension:0.3, spanGaps:false, yAxisID:'y2' });
+        datasets.push({ type:'line', label:'Pitahaya — base TdC', data:r.per.pitahaya.baseY, borderColor:MQ.hexA(MQ.palette(2), 0.55), borderDash:[6,4], borderWidth:1.6, pointRadius:0, tension:0.3, spanGaps:false, yAxisID:'y2' });
         scales = {
           x:{ stacked:true, grid:{display:false}, ticks:{ color:MQ.muted(), maxTicksLimit:14 } },
           y:{ stacked:true, position:'left', grid:{color:MQ.grid()}, title:{display:true,text:'Promote (mdp)',color:MQ.muted(),font:{size:10}}, ticks:{ color:MQ.muted(), callback:v=>'$'+(v/1000).toFixed(1)+'k' } },
@@ -985,7 +1002,7 @@
       bh.className = 'btn btn-sm ' + (mode === 'hurdle' ? 'btn-primary' : 'btn-ghost');
       bs.className = 'btn btn-sm ' + (mode === 'stack' ? 'btn-primary' : 'btn-ghost');
       $('comp-chart-sub').textContent = mode === 'hurdle'
-        ? "Bars: Maquina's promote by hurdle (mdp, nominal). Lines: model revenues vs indexed concession-title baseline (right axis)."
+        ? "Bars: Maquina's promote by hurdle (mdp, nominal). Lines: each highway vs its own indexed título baseline, right axis — a road only pays when it clears its own line (no netting between roads)."
         : "Stacked per highway: retained cashflow (light) with Maquina's promote on top (solid) = total project distributions (mdp, nominal). Dashed: concession-title baseline.";
       try { if (compChart) compChart.destroy(); } catch(e) {}
       buildCompChart();

@@ -838,6 +838,28 @@ def _build_meta_compare():
 META_COMPARE = _build_meta_compare()
 
 
+def _meta_base_assumptions(mc=None):
+    """Derive the base assumptions embedded in the workbook so the slider
+    labels can state what "0% delta" / "100% level" actually mean."""
+    mc = mc or META_COMP
+    Y, IX = mc["years"], mc["index"]
+    infl_first = IX[1] / IX[0] - 1
+    infl_last = IX[-1] / IX[-2] - 1
+    out = {"infl_first": infl_first * 100, "infl_last": infl_last * 100,
+           "infl_cagr": ((IX[-1] / IX[0]) ** (1 / (Y[-1] - Y[0])) - 1) * 100}
+    for key, si in (("ventura", 1), ("pitahaya", 3)):   # first FULL year of each road
+        R = mc[key]
+        a, b, yrs = R["model"][si], R["model"][-1], Y[-1] - Y[si]
+        nom = (b / a) ** (1 / yrs) - 1
+        ixg = (IX[-1] / IX[si]) ** (1 / yrs) - 1
+        out[key] = {"start_year": Y[si], "start": a, "end": b,
+                    "nom_cagr": nom * 100, "real_cagr": ((1 + nom) / (1 + ixg) - 1) * 100}
+    return out
+
+
+META_BASE = _meta_base_assumptions()
+
+
 def exit_returns(cid, entry_year, target_hold_years, exit_value_usd):
     """DB wrapper around _exit_calc for a single company."""
     conn = db.get_db()
@@ -1613,7 +1635,7 @@ def company(slug):
     ember_budget = None  # Operating Budget (firm P&L) — Ember only, from Ember DB
     comp = None       # Compartición de Ingresos scenario model — Meta only
     if c["slug"] == "meta":
-        comp = dict(META_COMP, rate=usd_mxn_rate(), compare=META_COMPARE)
+        comp = dict(META_COMP, rate=usd_mxn_rate(), compare=META_COMPARE, base=META_BASE)
     if c["slug"] == "ember":
         ember_loans = fetch_ember_loans()
         ember_returns = fetch_ember_returns()
