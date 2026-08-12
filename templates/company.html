@@ -39,9 +39,9 @@
       <div class="chart-wrap" style="height:300px;"><canvas id="chart-{{ cat }}"></canvas></div>
     </div>
     {% endif %}
-  {% else %}
-    <div class="card"><span class="subtle">No {{ cat }} KPIs yet.</span></div>
   {% endif %}
+  {# No empty-state card: when a category has no seeded KPIs the tab is
+     already carrying live Ember panels, so a placeholder is just noise. #}
 {% endmacro %}
 
 {% block content %}
