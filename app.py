@@ -1673,6 +1673,65 @@ def fetch_ember_capital():
                 if months[i][:4] == cur_year and months[i] <= today_iso:
                     dist_ytd += dv * K
         active.sort(key=lambda a: -a["equity"])
+        tot_dist_ltd_local = dist_ltd
+
+        # ── Prefer EmberApps' published capital view (cross-app view contract) ──
+        # view:capital is the exact context Ember's /capital page renders, so its
+        # roll-ups, per-project rows, pipeline and commitments are authoritative.
+        # Units: kpis + active rows are $K; commitments are already dollars.
+        # Ember does NOT publish the monthly distribution/promote series or a
+        # per-project promote, so those stay locally derived (labelled in the UI).
+        _cv = fetch_ember_view("capital")
+        if _cv:
+            v, v_asof = _cv
+            K2 = 1000.0
+            kp = v.get("kpis") or {}
+            promote_by_name = {a["name"]: a.get("promote") for a in active}
+            v_active = []
+            for a in (v.get("active") or []):
+                nm = a.get("name")
+                v_active.append(dict(
+                    name=nm, asset_class=a.get("asset_class"),
+                    irr=a.get("irr") or 0, em=a.get("em") or 0,
+                    equity=(a.get("equity") or 0) * K2,
+                    profit=(a.get("profit") or 0) * K2,
+                    dist_ltd=(a.get("to_date") or 0) * K2,
+                    dist_total=(a.get("to_date") or 0) * K2,
+                    promote=promote_by_name.get(nm)))
+            v_pipeline = [dict(
+                name=p.get("name"), location=p.get("address") or "",
+                asset_class=p.get("asset_class"),
+                irr=p.get("irr") or 0, em=p.get("em") or 0,
+                land_price=(p.get("land_price") or 0) * K2,
+                fcst_equity=(p.get("forecasted_equity") or 0) * K2,
+                duration=p.get("duration"), gross_margin=p.get("gross_margin"))
+                for p in (v.get("pipeline") or []) if p.get("show_in_report", True)]
+            vc = v.get("commitments") or {}
+            groups = vc.get("groups") or []
+            vt = vc.get("totals") or {}
+            ctot = {
+                "mpc": vt.get("mpc") or 0, "mpc_allocated": vt.get("mpc_allocated") or 0,
+                "vertical": vt.get("vertical") or 0,
+                "vertical_allocated": vt.get("vertical_allocated") or 0,
+                "committed": vt.get("total_committed") or 0,
+                "allocated": vt.get("total_allocated") or 0,
+                "available": vt.get("available") or 0}
+            return dict(
+                active=v_active, months=months, mdist=mdist, mprom=mprom,
+                pipeline=v_pipeline, commitments=groups, commit_totals=ctot,
+                as_of=v.get("as_of") or d.get("date"), src="view",
+                src_asof=(v_asof.strftime("%Y-%m-%d %H:%M") if v_asof else None),
+                totals=dict(
+                    equity=(kp.get("total_equity") or 0) * K2,
+                    profit=(kp.get("forecasted_lp_profit") or 0) * K2,
+                    promote=(kp.get("forecasted_promote") or 0) * K2,
+                    dist_ltd=tot_dist_ltd_local,
+                    dist_ytd=(kp.get("distributed_ytd") or 0) * K2,
+                    to_be_distributed=(kp.get("to_be_distributed") or 0) * K2,
+                    weighted_irr=kp.get("weighted_irr") or 0,
+                    lp_irr=kp.get("forecasted_lp_irr"),
+                    count=kp.get("active_count") or len(v_active),
+                    ytd_label=kp.get("ytd_label")))
 
         # ── Pipeline (manual blob, minus hidden) — contributions/distributions are raw USD ──
         hidden = set(vis_blob.get("hidden") or [])
@@ -2279,7 +2338,7 @@ def ember_diagnostics():
     Never writes. Returns connection status, available report types, and the
     shape of the latest 'operations' report so we can map KPIs precisely."""
     info = {"configured": bool(os.environ.get("EMBER_DATABASE_URL", "").strip()),
-            "connected": False, "error": None, "report_types": [], "views": [], "capv": None}
+            "connected": False, "error": None, "report_types": [], "views": []}
     if not info["configured"]:
         return info
     try:
@@ -2305,24 +2364,6 @@ def ember_diagnostics():
                              for r in ecur.fetchall()]
         except Exception as e:
             info["views_error"] = str(e)[:160]
-
-        # ── TEMP: view:capital value probe (unit verification) ──
-        try:
-            ecur.execute("SELECT data FROM reports WHERE report_type='view:capital' "
-                         "ORDER BY uploaded_at DESC LIMIT 1")
-            r = ecur.fetchone()
-            dd = (r or {}).get("data") or {}
-            if isinstance(dd, str):
-                dd = json.loads(dd)
-            info["capv"] = json.dumps({
-                "as_of": dd.get("as_of"),
-                "kpis": dd.get("kpis"),
-                "active_first2": (dd.get("active") or [])[:2],
-                "commit_totals": (dd.get("commitments") or {}).get("totals"),
-                "commit_group0": ((dd.get("commitments") or {}).get("groups") or [None])[0],
-            }, default=str, ensure_ascii=False)[:4200]
-        except Exception as e:
-            info["capv"] = "probe error: " + str(e)[:200]
 
         info["connected"] = True
         ecur.close(); econn.close()

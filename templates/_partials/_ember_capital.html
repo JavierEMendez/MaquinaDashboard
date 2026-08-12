@@ -4,14 +4,15 @@
    scripts block (after MQ is defined). #}
 <div class="row wrap" style="gap:8px;margin-bottom:16px;align-items:center;">
   <span class="badge good">● Live from Ember</span>
+  {% if cap.src == 'view' %}<span class="badge accent" title="Rendered from EmberApps' published capital view — identical figures, no re-derivation">Ember view{% if cap.src_asof %} · {{ cap.src_asof[:10] }}{% endif %}</span>{% endif %}
   <span class="subtle" style="font-size:12px;">{{ cap.totals.count }} active projects{% if cap.as_of %} · as of {{ cap.as_of }}{% endif %}</span>
 </div>
 
 <div class="grid grid-4 mb-24">
   <div class="kpi"><div class="kpi-top"><span class="kpi-label">LP Equity Invested</span></div><div class="kpi-value">{{ cap.totals.equity | money }}</div><div class="kpi-foot"><span class="kpi-sub">{{ cap.totals.count }} active projects</span></div></div>
   <div class="kpi"><div class="kpi-top"><span class="kpi-label">Total LP Profit</span></div><div class="kpi-value {{ 'pos' if cap.totals.profit >= 0 else 'neg' }}">{{ cap.totals.profit | money }}</div></div>
-  <div class="kpi"><div class="kpi-top"><span class="kpi-label">Total Promote</span></div><div class="kpi-value">{{ cap.totals.promote | money }}</div><div class="kpi-foot"><span class="kpi-sub">carry to partners</span></div></div>
-  <div class="kpi"><div class="kpi-top"><span class="kpi-label">Equity-Wtd LP IRR</span></div><div class="kpi-value pos">{{ '%.1f'|format(cap.totals.weighted_irr) }}%</div></div>
+  <div class="kpi"><div class="kpi-top"><span class="kpi-label">Total Promote</span></div><div class="kpi-value">{{ cap.totals.promote | money }}</div><div class="kpi-foot"><span class="kpi-sub">forecasted carry to partners</span></div></div>
+  <div class="kpi"><div class="kpi-top"><span class="kpi-label">Equity-Wtd LP IRR</span></div><div class="kpi-value pos">{{ '%.1f'|format(cap.totals.weighted_irr) }}%</div>{% if cap.totals.lp_irr %}<div class="kpi-foot"><span class="kpi-sub">forecasted LP IRR {{ '%.1f'|format(cap.totals.lp_irr) }}%</span></div>{% endif %}</div>
 </div>
 
 <div data-tabgroup>
@@ -25,7 +26,7 @@
   <div class="tab-panel active" data-panel="cap-active">
     <div class="card mb-24">
       <div class="card-head"><div><div class="card-title">Monthly LP Distributions &amp; Promotes</div>
-        <div class="card-sub">Cumulative across active projects (USD). Distributed LTD {{ cap.totals.dist_ltd | money }} · YTD {{ cap.totals.dist_ytd | money }}.</div></div></div>
+        <div class="card-sub">Cumulative across active projects (USD). Distributed LTD {{ cap.totals.dist_ltd | money }} · YTD {{ cap.totals.dist_ytd | money }}{% if cap.totals.ytd_label %} ({{ cap.totals.ytd_label }}){% endif %}.{% if cap.src == 'view' %} <span class="subtle">Monthly series derived from Ember's returns report — Ember doesn't publish it in the capital view.</span>{% endif %}</div></div></div>
       <div class="chart-wrap" style="height:300px;"><canvas id="distChart"></canvas></div>
       <div class="row" style="gap:20px;margin-top:14px;font-size:12.5px;">
         <span class="legend-left"><span class="legend-dot" style="background:var(--mq-c3);"></span>Cumulative LP Distributions</span>
@@ -38,7 +39,7 @@
           <thead><tr><th style="text-align:left;">Project</th><th>LP IRR</th><th>Equity Multiple</th><th>LP Equity</th><th>Distributed (LTD)</th><th>Promote</th></tr></thead>
           <tbody>
             {% for p in cap.active %}
-            <tr><td style="text-align:left;">{{ p.name }}</td><td>{{ '%.1f'|format(p.irr) }}%</td><td>{{ '%.2f'|format(p.em) }}x</td><td>{{ p.equity | money }}</td><td>{{ p.dist_ltd | money }}</td><td>{{ p.promote | money }}</td></tr>
+            <tr><td style="text-align:left;">{{ p.name }}</td><td>{{ '%.1f'|format(p.irr) }}%</td><td>{{ '%.2f'|format(p.em) }}x</td><td>{{ p.equity | money }}</td><td>{{ p.dist_ltd | money }}</td><td>{{ (p.promote | money) if p.promote is not none else '—' }}</td></tr>
             {% endfor %}
           </tbody>
         </table>
@@ -53,7 +54,7 @@
           <thead><tr><th style="text-align:left;">Project</th><th>LP IRR</th><th>Equity Multiple</th><th>LP Equity</th><th>LP Profit</th><th>Distributions (total)</th><th>Promote</th></tr></thead>
           <tbody>
             {% for p in cap.active %}
-            <tr><td style="text-align:left;">{{ p.name }}</td><td>{{ '%.1f'|format(p.irr) }}%</td><td>{{ '%.2f'|format(p.em) }}x</td><td>{{ p.equity | money }}</td><td class="{{ 'pos' if p.profit >= 0 else 'neg' }}">{{ p.profit | money }}</td><td>{{ p.dist_total | money }}</td><td>{{ p.promote | money }}</td></tr>
+            <tr><td style="text-align:left;">{{ p.name }}</td><td>{{ '%.1f'|format(p.irr) }}%</td><td>{{ '%.2f'|format(p.em) }}x</td><td>{{ p.equity | money }}</td><td class="{{ 'pos' if p.profit >= 0 else 'neg' }}">{{ p.profit | money }}</td><td>{{ p.dist_total | money }}</td><td>{{ (p.promote | money) if p.promote is not none else '—' }}</td></tr>
             {% endfor %}
           </tbody>
         </table>
@@ -66,10 +67,15 @@
     <div class="card" style="padding:0;overflow:hidden;">
       <div class="table-scroll" style="max-height:none;border:none;">
         <table class="data-table">
-          <thead><tr><th style="text-align:left;">Project</th><th style="text-align:left;">Location</th><th style="text-align:left;">Asset Class</th><th>Proj. IRR</th><th>Equity Multiple</th><th>Contributions</th><th>Distributions</th></tr></thead>
+          <thead><tr><th style="text-align:left;">Project</th><th style="text-align:left;">Location</th><th style="text-align:left;">Asset Class</th><th>Land Price</th><th>Fcst. Equity</th><th>Duration</th><th>Gross Margin</th><th>Proj. IRR</th><th>Equity Multiple</th></tr></thead>
           <tbody>
             {% for p in cap.pipeline %}
-            <tr><td style="text-align:left;">{{ p.name }}</td><td style="text-align:left;">{{ p.location or '—' }}</td><td style="text-align:left;">{{ p.asset_class or '—' }}</td><td>{{ '%.1f'|format(p.irr) }}%</td><td>{{ '%.2f'|format(p.em) }}x</td><td>{{ p.contrib | money }}</td><td>{{ p.dist | money }}</td></tr>
+            <tr><td style="text-align:left;">{{ p.name }}</td><td style="text-align:left;">{{ p.location or '—' }}</td><td style="text-align:left;">{{ p.asset_class or '—' }}</td>
+              <td>{{ (p.land_price | money) if p.land_price is defined else '—' }}</td>
+              <td>{{ (p.fcst_equity | money) if p.fcst_equity is defined else (p.contrib | money) }}</td>
+              <td>{{ (p.duration ~ ' mo') if p.duration else '—' }}</td>
+              <td>{{ ('%.1f'|format(p.gross_margin) ~ '%') if p.gross_margin is not none and p.gross_margin is defined else '—' }}</td>
+              <td>{{ '%.1f'|format(p.irr) }}%</td><td>{{ '%.2f'|format(p.em) }}x</td></tr>
             {% endfor %}
           </tbody>
         </table>
