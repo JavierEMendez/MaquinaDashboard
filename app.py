@@ -2349,7 +2349,7 @@ def ember_diagnostics():
     Never writes. Returns connection status, available report types, and the
     shape of the latest 'operations' report so we can map KPIs precisely."""
     info = {"configured": bool(os.environ.get("EMBER_DATABASE_URL", "").strip()),
-            "connected": False, "error": None, "report_types": [], "views": []}
+            "connected": False, "error": None, "report_types": [], "views": [], "fin_raw": None}
     if not info["configured"]:
         return info
     try:
@@ -2375,6 +2375,35 @@ def ember_diagnostics():
                              for r in ecur.fetchall()]
         except Exception as e:
             info["views_error"] = str(e)[:160]
+
+        # ── TEMP: finance-source inventory probe ──
+        try:
+            def _k(v, d=0):
+                if isinstance(v, dict):
+                    return sorted(v.keys())[:16] if d else {kk: _k(vv, d+1) for kk, vv in list(v.items())[:8]}
+                if isinstance(v, list):
+                    return {"len": len(v), "item0": _k(v[0], d+1) if v else None}
+                return type(v).__name__
+            out = {}
+            for rt in ("bva_finance", "bva_budget", "bva_commitments", "bva_flags",
+                       "ember_capital_captable", "loans"):
+                ecur.execute("SELECT data FROM reports WHERE report_type=%s "
+                             "ORDER BY uploaded_at DESC LIMIT 1", (rt,))
+                r = ecur.fetchone()
+                if r and r.get("data"):
+                    dd = r["data"]
+                    if isinstance(dd, str):
+                        dd = json.loads(dd)
+                    out[rt] = _k(dd)
+            try:
+                ecur.execute("SELECT COUNT(*) AS n, MAX(period_key) AS last FROM invoice_periods")
+                iv = ecur.fetchone()
+                out["invoice_periods"] = {"rows": iv["n"], "latest": iv["last"]}
+            except Exception as e:
+                out["invoice_periods"] = "n/a: " + str(e)[:60]
+            info["fin_raw"] = json.dumps(out, default=str, ensure_ascii=False)[:5200]
+        except Exception as e:
+            info["fin_raw"] = "probe error: " + str(e)[:200]
 
         info["connected"] = True
         ecur.close(); econn.close()
