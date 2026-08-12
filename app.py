@@ -2239,7 +2239,7 @@ def ember_diagnostics():
     Never writes. Returns connection status, available report types, and the
     shape of the latest 'operations' report so we can map KPIs precisely."""
     info = {"configured": bool(os.environ.get("EMBER_DATABASE_URL", "").strip()),
-            "connected": False, "error": None, "report_types": []}
+            "connected": False, "error": None, "report_types": [], "views_raw": None}
     if not info["configured"]:
         return info
     try:
@@ -2253,6 +2253,30 @@ def ember_diagnostics():
             (r["report_type"], r["n"], r["last"].strftime("%Y-%m-%d") if r["last"] else "—")
             for r in ecur.fetchall()
         ]
+
+        # ── TEMP: published view:* payload shape probe ──
+        try:
+            def _shape(v, depth=0):
+                if isinstance(v, dict):
+                    if depth >= 1:
+                        return {"<dict>": sorted(v.keys())[:14]}
+                    return {k: _shape(x, depth + 1) for k, x in list(v.items())[:16]}
+                if isinstance(v, list):
+                    return {"<list>": len(v),
+                            "item0": _shape(v[0], depth + 1) if v else None}
+                return type(v).__name__
+            ecur.execute("SELECT report_type, data, uploaded_at FROM reports "
+                         "WHERE report_type LIKE 'view:%' ORDER BY report_type")
+            out = {}
+            for r in ecur.fetchall():
+                d = r["data"]
+                if isinstance(d, str):
+                    d = json.loads(d)
+                out[r["report_type"]] = {"as_of": str(r.get("uploaded_at"))[:16],
+                                         "shape": _shape(d)}
+            info["views_raw"] = json.dumps(out, default=str, ensure_ascii=False)[:5200]
+        except Exception as e:
+            info["views_raw"] = "probe error: " + str(e)[:200]
 
         info["connected"] = True
         ecur.close(); econn.close()
