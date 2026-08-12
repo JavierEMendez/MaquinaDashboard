@@ -2376,34 +2376,34 @@ def ember_diagnostics():
         except Exception as e:
             info["views_error"] = str(e)[:160]
 
-        # ── TEMP: finance-source inventory probe ──
+        # ── TEMP: finance detail probe ──
         try:
-            def _k(v, d=0):
-                if isinstance(v, dict):
-                    return sorted(v.keys())[:16] if d else {kk: _k(vv, d+1) for kk, vv in list(v.items())[:8]}
-                if isinstance(v, list):
-                    return {"len": len(v), "item0": _k(v[0], d+1) if v else None}
-                return type(v).__name__
             out = {}
-            for rt in ("bva_finance", "bva_budget", "bva_commitments", "bva_flags",
-                       "ember_capital_captable", "loans"):
-                ecur.execute("SELECT data FROM reports WHERE report_type=%s "
-                             "ORDER BY uploaded_at DESC LIMIT 1", (rt,))
-                r = ecur.fetchone()
-                if r and r.get("data"):
-                    dd = r["data"]
-                    if isinstance(dd, str):
-                        dd = json.loads(dd)
-                    out[rt] = _k(dd)
-            try:
-                ecur.execute("SELECT COUNT(*) AS n, MAX(period_key) AS last FROM invoice_periods")
-                iv = ecur.fetchone()
-                out["invoice_periods"] = {"rows": iv["n"], "latest": iv["last"]}
-            except Exception as e:
-                out["invoice_periods"] = "n/a: " + str(e)[:60]
-            info["fin_raw"] = json.dumps(out, default=str, ensure_ascii=False)[:5200]
+            ecur.execute("SELECT data FROM reports WHERE report_type='bva_finance' ORDER BY uploaded_at DESC LIMIT 1")
+            r=ecur.fetchone(); dd=(r or {}).get("data") or {}
+            if isinstance(dd,str): dd=json.loads(dd)
+            ents=dd.get("entities") or {}
+            k0=next(iter(ents),None)
+            e0=ents.get(k0) or {}
+            out["bva_finance_entity"]={"entity":k0,"keys":sorted(e0.keys())[:20]}
+            for kk in ("revenueBySection","summary","totals","costs"):
+                if kk in e0:
+                    v=e0[kk]
+                    out["bva_"+kk]= (v[:1] if isinstance(v,list) else (sorted(v.keys())[:16] if isinstance(v,dict) else str(v)[:120]))
+            ecur.execute("SELECT data FROM reports WHERE report_type='loans' ORDER BY uploaded_at DESC LIMIT 1")
+            r=ecur.fetchone(); ld=(r or {}).get("data") or {}
+            if isinstance(ld,str): ld=json.loads(ld)
+            out["mpc_loans_headers"]=(ld.get("mpc_loans") or {}).get("headers")
+            out["mpc_loans_totals"]=(ld.get("mpc_loans") or {}).get("totals")
+            out["mpc_loans_row0"]=((ld.get("mpc_loans") or {}).get("rows") or [None])[0]
+            out["vertical_loans_headers"]=(ld.get("vertical_loans") or {}).get("headers")
+            out["vertical_loans_totals"]=(ld.get("vertical_loans") or {}).get("totals")
+            ds=(ld.get("debt_schedules") or [{}])[0]
+            out["debt_schedule"]={"project":ds.get("project"),"months":len(ds.get("months") or []),
+                                  "payment_total":ds.get("payment_total"),"total_revenues":ds.get("total_revenues")}
+            info["fin_raw"]=json.dumps(out, default=str, ensure_ascii=False)[:5200]
         except Exception as e:
-            info["fin_raw"] = "probe error: " + str(e)[:200]
+            info["fin_raw"]="probe error: "+str(e)[:200]
 
         info["connected"] = True
         ecur.close(); econn.close()
