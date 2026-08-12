@@ -74,7 +74,16 @@
       <div class="row between wrap" style="gap:18px;align-items:center;">
         <div>
           <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.14em;color:var(--mq-subtle);font-weight:700;">Current Valuation</div>
-          <div style="font-family:var(--font-display);font-size:30px;font-weight:700;color:var(--mq-ink-2);line-height:1.15;">{{ valuation.value_usd | money }}</div>
+          {% set mpct = c.maquina_pct if c.maquina_pct is not none else 100 %}
+          <div class="row" style="gap:18px;align-items:baseline;flex-wrap:wrap;">
+            <div style="font-family:var(--font-display);font-size:30px;font-weight:700;color:var(--mq-ink-2);line-height:1.15;">{{ valuation.value_usd | money }}</div>
+            {% if mpct < 100 %}
+            <div class="row" style="gap:7px;align-items:baseline;">
+              <span class="subtle" style="font-size:11px;letter-spacing:0.1em;text-transform:uppercase;font-weight:700;">Maquina {{ '%g'|format(mpct) }}%</span>
+              <span style="font-family:var(--font-display);font-size:22px;font-weight:700;color:var(--mq-accent);">{{ (valuation.value_usd * mpct / 100) | money }}</span>
+            </div>
+            {% endif %}
+          </div>
           <div class="subtle" style="font-size:12px;margin-top:3px;">
             {% if valuation.model == 'sponsor' %}
               Sponsor model · FRE {{ fin.fre | num }} {{ c.value_unit }} × {{ '%.0f'|format(fin.fre_multiple) }} = {{ valuation.fre_value | num }} {{ c.value_unit }} + promote PV {{ valuation.promote_pv | money }}{% if fre_basis %}<br><span style="font-size:11px;">FRE derived from the Operating Budget — {{ fre_basis }}. Not editable.</span>{% endif %}
@@ -122,6 +131,7 @@
             {% endif %}
             <div><label class="fld-label">FRE multiple (x)</label><input class="input" type="number" step="any" name="fre_multiple" value="{{ fin.fre_multiple }}"></div>
             <div><label class="fld-label">Carry discount (0–1)</label><input class="input" type="number" step="0.01" name="carry_discount" value="{{ fin.carry_discount }}"></div>
+            <div><label class="fld-label">Maquina ownership (%)</label><input class="input" type="number" step="0.5" min="0" max="100" name="maquina_pct" value="{{ '%g'|format(c.maquina_pct if c.maquina_pct is not none else 100) }}"></div>
           </div>
           <button class="btn btn-primary btn-sm mt-8" type="submit">Save valuation inputs</button>
         </form>

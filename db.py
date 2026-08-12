@@ -181,6 +181,11 @@ ALTER TABLE companies ADD COLUMN IF NOT EXISTS logo BYTEA;
 ALTER TABLE companies ADD COLUMN IF NOT EXISTS logo_mime TEXT;
 ALTER TABLE company_risks ADD COLUMN IF NOT EXISTS commentary TEXT;
 
+-- Maquina's ownership of each portfolio company (%). Drives the "Maquina
+-- share" shown beside each company's equity valuation. Defaults to 100 for
+-- wholly-owned companies.
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS maquina_pct DOUBLE PRECISION DEFAULT 100;
+
 -- Risk matrix: each category is plotted as Likelihood (x) x Impact (y).
 -- The existing *_risk columns are the IMPACT axis; these add LIKELIHOOD so
 -- every category can be positioned (and dragged) independently.

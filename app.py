@@ -125,6 +125,13 @@ def _boot():
             cur.execute("INSERT INTO app_settings (key,value) VALUES ('meta_company_v1','1') "
                         "ON CONFLICT (key) DO NOTHING")
             conn.commit()
+        # Maquina owns 50% of Ember; everything else defaults to 100%.
+        cur.execute("SELECT value FROM app_settings WHERE key = 'ownership_v1'")
+        if not cur.fetchone():
+            cur.execute("UPDATE companies SET maquina_pct = 50 WHERE slug = 'ember'")
+            cur.execute("INSERT INTO app_settings (key,value) VALUES ('ownership_v1','1') "
+                        "ON CONFLICT (key) DO NOTHING")
+            conn.commit()
         # 12-month retention on the activity ledger (once per process boot).
         cur.execute("DELETE FROM activity_log WHERE ts < NOW() - INTERVAL '12 months'")
         conn.commit()
@@ -539,7 +546,7 @@ def all_companies(include_archived=False):
     conn = db.get_db()
     cur = conn.cursor()
     q = ("SELECT id, slug, name, industry, country, country_code, currency, "
-         "value_unit, accent, description, takeover_year, display_order, archived, "
+         "value_unit, accent, description, takeover_year, display_order, archived, maquina_pct, "
          "(logo IS NOT NULL) AS has_logo, octet_length(logo) AS logo_ver FROM companies")
     if not include_archived:
         q += " WHERE archived = FALSE"
@@ -557,7 +564,7 @@ def company_by_slug(slug):
     cur.execute(
         "SELECT id, slug, name, industry, country, country_code, currency, value_unit, "
         "accent, description, takeover_year, takeover_month, hold_start_year, "
-        "hold_start_month, target_hold_years, display_order, archived, "
+        "hold_start_month, target_hold_years, maquina_pct, display_order, archived, "
         "(logo IS NOT NULL) AS has_logo, octet_length(logo) AS logo_ver "
         "FROM companies WHERE slug = %s", (slug,))
     row = cur.fetchone()
@@ -2231,6 +2238,13 @@ def update_financials(slug):
              carry_discount=EXCLUDED.carry_discount, valuation_model=EXCLUDED.valuation_model""",
         (c["id"], num("ebitda"), num("ebitda_margin"), num("ebitda_multiple"), num("total_debt"),
          num("fre"), num("fre_multiple"), num("carry_discount"), model))
+    pct = f.get("maquina_pct")
+    try:
+        pct = max(0.0, min(100.0, float(pct))) if pct not in (None, "") else None
+    except (TypeError, ValueError):
+        pct = None
+    if pct is not None:
+        cur.execute("UPDATE companies SET maquina_pct = %s WHERE id = %s", (pct, c["id"]))
     conn.commit(); cur.close(); conn.close()
     flash("Financial inputs updated.", "ok")
     return redirect(url_for("company", slug=slug, tab="operations"))
