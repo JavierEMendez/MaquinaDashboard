@@ -66,7 +66,6 @@
         <p class="subtle" style="font-size:11.5px;line-height:1.55;">None published yet — Maquina is falling back to its own calculations. EmberApps writes these when its <code>/budget</code>, <code>/capital</code>, <code>/returns</code>, <code>/loans</code>, <code>/operations</code> and <code>/verticals</code> pages render (plus a daily 04:00 job), so loading those pages once will populate them.</p>
         {% endif %}
       {% endif %}
-      {% if ember.fin_raw %}<div style="{{ lbl }}">Finance sources (diagnostic)</div><pre style="font-size:9.5px;background:var(--mq-bg-2);border:1px solid var(--mq-line);border-radius:8px;padding:10px;max-height:360px;overflow:auto;white-space:pre-wrap;word-break:break-word;color:var(--mq-muted);">{{ ember.fin_raw }}</pre>{% endif %}
       {% if ember.connected %}
         <p class="subtle" style="font-size:12px;margin-top:12px;line-height:1.55;">Live in this dashboard: Ember's <strong>operating revenues</strong> (Dashboard tab) and <strong>loans &amp; debt schedule</strong> (Finance tab). Units Closed / Lots Delivered show “coming soon” until added to the Ember dashboard.</p>
       {% endif %}
