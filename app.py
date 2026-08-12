@@ -1326,6 +1326,38 @@ def fetch_ember_operations():
         return None
 
 
+def fetch_ember_view(name):
+    """Read a finished view payload published by EmberApps
+    (reports.report_type='view:<name>').
+
+    This is the preferred source for anything EmberApps derives: the payload is
+    the exact object Ember's own page renders, so consuming it makes drift
+    impossible. Callers fall back to Maquina's local logic when it returns None
+    (view not published yet, or Ember unreachable). See the cross-app view
+    contract — never re-implement a calculation Ember already performs."""
+    try:
+        econn = db.get_ember_db()
+        if not econn:
+            return None
+        ecur = econn.cursor()
+        ecur.execute("SELECT data, uploaded_at FROM reports WHERE report_type = %s "
+                     "ORDER BY uploaded_at DESC LIMIT 1", ("view:" + name,))
+        row = ecur.fetchone()
+        ecur.close()
+        econn.close()
+        if not row or not row.get("data"):
+            return None
+        d = row["data"]
+        if isinstance(d, str):
+            d = json.loads(d)
+        if not d:
+            return None
+        return d, (row["uploaded_at"] if row.get("uploaded_at") else None)
+    except Exception as e:  # pragma: no cover
+        app.logger.warning("Ember view:%s fetch failed: %s", name, e)
+        return None
+
+
 def fetch_ember_budget():
     """Latest Ember Operating Budget (firm P&L forecast) from the Ember DB
     (report_type='ember_budget', uploaded on EmberApps' /budget page). Returns
@@ -1712,12 +1744,20 @@ def company(slug):
         verticals = fetch_ember_verticals()
         sales = fetch_ember_sales()
         op = fetch_ember_operations()
-        ember_budget = fetch_ember_budget()
-        # Match EmberApps' /budget: revenue comes from Operating Revenues, not
-        # the Excel — overlay it so net income / cashflow / the panel are
-        # consistent across both apps.
-        if ember_budget and op:
-            ember_budget = _apply_ops_revenue(ember_budget, op.get('raw'))
+        # Operating Budget: prefer EmberApps' published view payload — it is the
+        # exact object Ember's /budget page renders, so the two can't drift.
+        # Fall back to reading the raw report + re-applying the overlay locally
+        # only if the view hasn't been published (see cross-app view contract).
+        _bv = fetch_ember_view("budget")
+        if _bv:
+            ember_budget, _bv_asof = _bv
+            ember_budget = dict(ember_budget, _src="view", _src_asof=_bv_asof)
+        else:
+            ember_budget = fetch_ember_budget()
+            if ember_budget and op:
+                ember_budget = _apply_ops_revenue(ember_budget, op.get('raw'))
+            if ember_budget:
+                ember_budget["_src"] = "local"
         # Real net from the Ember Operating Budget (firm P&L) when uploaded;
         # else fall back to the Project-Personnel ×1.10 overhead proxy.
         budget_net, budget_net_label = None, None
@@ -2239,7 +2279,7 @@ def ember_diagnostics():
     Never writes. Returns connection status, available report types, and the
     shape of the latest 'operations' report so we can map KPIs precisely."""
     info = {"configured": bool(os.environ.get("EMBER_DATABASE_URL", "").strip()),
-            "connected": False, "error": None, "report_types": [], "views_raw": None}
+            "connected": False, "error": None, "report_types": [], "views": []}
     if not info["configured"]:
         return info
     try:
@@ -2254,29 +2294,17 @@ def ember_diagnostics():
             for r in ecur.fetchall()
         ]
 
-        # ── TEMP: published view:* payload shape probe ──
+        # Published EmberApps view payloads (cross-app view contract) — which
+        # views are flowing, and how fresh. Surfaced on Settings so a stalled
+        # bridge is visible instead of silently falling back to local logic.
         try:
-            def _shape(v, depth=0):
-                if isinstance(v, dict):
-                    if depth >= 1:
-                        return {"<dict>": sorted(v.keys())[:14]}
-                    return {k: _shape(x, depth + 1) for k, x in list(v.items())[:16]}
-                if isinstance(v, list):
-                    return {"<list>": len(v),
-                            "item0": _shape(v[0], depth + 1) if v else None}
-                return type(v).__name__
-            ecur.execute("SELECT report_type, data, uploaded_at FROM reports "
+            ecur.execute("SELECT report_type, uploaded_at FROM reports "
                          "WHERE report_type LIKE 'view:%' ORDER BY report_type")
-            out = {}
-            for r in ecur.fetchall():
-                d = r["data"]
-                if isinstance(d, str):
-                    d = json.loads(d)
-                out[r["report_type"]] = {"as_of": str(r.get("uploaded_at"))[:16],
-                                         "shape": _shape(d)}
-            info["views_raw"] = json.dumps(out, default=str, ensure_ascii=False)[:5200]
+            info["views"] = [(r["report_type"].split(":", 1)[1],
+                              r["uploaded_at"].strftime("%Y-%m-%d %H:%M") if r.get("uploaded_at") else "—")
+                             for r in ecur.fetchall()]
         except Exception as e:
-            info["views_raw"] = "probe error: " + str(e)[:200]
+            info["views_error"] = str(e)[:160]
 
         info["connected"] = True
         ecur.close(); econn.close()
