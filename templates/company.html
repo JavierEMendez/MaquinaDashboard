@@ -1426,6 +1426,55 @@
       return invChart;
     }
 
+    function recompute(){
+      const c = cfg(), r = calc(c);
+      syncLabels(c);
+      $('comp-npv').textContent = fmtMdp(r.npvAll);
+      $('comp-npv-sub').textContent = 'post-tax ' + Math.round(c.tax*100) + '% · ' + (c.disc*100).toFixed(1) + '% real · pesos 2026';
+      $('comp-usd').textContent = fmtUsd(r.npvAll);
+      $('comp-nom').textContent = fmtMdp(r.totShare);
+      $('comp-nom-usd').textContent = '≈ ' + fmtUsd(r.totShare) + ' USD · pre-tax, undiscounted';
+      $('comp-eff').textContent = r.totExcess ? (r.totShare / r.totExcess * 100).toFixed(1) + '%' : '—';
+      $('comp-v-first').textContent = r.per.ventura.first || '—';
+      $('comp-v-nom').textContent = fmtMdp(r.per.ventura.nom);
+      $('comp-v-npv').textContent = fmtMdp(r.per.ventura.npv);
+      $('comp-p-first').textContent = r.per.pitahaya.first || '—';
+      $('comp-p-nom').textContent = fmtMdp(r.per.pitahaya.nom);
+      $('comp-p-npv').textContent = fmtMdp(r.per.pitahaya.npv);
+      renderTollTable(r, c);
+      if (invChart){
+        const s = investorSeries(r);
+        invChart.data.labels = s.labels;
+        invChart.data.datasets[0].data = s.base;
+        invChart.data.datasets[1].data = s.above;
+        invChart.data.datasets[2].data = s.promote;
+        invChart.update('none');
+      }
+      const totDist = r.modelT.reduce((a, b) => a + b, 0);
+      $('comp-tot-dist').textContent = fmtMdp(totDist);
+      $('comp-tot-prom').textContent = fmtMdp(r.totShare);
+      $('comp-tot-prom-usd').textContent = fmtUsd(r.totShare) + ' USD';
+      $('comp-tot-ret').textContent = fmtMdp(totDist - r.totShare);
+      if (compChart){
+        const ds = compChart.data.datasets;
+        if (viewMode === 'hurdle'){
+          for (let k = 0; k < 4; k++){ ds[k].data = r.bands[k]; ds[k].label = hurdleLbl(c, k); }
+          ds[4].data = r.per.ventura.modelY;
+          ds[5].data = r.per.ventura.baseY;
+          ds[6].data = r.per.pitahaya.modelY;
+          ds[7].data = r.per.pitahaya.baseY;
+        } else {
+          ds[0].data = r.per.ventura.retainedY;
+          ds[1].data = r.per.pitahaya.retainedY;
+          ds[2].data = r.per.ventura.shareY;
+          ds[3].data = r.per.pitahaya.shareY;
+          ds[4].data = r.baseT;
+        }
+        compChart.update('none');
+      }
+      return r;
+    }
+
     const hurdleLbl = (c, k) => 'Hurdle ' + (k+1) + ' · ' + Math.round(c.sh[k]*100) + '%';
 
     const ROADLBL = { ventura: 'Ventura', pitahaya: 'La Pitahaya' };
