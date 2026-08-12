@@ -1317,7 +1317,10 @@ def fetch_ember_operations():
             return None
         rows = {r["label"]: r["values"] for r in (yr.get("rows") or []) if isinstance(r, dict)}
         kpis = {k.get("label"): k.get("value") for k in (d.get("kpis") or []) if isinstance(k, dict)}
-        return {"years": years, "rows": rows, "totals": totals, "kpis": kpis, "as_of": d.get("date")}
+        # `raw` keeps the full report (incl. the `monthly` block) so the budget
+        # revenue overlay can work month-by-month, exactly like EmberApps does.
+        return {"years": years, "rows": rows, "totals": totals, "kpis": kpis,
+                "as_of": d.get("date"), "raw": d}
     except Exception as e:  # pragma: no cover
         app.logger.warning("Ember operations fetch failed: %s", e)
         return None
@@ -1348,73 +1351,125 @@ def fetch_ember_budget():
         return None
 
 
-def _apply_ops_revenue_annual(budget, op):
-    """Mirror of EmberApps' /budget revenue overlay (annual): replace the
-    budget's revenue with the live Operating Revenues figures (op =
-    fetch_ember_operations(), which is annual) and re-derive net income
-    (= revenue − costs), cash flow (shifted by the revenue delta) and
-    cumulative — all by year. Ember's operations feed has no monthly detail
-    and the Ember-page budget panel is by-year, so annual is sufficient.
-    Original Excel revenue kept under revenue.excel. No-op if either side is
-    missing, so the page falls back to the stored (Excel) budget."""
-    if not budget or not op:
+def _ops_revenue_axis(ops):
+    """From an Operating Revenues report, pull corporate revenue keyed for the
+    budget axis: {by_year:{'YYYY':t}, by_month:{'YYYY-MM':t}, lines:[...]}.
+    Faithful port of EmberApps' _ops_revenue_axis. None if unusable."""
+    if not isinstance(ops, dict):
+        return None
+    yr = ops.get("yearly_rollup") or {}
+    years = yr.get("years") or []
+    totals = yr.get("totals") or []
+    by_year = {str(y): float(t or 0) for y, t in zip(years, totals)}
+    mo = ops.get("monthly") or {}
+    dates = mo.get("dates") or []
+    mtotals = mo.get("totals") or []
+    by_month = {}
+    for iso, v in zip(dates, mtotals):
+        s = str(iso or "")
+        if len(s) >= 7:
+            by_month[s[:7]] = round(by_month.get(s[:7], 0.0) + float(v or 0), 2)
+    mrows = {r.get("label"): r for r in (mo.get("rows") or []) if isinstance(r, dict)}
+    lines = []
+    for r in (yr.get("rows") or []):
+        if not isinstance(r, dict):
+            continue
+        name = r.get("label")
+        lby = {str(y): float(v or 0) for y, v in zip(years, r.get("values") or [])}
+        lmonths = {}
+        mr = mrows.get(name)
+        if mr:
+            for iso, v in zip(dates, (mr.get("values") or [])):
+                s = str(iso or "")
+                if len(s) >= 7 and v:
+                    lmonths[s[:7]] = round(lmonths.get(s[:7], 0.0) + float(v or 0), 2)
+        lines.append({"name": name, "by_year": lby, "months": lmonths})
+    if not by_year and not by_month:
+        return None
+    return {"by_year": by_year, "by_month": by_month, "lines": lines}
+
+
+def _apply_ops_revenue(budget, ops):
+    """Replace the Operating Budget's revenue with the live Operating Revenues
+    figures and re-derive Net Income (= revenue - costs), Cash Flow (shifted by
+    the revenue delta) and Cumulative -- MONTHLY as well as annually, so the
+    Maquina panel ties 1-for-1 with EmberApps' /budget page. Original Excel
+    revenue preserved under revenue.excel. No-op if operations data is missing.
+    Faithful port of EmberApps' _apply_ops_revenue."""
+    if not budget:
         return budget
-    years_o = op.get("years") or []
-    totals_o = op.get("totals") or []
-    ops_rev_y = {str(y): float(t or 0) for y, t in zip(years_o, totals_o)}
-    if not ops_rev_y:
+    rev = _ops_revenue_axis(ops)
+    if not rev:
         return budget
     import copy
     b = copy.deepcopy(budget)
-    years = [str(y) for y in (b.get("meta", {}).get("years", []) or [])]
-    old_total = (b.get("revenue", {}) or {}).get("total", {}) or {}
-    old_y = old_total.get("by_year", {}) or {}
-    new_y = {y: round(ops_rev_y.get(y, float(old_y.get(y, 0) or 0)), 2) for y in years}
-    dyear = {y: new_y[y] - float(old_y.get(y, 0) or 0) for y in years}
+    meta = b.get("meta", {}) or {}
+    months = meta.get("months", []) or []
+    years = [str(y) for y in (meta.get("years", []) or [])]
 
-    lines = []
-    for label, vals in (op.get("rows") or {}).items():
-        lines.append({"name": label,
-                      "by_year": {str(y): float(v or 0) for y, v in zip(years_o, vals or [])},
-                      "months": {}})
+    old_total = (b.get("revenue", {}) or {}).get("total", {}) or {}
+    old_m = old_total.get("months", {}) or {}
+    old_y = old_total.get("by_year", {}) or {}
+
+    new_m = {k: rev["by_month"][k] for k in months if rev["by_month"].get(k)}
+    new_y = {y: round(rev["by_year"].get(y, 0.0), 2) for y in years}
+    dmonth = {k: new_m.get(k, 0.0) - float(old_m.get(k, 0.0) or 0) for k in months}
+    dyear = {y: new_y.get(y, 0.0) - float(old_y.get(y, 0.0) or 0) for y in years}
+
+    # 1) revenue (keep Excel original for reference)
     b.setdefault("revenue", {})
     b["revenue"]["excel"] = old_total
-    b["revenue"]["total"] = {"months": old_total.get("months", {}) or {}, "by_year": new_y}
-    if lines:
-        b["revenue"]["lines"] = lines
+    b["revenue"]["total"] = {"months": new_m, "by_year": new_y}
+    b["revenue"]["lines"] = rev["lines"]
     b["revenue"]["source"] = "operations"
 
-    tcy = (b.get("total_costs", {}) or {}).get("by_year", {}) or {}
-    b["net_income"] = {**(b.get("net_income") or {}),
-                       "by_year": {y: round(new_y[y] - float(tcy.get(y, 0) or 0), 2) for y in years}}
+    # 2) net income = revenue - total costs
+    tc = b.get("total_costs", {}) or {}
+    tcm = tc.get("months", {}) or {}
+    tcy = tc.get("by_year", {}) or {}
+    ni_m = {}
+    for k in months:
+        v = round(new_m.get(k, 0.0) - float(tcm.get(k, 0.0) or 0), 2)
+        if v:
+            ni_m[k] = v
+    ni_y = {y: round(new_y.get(y, 0.0) - float(tcy.get(y, 0.0) or 0), 2) for y in years}
+    b["net_income"] = {"months": ni_m, "by_year": ni_y}
 
+    # 3) cash flow shifts by the revenue delta (costs unchanged)
     cf = b.get("cash_flow", {}) or {}
+    cf_m_old = cf.get("months", {}) or {}
+    cfm = dict(cf_m_old)
     cfy = dict(cf.get("by_year", {}) or {})
+    for k in months:
+        if dmonth.get(k):
+            cfm[k] = round(float(cfm.get(k, 0.0) or 0) + dmonth[k], 2)
     for y in years:
-        cfy[y] = round(float(cfy.get(y, 0) or 0) + dyear[y], 2)
-    b["cash_flow"] = {**cf, "by_year": cfy}
+        cfy[y] = round(float(cfy.get(y, 0.0) or 0) + dyear.get(y, 0.0), 2)
+    b["cash_flow"] = {"months": cfm, "by_year": cfy}
 
-    # cumulative by year = beginning balance + running sum of cash flow
-    old_cum_y = (b.get("cumulative", {}) or {}).get("by_year", {}) or {}
-    syears = sorted(years, key=lambda x: int(x)) if years else []
+    # 4) cumulative = beginning balance + running sum of the new cash flow
+    old_cum_m = (b.get("cumulative", {}) or {}).get("months", {}) or {}
     begin = 0.0
-    if syears:
-        f = syears[0]
-        begin = float(old_cum_y.get(f, 0) or 0) - float((cf.get("by_year", {}) or {}).get(f, 0) or 0)
+    if months:
+        f = months[0]
+        begin = float(old_cum_m.get(f, 0.0) or 0) - float(cf_m_old.get(f, 0.0) or 0)
     run = begin
-    cum_y = {}
-    for y in syears:
-        run = round(run + cfy.get(y, 0.0), 2)
-        cum_y[y] = run
-    b["cumulative"] = {**(b.get("cumulative") or {}), "by_year": cum_y}
+    cum_m, year_end = {}, {}
+    for k in months:
+        run = round(run + float(cfm.get(k, 0.0) or 0), 2)
+        cum_m[k] = run
+        year_end[k[:4]] = run
+    b["cumulative"] = {"months": cum_m, "by_year": {y: year_end.get(y, 0.0) for y in years}}
 
+    # 5) KPIs
     kp = b.get("kpis", {}) or {}
     kp["revenue_life"] = round(sum(new_y.values()), 2)
-    kp["net_income_life"] = round(sum(b["net_income"]["by_year"].values()), 2)
+    kp["net_income_life"] = round(sum(ni_y.values()), 2)
     kp["cash_flow_life"] = round(sum(cfy.values()), 2)
     kp["revenue_source"] = "operations"
     b["kpis"] = kp
-    b.setdefault("meta", {})["revenue_source"] = "operations"
+    meta["revenue_source"] = "operations"
+    b["meta"] = meta
     return b
 
 
@@ -1662,7 +1717,7 @@ def company(slug):
         # the Excel — overlay it so net income / cashflow / the panel are
         # consistent across both apps.
         if ember_budget and op:
-            ember_budget = _apply_ops_revenue_annual(ember_budget, op)
+            ember_budget = _apply_ops_revenue(ember_budget, op.get('raw'))
         # Real net from the Ember Operating Budget (firm P&L) when uploaded;
         # else fall back to the Project-Personnel ×1.10 overhead proxy.
         budget_net, budget_net_label = None, None
@@ -2184,7 +2239,7 @@ def ember_diagnostics():
     Never writes. Returns connection status, available report types, and the
     shape of the latest 'operations' report so we can map KPIs precisely."""
     info = {"configured": bool(os.environ.get("EMBER_DATABASE_URL", "").strip()),
-            "connected": False, "error": None, "report_types": []}
+            "connected": False, "error": None, "report_types": [], "ops_raw": None}
     if not info["configured"]:
         return info
     try:
@@ -2198,6 +2253,41 @@ def ember_diagnostics():
             (r["report_type"], r["n"], r["last"].strftime("%Y-%m-%d") if r["last"] else "—")
             for r in ecur.fetchall()
         ]
+
+        # ── TEMP: operations monthly-axis probe (verify budget overlay fidelity) ──
+        try:
+            ecur.execute("SELECT data FROM reports WHERE report_type='operations' "
+                         "ORDER BY uploaded_at DESC LIMIT 1")
+            orow = ecur.fetchone()
+            od = (orow or {}).get("data") or {}
+            if isinstance(od, str):
+                od = json.loads(od)
+            mo = od.get("monthly") or {}
+            dates = mo.get("dates") or []
+            tot = mo.get("totals") or []
+            bym = {}
+            for iso, v in zip(dates, tot):
+                s = str(iso or "")
+                if len(s) >= 7:
+                    bym[s[:7]] = round(bym.get(s[:7], 0.0) + float(v or 0), 2)
+            ecur.execute("SELECT data FROM reports WHERE report_type='ember_budget' "
+                         "ORDER BY uploaded_at DESC LIMIT 1")
+            brow = ecur.fetchone()
+            bd = (brow or {}).get("data") or {}
+            if isinstance(bd, str):
+                bd = json.loads(bd)
+            xl_m = ((bd.get("revenue") or {}).get("total") or {}).get("months") or {}
+            keys = ["2026-11", "2026-12", "2027-01", "2027-12"]
+            info["ops_raw"] = json.dumps({
+                "ops_monthly_present": bool(dates),
+                "ops_months": len(bym), "ops_first": (sorted(bym)[:1] or [None])[0],
+                "ops_last": (sorted(bym)[-1:] or [None])[0],
+                "compare_excel_vs_ops": {k: {"excel": xl_m.get(k), "ops": bym.get(k),
+                                             "delta": (round((bym.get(k) or 0) - (xl_m.get(k) or 0), 2))}
+                                         for k in keys},
+            }, default=str)[:2000]
+        except Exception as e:
+            info["ops_raw"] = "probe error: " + str(e)[:200]
 
         info["connected"] = True
         ecur.close(); econn.close()
