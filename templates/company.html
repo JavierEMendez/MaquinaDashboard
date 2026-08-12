@@ -493,10 +493,10 @@
           <span style="text-transform:none;letter-spacing:0;font-weight:500;">— sliders are deltas vs the workbook's own assumptions, shown beneath each</span></div>
         <div style="{{ srow }}"><span><span style="{{ slbl }}">Toll level — Ventura</span><span style="{{ sbase }}">base 100% = Valoran tarifas · Auto <strong>${{ '%.2f'|format(comp.ventura.toll_auto) }}</strong> · blended <strong>${{ '%.0f'|format(comp.ventura.toll_blend) }}</strong>/passage ({{ comp.ventura.toll_when }})</span></span><input type="range" id="comp-lvl-v" min="60" max="140" step="1" value="100" style="accent-color:var(--mq-accent);"><span style="{{ sval }}" id="lbl-lvl-v">100%</span></div>
         <div style="{{ srow }}"><span><span style="{{ slbl }}">Toll level — Pitahaya</span><span style="{{ sbase }}">base 100% = Valoran tarifas · Auto <strong>${{ '%.2f'|format(comp.pitahaya.toll_auto) }}</strong> · blended <strong>${{ '%.0f'|format(comp.pitahaya.toll_blend) }}</strong>/passage ({{ comp.pitahaya.toll_when }})</span></span><input type="range" id="comp-lvl-p" min="60" max="140" step="1" value="100" style="accent-color:var(--mq-accent);"><span style="{{ sval }}" id="lbl-lvl-p">100%</span></div>
-        <div style="{{ srow }}"><span><span style="{{ slbl }}">Traffic growth Δ (tcma)</span><span style="{{ sbase }}">base <strong>+{{ '%.1f'|format(bs.ventura.pas_cagr) }}%/yr in vehicles</strong> ({{ '{:,.1f}'.format(bs.ventura.pas_start) }}M→{{ '{:,.1f}'.format(bs.ventura.pas_end) }}M passages, Ventura) — this is the only <em>real</em> growth driver</span></span><input type="range" id="comp-growth" min="-3" max="3" step="0.25" value="0" style="accent-color:var(--mq-accent);"><span style="{{ sval }}" id="lbl-growth">+0.0%</span></div>
-        <div style="{{ srow }}"><span><span style="{{ slbl }}">Inflation (INPC) Δ</span><span style="{{ sbase }}">base {{ '%.1f'|format(bs.infl_first) }}%→{{ '%.1f'|format(bs.infl_last) }}%/yr — tarifas rise <strong>{{ '%.1f'|format(bs.ventura.tar_cagr) }}%/yr nominal, {{ '%+.1f'|format(bs.ventura.tar_real) }}% real</strong> (INPC only)</span></span><input type="range" id="comp-infl" min="-2" max="2" step="0.25" value="0" style="accent-color:var(--mq-accent);"><span style="{{ sval }}" id="lbl-infl">+0.0%</span></div>
+        <div style="{{ srow }}"><span><span style="{{ slbl }}">Traffic growth Δ (tcma)</span><span style="{{ sbase }}">base <strong>+{{ '%.1f'|format(bs.ventura.pas_cagr) }}%/yr in vehicles</strong> ({{ '{:,.1f}'.format(bs.ventura.pas_start) }}M→{{ '{:,.1f}'.format(bs.ventura.pas_end) }}M passages/yr, Ventura {{ bs.ventura.start_year }}→{{ comp.years[-1] }}) — the only <em>real</em> growth driver</span></span><input type="range" id="comp-growth" min="-3" max="3" step="0.25" value="0" style="accent-color:var(--mq-accent);"><span style="{{ sval }}" id="lbl-growth">+0.0%</span></div>
+        <div style="{{ srow }}"><span><span style="{{ slbl }}">Inflation (INPC) Δ</span><span style="{{ sbase }}">base {{ '%.1f'|format(bs.infl_first) }}%/yr ({{ comp.years[0] }}→{{ comp.years[1] }}) easing to {{ '%.1f'|format(bs.infl_last) }}% by {{ comp.years[-1] }} — tarifas rise <strong>{{ '%.1f'|format(bs.ventura.tar_cagr) }}%/yr nominal, {{ '%+.1f'|format(bs.ventura.tar_real) }}% real</strong> (INPC only)</span></span><input type="range" id="comp-infl" min="-2" max="2" step="0.25" value="0" style="accent-color:var(--mq-accent);"><span style="{{ sval }}" id="lbl-infl">+0.0%</span></div>
         <div style="font-size:10.5px;color:var(--mq-subtle);line-height:1.55;margin:6px 0 2px;padding:7px 9px;background:var(--mq-surface-2);border-radius:6px;">
-          <strong>How the two combine:</strong> revenue = vehicles × tarifa, so
+          <strong>How the two combine</strong> (CAGRs, Ventura {{ bs.ventura.start_year }}→{{ comp.years[-1] }}): revenue = vehicles × tarifa, so
           ({{ '%.1f'|format(bs.ventura.pas_cagr) }}% traffic) × ({{ '%.1f'|format(bs.ventura.tar_cagr) }}% tarifa) = <strong>{{ '%.1f'|format(bs.ventura.nom_cagr) }}%/yr nominal revenue</strong>.
           Since tarifas only track inflation, <em>all</em> real growth comes from traffic.
         </div>
@@ -584,13 +584,13 @@
       <div class="grid grid-3 mb-24">
         <div class="summary-card"><div class="lbl">Nominal Promote (life of deal)</div>
           <div class="val">${{ '{:,.0f}'.format(cmp.v1.nom) }} → ${{ '{:,.0f}'.format(cmp.v2.nom) }} <span style="font-size:12px;font-weight:500;color:var(--mq-subtle);">mdp</span></div>
-          <div style="font-size:11.5px;font-weight:700;color:#D2452F;margin-top:4px;">{{ cmp.d_nom }}%</div></div>
+          <div style="font-size:11.5px;font-weight:700;color:#D2452F;margin-top:4px;">{{ cmp.d_nom }}% <span style="font-weight:500;color:var(--mq-subtle);">· v1 2024–50 → v2 2026–50</span></div></div>
         <div class="summary-card"><div class="lbl">NPV (post-tax · 9% real)</div>
           <div class="val">${{ '{:,.0f}'.format(cmp.v1.npv) }} → ${{ '{:,.0f}'.format(cmp.v2.npv) }} <span style="font-size:12px;font-weight:500;color:var(--mq-subtle);">mdp</span></div>
-          <div style="font-size:11.5px;font-weight:700;color:#D2452F;margin-top:4px;">{{ cmp.d_npv }}%</div></div>
+          <div style="font-size:11.5px;font-weight:700;color:#D2452F;margin-top:4px;">{{ cmp.d_npv }}% <span style="font-weight:500;color:var(--mq-subtle);">· discounted to 2025 / 2026</span></div></div>
         <div class="summary-card"><div class="lbl">Blended Share of Excess</div>
           <div class="val">{{ cmp.v1.soe }}% → {{ cmp.v2.soe }}%</div>
-          <div class="subtle" style="font-size:11.5px;margin-top:4px;">promote mix moved from Hurdle 4 to Hurdles 1–2</div></div>
+          <div class="subtle" style="font-size:11.5px;margin-top:4px;">life of deal · promote mix moved from Hurdle 4 to Hurdles 1–2</div></div>
       </div>
 
       <div class="chart-wrap" style="height:320px;"><canvas id="compareChart"></canvas></div>
