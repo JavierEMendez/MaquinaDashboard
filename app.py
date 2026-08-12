@@ -2255,10 +2255,27 @@ def fetch_ember_verticals():
                     sold_n += 1
                     sold_val += float(u.get("purchasePrice") or u.get("listPrice") or 0)
                     sold_ppsf += float(u.get("ppsf") or 0)
+            # Stacking plan: floors top-down, units left-to-right — mirrors
+            # the building layout on EmberApps' Hawthorne report.
+            by_level = {}
+            for u in units:
+                try:
+                    lv = int(u.get("level") or 0)
+                except (TypeError, ValueError):
+                    lv = 0
+                by_level.setdefault(lv, []).append(u)
+            stacking = []
+            for lv in sorted(by_level, reverse=True):
+                row = sorted(by_level[lv], key=lambda x: str(x.get("title") or ""))
+                stacking.append(dict(level=lv, units=[dict(
+                    title=x.get("title"), status=x.get("status") or "—",
+                    fp=x.get("fp"), sqft=x.get("sqft"), ppsf=x.get("ppsf"),
+                    price=(x.get("purchasePrice") or x.get("listPrice"))) for x in row]))
             hawthorne = dict(
                 total=len(units), by_status=by_status, sold_n=sold_n, sold_value=sold_val,
                 avg_price=(sold_val / sold_n if sold_n else None),
                 avg_ppsf=(sold_ppsf / sold_n if sold_n else None),
+                stacking=stacking, statuses=sorted(by_status.keys()),
                 units=sorted(units, key=lambda u: (str(u.get("status")), str(u.get("title")))))
         ecur.close()
         econn.close()

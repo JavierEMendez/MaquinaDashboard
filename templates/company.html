@@ -169,7 +169,7 @@
 
       {% if sales.combined and sales.combined.target_annual %}
       <div class="grid grid-4 mb-24">
-        <div class="kpi"><div class="kpi-top"><span class="kpi-label">Combined YTD Net</span></div><div class="kpi-value">{{ sales.combined.ytd_net }}</div><div class="kpi-foot"><span class="kpi-sub">of {{ sales.combined.target_annual }} target{% if sales.combined.ytd_pct %} · {{ sales.combined.ytd_pct }}%{% endif %}</span></div></div>
+        <div class="kpi"><div class="kpi-top"><span class="kpi-label">Combined YTD Net</span></div><div class="kpi-value">{{ sales.combined.ytd_net }}<span style="color:var(--mq-subtle);font-weight:400;">/</span>{{ sales.combined.target_annual }}</div><div class="kpi-foot"><span class="kpi-sub">target{% if sales.combined.ytd_pct %} · {{ sales.combined.ytd_pct }}%{% endif %}</span></div></div>
         <div class="kpi"><div class="kpi-top"><span class="kpi-label">Life-of-Project Net</span></div><div class="kpi-value">{{ sales.combined.total_net }}</div><div class="kpi-foot"><span class="kpi-sub">all communities</span></div></div>
         <div class="kpi"><div class="kpi-top"><span class="kpi-label">Monthly Target</span></div><div class="kpi-value">{{ sales.combined.target_monthly }}</div><div class="kpi-foot"><span class="kpi-sub">homes / month combined</span></div></div>
         <div class="kpi"><div class="kpi-top"><span class="kpi-label">Cancellations YTD</span></div><div class="kpi-value {{ 'neg' if sales.combined.canc_ytd }}">{{ sales.combined.canc_ytd }}</div><div class="kpi-foot"><span class="kpi-sub">across communities</span></div></div>
@@ -188,10 +188,12 @@
         </div>
         <div class="grid grid-4" style="gap:12px;">
           <div class="summary-card"><div class="lbl">LOP Net Sales</div><div class="val">{{ cm.total_net if cm.total_net is not none else '—' }}</div><div class="subtle" style="font-size:11px;">{{ cm.gross_total or 0 }} gross · {{ cm.canc_total or 0 }} cancels</div></div>
-          <div class="summary-card"><div class="lbl">YTD Net</div><div class="val">{{ cm.ytd_net if cm.ytd_net is not none else '—' }}</div><div class="subtle" style="font-size:11px;">{% if cm.target_annual %}vs {{ cm.target_annual }} target{% if cm.ytd_pct %} · {{ cm.ytd_pct }}%{% endif %}{% endif %}</div></div>
+          <div class="summary-card"><div class="lbl">YTD Net</div>
+            <div class="val">{{ cm.ytd_net if cm.ytd_net is not none else '—' }}{% if cm.target_annual %}<span style="color:var(--mq-subtle);font-weight:400;">/</span>{{ cm.target_annual }}{% endif %}</div>
+            <div class="subtle" style="font-size:11px;">{% if cm.target_annual %}target{% if cm.ytd_pct %} · {{ cm.ytd_pct }}%{% endif %}{% endif %}</div></div>
           <div class="summary-card"><div class="lbl">YTD Pace</div>
-            <div class="val {{ 'pos' if cm.on_track else ('neg' if cm.on_track is not none) }}">{{ cm.ytd_pace if cm.ytd_pace is not none else '—' }}<span style="font-size:12px;font-weight:500;color:var(--mq-subtle);">/mo</span></div>
-            <div class="subtle" style="font-size:11px;">{% if cm.target_monthly %}target {{ cm.target_monthly }}/mo{% if cm.pace_pct %} · {{ cm.pace_pct }}%{% endif %}{% endif %}</div></div>
+            <div class="val {{ 'pos' if cm.on_track else ('neg' if cm.on_track is not none) }}">{{ cm.ytd_pace if cm.ytd_pace is not none else '—' }}{% if cm.target_monthly %}<span style="color:var(--mq-subtle);font-weight:400;">/</span>{{ cm.target_monthly }}{% endif %}</div>
+            <div class="subtle" style="font-size:11px;">{% if cm.target_monthly %}per month target{% if cm.pace_pct %} · {{ cm.pace_pct }}%{% endif %}{% endif %}</div></div>
           <div class="summary-card"><div class="lbl">Cancellations YTD</div><div class="val {{ 'neg' if cm.canc_ytd }}">{{ cm.canc_ytd if cm.canc_ytd is not none else '—' }}</div><div class="subtle" style="font-size:11px;">{% if cm.pace_prev %}prior-yr pace {{ cm.pace_prev }}/mo{% endif %}</div></div>
         </div>
         {% if cm.target_monthly and cm.pace_pct %}
@@ -272,6 +274,45 @@
         <div class="kpi"><div class="kpi-top"><span class="kpi-label">Sales Value</span></div><div class="kpi-value">{{ hw.sold_value | money }}</div><div class="kpi-foot"><span class="kpi-sub">closed / contracted</span></div></div>
         <div class="kpi"><div class="kpi-top"><span class="kpi-label">Avg $/SF</span></div><div class="kpi-value">{{ "${:,.0f}".format(hw.avg_ppsf) if hw.avg_ppsf else '—' }}</div><div class="kpi-foot"><span class="kpi-sub">avg price {{ hw.avg_price | money }}</span></div></div>
       </div>
+      {# ── view toggle: building layout (stacking plan) vs unit table ── #}
+      <div class="row between wrap" style="gap:8px;align-items:center;margin-bottom:12px;">
+        <div class="row wrap" style="gap:10px;align-items:center;">
+          {% set SC = {'SOLD':'#1F9D6B','CLOSED':'#1F9D6B','AVAILABLE':'#8A9199','RESERVED':'#C98A00',
+                       'SNC':'#C98A00','HOLD':'#C98A00','CONTRACT':'#0568B3'} %}
+          {% for st in hw.statuses %}
+          <span class="legend-left" style="font-size:12px;"><span class="legend-dot" style="background:{{ SC.get(st|upper, '#7A5AF8') }};"></span>{{ st }} · {{ hw.by_status[st] }}</span>
+          {% endfor %}
+        </div>
+        <div class="row" style="gap:6px;">
+          <button class="btn btn-sm btn-primary" id="hw-view-layout" type="button" onclick="hwView('layout')">Building layout</button>
+          <button class="btn btn-sm btn-ghost" id="hw-view-table" type="button" onclick="hwView('table')">Unit table</button>
+        </div>
+      </div>
+
+      <div id="hw-layout">
+        {% if hw.stacking %}
+        <div style="display:flex;flex-direction:column;gap:6px;">
+          {% for fl in hw.stacking %}
+          <div class="row" style="gap:8px;align-items:center;">
+            <span class="subtle" style="width:64px;flex-shrink:0;font-size:11px;letter-spacing:0.08em;text-transform:uppercase;font-weight:700;">Level {{ fl.level }}</span>
+            <div style="display:flex;gap:5px;flex-wrap:wrap;flex:1;">
+              {% for u in fl.units %}
+              {% set col = SC.get((u.status or '')|upper, '#7A5AF8') %}
+              <div title="{{ u.title }} · {{ u.fp }} · {{ u.sqft }} SF · {{ u.status }}{% if u.price %} · {{ u.price | money }}{% endif %}"
+                   style="min-width:52px;padding:9px 6px;border-radius:6px;background:{{ col }}22;border:1px solid {{ col }};
+                          color:var(--mq-ink-2);font-size:11.5px;font-weight:700;text-align:center;cursor:default;">
+                {{ u.title }}
+              </div>
+              {% endfor %}
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+        <p class="subtle" style="font-size:11.5px;margin-top:12px;">Stacking plan — floors top-down, each tile a residence. Hover for floorplan, size, status and price.</p>
+        {% else %}<span class="subtle">No level data on the Hawthorne units.</span>{% endif %}
+      </div>
+
+      <div id="hw-table" style="display:none;">
       <div class="table-scroll">
         <table class="data-table">
           <thead><tr><th style="text-align:left;">Unit</th><th style="text-align:left;">Floorplan</th><th>SF</th><th>$/SF</th><th>Price</th><th style="text-align:left;">Status</th></tr></thead>
@@ -284,6 +325,7 @@
             {% endfor %}
           </tbody>
         </table>
+      </div>
       </div>
     </div>
     {% endif %}
@@ -880,6 +922,39 @@
           <span class="risk-val">{{ val }}</span>
         </div>
         {% endfor %}
+        {# ── 2x2 risk matrix: internal (execution) vs external (market) ── #}
+        {% set ix = (risk.external_risk if risk else 5) %}
+        {% set iy = (risk.internal_risk if risk else 5) %}
+        <div class="divider"></div>
+        <div style="font-size:10px;letter-spacing:0.14em;text-transform:uppercase;color:var(--mq-subtle);font-weight:700;margin-bottom:10px;">Risk Matrix</div>
+        <div style="position:relative;padding:0 0 24px 30px;">
+          <div style="position:relative;width:100%;aspect-ratio:1/1;max-width:300px;border:1px solid var(--mq-line);border-radius:8px;background:var(--mq-surface-2);overflow:hidden;">
+            {# quadrant tints + labels #}
+            <div style="position:absolute;left:0;top:0;width:50%;height:50%;background:rgba(201,138,0,0.07);border-right:1px dashed var(--mq-line);border-bottom:1px dashed var(--mq-line);"></div>
+            <div style="position:absolute;right:0;top:0;width:50%;height:50%;background:rgba(210,69,47,0.09);border-bottom:1px dashed var(--mq-line);"></div>
+            <div style="position:absolute;left:0;bottom:0;width:50%;height:50%;background:rgba(31,157,107,0.08);border-right:1px dashed var(--mq-line);"></div>
+            <div style="position:absolute;right:0;bottom:0;width:50%;height:50%;background:rgba(201,138,0,0.07);"></div>
+            {% set qs = 'position:absolute;font-size:9px;letter-spacing:0.06em;text-transform:uppercase;color:var(--mq-subtle);font-weight:700;' %}
+            <span style="{{ qs }}left:7px;top:6px;">Execution risk</span>
+            <span style="{{ qs }}right:7px;top:6px;color:#D2452F;">High both</span>
+            <span style="{{ qs }}left:7px;bottom:6px;color:#1F9D6B;">Lower risk</span>
+            <span style="{{ qs }}right:7px;bottom:6px;">Market risk</span>
+            {# company marker #}
+            <div title="{{ c.name }} · internal {{ iy }} / external {{ ix }}"
+                 style="position:absolute;left:{{ (ix/10*100)|round(1) }}%;bottom:{{ (iy/10*100)|round(1) }}%;transform:translate(-50%,50%);">
+              <span style="display:block;width:14px;height:14px;border-radius:50%;background:{{ c.accent }};border:2px solid var(--mq-surface);box-shadow:0 0 0 1px {{ c.accent }};"></span>
+            </div>
+          </div>
+          <div style="position:absolute;left:0;top:0;height:calc(100% - 24px);display:flex;align-items:center;">
+            <span style="font-size:10px;letter-spacing:0.08em;text-transform:uppercase;color:var(--mq-subtle);font-weight:700;writing-mode:vertical-rl;transform:rotate(180deg);">Internal risk →</span>
+          </div>
+          <div style="max-width:300px;text-align:center;font-size:10px;letter-spacing:0.08em;text-transform:uppercase;color:var(--mq-subtle);font-weight:700;margin-top:6px;">External risk →</div>
+        </div>
+        <div class="row" style="gap:18px;font-size:12.5px;margin-top:2px;">
+          <span class="muted">Internal <strong style="color:var(--mq-ink-2);">{{ iy }}</strong>/10</span>
+          <span class="muted">External <strong style="color:var(--mq-ink-2);">{{ ix }}</strong>/10</span>
+        </div>
+
         {% if risk and risk.commentary %}
         <div class="divider"></div>
         <div style="font-size:10px;letter-spacing:0.14em;text-transform:uppercase;color:var(--mq-subtle);font-weight:700;margin-bottom:6px;">Commentary</div>
@@ -1036,6 +1111,18 @@
     }
     if (document.getElementById('capClassChart')) MQ.register(classChart);
   })();
+  {% endif %}
+
+  {% if verticals and verticals.hawthorne %}
+  window.hwView = function(mode){
+    var L=document.getElementById('hw-layout'), T=document.getElementById('hw-table');
+    var bl=document.getElementById('hw-view-layout'), bt=document.getElementById('hw-view-table');
+    if(!L||!T) return;
+    L.style.display = mode==='layout' ? '' : 'none';
+    T.style.display = mode==='table'  ? '' : 'none';
+    bl.className = 'btn btn-sm ' + (mode==='layout' ? 'btn-primary' : 'btn-ghost');
+    bt.className = 'btn btn-sm ' + (mode==='table'  ? 'btn-primary' : 'btn-ghost');
+  };
   {% endif %}
 
   {% if ember_budget %}
