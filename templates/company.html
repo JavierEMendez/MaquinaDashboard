@@ -491,10 +491,10 @@
         {% set bs = comp.base %}
         <div style="font-size:10px;letter-spacing:0.13em;text-transform:uppercase;color:var(--mq-subtle);font-weight:700;margin:8px 0 2px;">Traffic &amp; revenue
           <span style="text-transform:none;letter-spacing:0;font-weight:500;">— sliders are deltas vs the workbook's own assumptions, shown beneath each</span></div>
-        <div style="{{ srow }}"><span><span style="{{ slbl }}">Revenue level — Ventura</span><span style="{{ sbase }}">base 100% = Valoran model · ${{ '{:,.0f}'.format(bs.ventura.start) }}→${{ '{:,.0f}'.format(bs.ventura.end) }} mdp ({{ bs.ventura.start_year }}–2050)</span></span><input type="range" id="comp-lvl-v" min="60" max="140" step="1" value="100" style="accent-color:var(--mq-accent);"><span style="{{ sval }}" id="lbl-lvl-v">100%</span></div>
-        <div style="{{ srow }}"><span><span style="{{ slbl }}">Revenue level — Pitahaya</span><span style="{{ sbase }}">base 100% = Valoran model · ${{ '{:,.0f}'.format(bs.pitahaya.start) }}→${{ '{:,.0f}'.format(bs.pitahaya.end) }} mdp ({{ bs.pitahaya.start_year }}–2050)</span></span><input type="range" id="comp-lvl-p" min="60" max="140" step="1" value="100" style="accent-color:var(--mq-accent);"><span style="{{ sval }}" id="lbl-lvl-p">100%</span></div>
-        <div style="{{ srow }}"><span><span style="{{ slbl }}">Traffic growth Δ (tcma)</span><span style="{{ sbase }}">base +{{ '%.1f'|format(bs.ventura.real_cagr) }}%/yr real (traffic + tariff) = {{ '%.1f'|format(bs.ventura.nom_cagr) }}% nominal</span></span><input type="range" id="comp-growth" min="-3" max="3" step="0.25" value="0" style="accent-color:var(--mq-accent);"><span style="{{ sval }}" id="lbl-growth">+0.0%</span></div>
-        <div style="{{ srow }}"><span><span style="{{ slbl }}">Inflation (INPC) Δ</span><span style="{{ sbase }}">base {{ '%.1f'|format(bs.infl_first) }}%/yr early → {{ '%.1f'|format(bs.infl_last) }}% steady ({{ '%.1f'|format(bs.infl_cagr) }}% CAGR)</span></span><input type="range" id="comp-infl" min="-2" max="2" step="0.25" value="0" style="accent-color:var(--mq-accent);"><span style="{{ sval }}" id="lbl-infl">+0.0%</span></div>
+        <div style="{{ srow }}"><span><span style="{{ slbl }}">Toll level — Ventura</span><span style="{{ sbase }}">base 100% = Valoran tarifas · Auto <strong>${{ '%.2f'|format(comp.ventura.toll_auto) }}</strong> · blended <strong>${{ '%.0f'|format(comp.ventura.toll_blend) }}</strong>/passage ({{ comp.ventura.toll_when }})</span></span><input type="range" id="comp-lvl-v" min="60" max="140" step="1" value="100" style="accent-color:var(--mq-accent);"><span style="{{ sval }}" id="lbl-lvl-v">100%</span></div>
+        <div style="{{ srow }}"><span><span style="{{ slbl }}">Toll level — Pitahaya</span><span style="{{ sbase }}">base 100% = Valoran tarifas · Auto <strong>${{ '%.2f'|format(comp.pitahaya.toll_auto) }}</strong> · blended <strong>${{ '%.0f'|format(comp.pitahaya.toll_blend) }}</strong>/passage ({{ comp.pitahaya.toll_when }})</span></span><input type="range" id="comp-lvl-p" min="60" max="140" step="1" value="100" style="accent-color:var(--mq-accent);"><span style="{{ sval }}" id="lbl-lvl-p">100%</span></div>
+        <div style="{{ srow }}"><span><span style="{{ slbl }}">Traffic growth Δ (tcma)</span><span style="{{ sbase }}">base +{{ '%.1f'|format(bs.ventura.real_cagr) }}%/yr in vehicles — {{ '{:,.1f}'.format(comp.ventura.passages[1]) }}M→{{ '{:,.1f}'.format(comp.ventura.passages[-1]) }}M passages/yr (Ventura)</span></span><input type="range" id="comp-growth" min="-3" max="3" step="0.25" value="0" style="accent-color:var(--mq-accent);"><span style="{{ sval }}" id="lbl-growth">+0.0%</span></div>
+        <div style="{{ srow }}"><span><span style="{{ slbl }}">Inflation (INPC) Δ</span><span style="{{ sbase }}">base {{ '%.1f'|format(bs.infl_first) }}%→{{ '%.1f'|format(bs.infl_last) }}%/yr — tarifas rise with INPC only (0% real increment)</span></span><input type="range" id="comp-infl" min="-2" max="2" step="0.25" value="0" style="accent-color:var(--mq-accent);"><span style="{{ sval }}" id="lbl-infl">+0.0%</span></div>
         <div style="font-size:10px;letter-spacing:0.13em;text-transform:uppercase;color:var(--mq-subtle);font-weight:700;margin:12px 0 2px;">Valuation</div>
         <div style="{{ srow }}"><span><span style="{{ slbl }}">Real discount rate</span><span style="{{ sbase }}">base 9.0% real — Valoran deck premise</span></span><input type="range" id="comp-disc" min="6" max="12" step="0.25" value="9" style="accent-color:var(--mq-accent);"><span style="{{ sval }}" id="lbl-disc">9.0%</span></div>
         <div style="{{ srow }}"><span><span style="{{ slbl }}">Tax rate</span><span style="{{ sbase }}">base 30% — Mexican ISR corporate rate</span></span><input type="range" id="comp-tax" min="0" max="35" step="1" value="30" style="accent-color:var(--mq-accent);"><span style="{{ sval }}" id="lbl-tax">30%</span></div>
@@ -528,6 +528,43 @@
         <div class="row between" style="font-size:12.5px;padding:4px 0;border-bottom:1px solid var(--mq-line);"><span class="muted">Meta retained (non-promote)</span><span class="tnum" style="font-weight:600;" id="comp-tot-ret">—</span></div>
         <div style="margin:12px 0;"></div>
         <p class="subtle" style="font-size:11.5px;line-height:1.6;margin-top:12px;">Method: yearly excess = max(0, model revenues − concession-title baseline indexed by INPC). The excess is layered against the baseline hurdles and promoted at the hurdle percentages. NPV deflates nominal flows to 2026 pesos and discounts at the real rate, post-tax. Base series extracted 1-for-1 from Valoran's updated workbook ("Aux. Compartición": H2-2026 stub period, then annual through concession end 2050 — base-case nominal total <strong>$2,849 mdp</strong>, ties to the Excel).</p>
+      </div>
+    </div>
+
+    {# ── Toll economics: model tarifa vs título-implied, per passage ── #}
+    <div class="card mb-24">
+      <div class="card-head"><div>
+        <div class="card-title">Toll Economics — Model Tarifa vs Título-Implied, per Vehicle Passage</div>
+        <div class="card-sub">What each highway charges per vehicle versus what the concession title assumed. Live — responds to the sliders above.</div>
+      </div></div>
+      <div class="table-scroll" style="max-height:420px;">
+        <table class="data-table">
+          <thead><tr>
+            <th style="text-align:left;">Year</th><th style="text-align:left;">Highway</th>
+            <th>Passages (M)</th><th>Model tarifa</th><th>Título-implied</th>
+            <th>Gap</th><th style="text-align:left;">Hurdle reached</th><th>Promote / passage</th>
+          </tr></thead>
+          <tbody id="comp-toll-tbody"></tbody>
+        </table>
+      </div>
+      <div class="divider"></div>
+      <div class="grid grid-2" style="gap:22px;">
+        <div>
+          <div style="font-size:10px;letter-spacing:0.13em;text-transform:uppercase;color:var(--mq-subtle);font-weight:700;margin-bottom:8px;">What this table is doing</div>
+          <p class="subtle" style="font-size:12px;line-height:1.65;">
+            The <strong>model tarifa</strong> is Valoran's projected revenue for the year divided by the vehicles projected to pass — the average toll actually collected per vehicle, across all classes.<br><br>
+            The <strong>título-implied</strong> figure is the concession title's contractual revenue for that year divided by the <em>same</em> vehicle count. The título is only a peso total — it contains no traffic and no tariff — so this converts it into per-vehicle terms to make the two comparable. <em>It is a derived comparison, not a rate anyone charges.</em><br><br>
+            The <strong>gap</strong> is the excess as a % of the baseline — and that percentage is precisely what the hurdle ladder measures, so the "hurdle reached" column shows where each road's year lands.
+          </p>
+        </div>
+        <div>
+          <div style="font-size:10px;letter-spacing:0.13em;text-transform:uppercase;color:var(--mq-subtle);font-weight:700;margin-bottom:8px;">Why it matters</div>
+          <p class="subtle" style="font-size:12px;line-height:1.65;">
+            It reduces the whole deal to one number per road per year: <strong>how much more revenue per vehicle the model assumes than the concession promised.</strong> That gap is the entire source of Maquina's promote — no gap, no payment.<br><br>
+            It also shows why v2 is worth so much less than v1: a ~30–35% gap on Ventura barely clears Hurdle 1, while Pitahaya's ~11% gap sits deep inside it at 5%. Under v1's forecast the gap was 120–350%, landing most of the excess in Hurdle 4 at 75%.<br><br>
+            <strong>The diligence question:</strong> is a ~30% revenue-per-vehicle premium over the título realistic? That single judgement drives the valuation more than any other input — test it with the toll-level sliders.
+          </p>
+        </div>
       </div>
     </div>
 
@@ -862,7 +899,8 @@
       for (const key of ['ventura','pitahaya']){
         const road = { nom: 0, npv: 0, first: null,
                        shareY: Array(N).fill(0), retainedY: Array(N).fill(0),
-                       modelY: Array(N).fill(null), baseY: Array(N).fill(null) };
+                       modelY: Array(N).fill(null), baseY: Array(N).fill(null),
+                       tollY: Array(N).fill(null) };
         per[key] = road;
         if (!c.roads[key]) continue;
         const R = COMP[key];
@@ -882,6 +920,16 @@
           for (let k = 0; k < 4; k++){ const v = b[k] * c.sh[k]; bands[k][i] += v; s += v; }
           modelT[i] += model; baseT[i] += base; shareT[i] += s;
           road.shareY[i] = s; road.retainedY[i] = model - s;
+          // Toll economics: the growth slider moves VEHICLES, so passages scale
+          // with it and cancel out of the model tarifa (level/inflation remain).
+          const pas = (R.passages ? R.passages[i] : 0) * Math.pow(1 + c.growth, Math.max(0, Y[i] - 2027));
+          if (pas > 0){
+            const gap = base > 0 ? (model / base - 1) : null;
+            road.tollY[i] = { pas: pas, model: model / pas, base: base / pas,
+                              gap: gap, prom: s / pas,
+                              hurdle: gap === null || gap <= 0 ? 0
+                                    : gap <= c.th[0] ? 1 : gap <= c.th[1] ? 2 : gap <= c.th[2] ? 3 : 4 };
+          }
           // Only chart a road's baseline once it is actually producing
           // revenue — a closed road's título baseline is not a comparator.
           if (model > 0){ road.modelY[i] = model; road.baseY[i] = base; }
@@ -927,6 +975,7 @@
       $('comp-p-first').textContent = r.per.pitahaya.first || '—';
       $('comp-p-nom').textContent = fmtMdp(r.per.pitahaya.nom);
       $('comp-p-npv').textContent = fmtMdp(r.per.pitahaya.npv);
+      renderTollTable(r, c);
       const totDist = r.modelT.reduce((a, b) => a + b, 0);
       $('comp-tot-dist').textContent = fmtMdp(totDist);
       $('comp-tot-prom').textContent = fmtMdp(r.totShare);
@@ -953,6 +1002,35 @@
     }
 
     const hurdleLbl = (c, k) => 'Hurdle ' + (k+1) + ' · ' + Math.round(c.sh[k]*100) + '%';
+
+    const ROADLBL = { ventura: 'Ventura', pitahaya: 'La Pitahaya' };
+    function renderTollTable(r, c){
+      const tb = $('comp-toll-tbody'); if (!tb) return;
+      const peso = x => '$' + x.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+      const rows = [];
+      for (let i = 0; i < COMP.years.length; i++){
+        for (const key of ['ventura','pitahaya']){
+          const t = r.per[key] && r.per[key].tollY[i];
+          if (!t) continue;
+          const gp = t.gap === null ? null : t.gap * 100;
+          const gcol = gp === null ? 'var(--mq-subtle)' : gp > 0 ? '#1F9D6B' : '#D2452F';
+          const hl = t.hurdle === 0
+            ? '<span class="subtle">below baseline — no promote</span>'
+            : 'Hurdle ' + t.hurdle + ' · ' + Math.round(c.sh[t.hurdle-1]*100) + '%';
+          rows.push('<tr>' +
+            '<td style="text-align:left;">' + (COMP.labels ? COMP.labels[i] : COMP.years[i]) + '</td>' +
+            '<td style="text-align:left;">' + ROADLBL[key] + '</td>' +
+            '<td>' + t.pas.toFixed(2) + '</td>' +
+            '<td style="font-weight:600;">' + peso(t.model) + '</td>' +
+            '<td>' + peso(t.base) + '</td>' +
+            '<td style="color:' + gcol + ';font-weight:600;">' + (gp === null ? '—' : (gp>0?'+':'') + gp.toFixed(0) + '%') + '</td>' +
+            '<td style="text-align:left;">' + hl + '</td>' +
+            '<td style="color:var(--mq-accent);font-weight:600;">' + (t.prom > 0.005 ? peso(t.prom) : '—') + '</td></tr>');
+        }
+      }
+      tb.innerHTML = rows.join('') ||
+        '<tr><td colspan="8" style="text-align:left;" class="subtle">No highways selected.</td></tr>';
+    }
 
     function buildCompChart(){
       const ctx = $('compChart'); if (!ctx) return null;
