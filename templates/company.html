@@ -186,7 +186,7 @@
 
       {% if sales.combined and sales.combined.target_annual %}
       <div class="grid grid-4 mb-24">
-        <div class="kpi"><div class="kpi-top"><span class="kpi-label">Combined YTD Net</span></div><div class="kpi-value">{{ sales.combined.ytd_net }}<span style="color:var(--mq-subtle);font-weight:400;">/</span>{{ sales.combined.target_annual }}</div><div class="kpi-foot"><span class="kpi-sub">target{% if sales.combined.ytd_pct %} · {{ sales.combined.ytd_pct }}%{% endif %}</span></div></div>
+        <div class="kpi"><div class="kpi-top"><span class="kpi-label">Combined YTD Net</span></div><div class="kpi-value">{{ sales.combined.ytd_net }}<span style="color:var(--mq-subtle);font-weight:400;">/</span>{{ sales.combined.target_annual }}{% if sales.combined.ytd_pct %}<span style="color:var(--mq-subtle);font-weight:400;margin:0 5px;">·</span><span style="color:var(--mq-accent);">{{ sales.combined.ytd_pct }}%</span>{% endif %}</div><div class="kpi-foot"><span class="kpi-sub">of annual target</span></div></div>
         <div class="kpi"><div class="kpi-top"><span class="kpi-label">Life-of-Project Net</span></div><div class="kpi-value">{{ sales.combined.total_net }}</div><div class="kpi-foot"><span class="kpi-sub">all communities</span></div></div>
         <div class="kpi"><div class="kpi-top"><span class="kpi-label">Monthly Target</span></div><div class="kpi-value">{{ sales.combined.target_monthly }}</div><div class="kpi-foot"><span class="kpi-sub">homes / month combined</span></div></div>
         <div class="kpi"><div class="kpi-top"><span class="kpi-label">Cancellations YTD</span></div><div class="kpi-value {{ 'neg' if sales.combined.canc_ytd }}">{{ sales.combined.canc_ytd }}</div><div class="kpi-foot"><span class="kpi-sub">across communities</span></div></div>
@@ -206,11 +206,11 @@
         <div class="grid grid-4" style="gap:12px;">
           <div class="summary-card"><div class="lbl">LOP Net Sales</div><div class="val">{{ cm.total_net if cm.total_net is not none else '—' }}</div><div class="subtle" style="font-size:11px;">{{ cm.gross_total or 0 }} gross · {{ cm.canc_total or 0 }} cancels</div></div>
           <div class="summary-card"><div class="lbl">YTD Net</div>
-            <div class="val">{{ cm.ytd_net if cm.ytd_net is not none else '—' }}{% if cm.target_annual %}<span style="color:var(--mq-subtle);font-weight:400;">/</span>{{ cm.target_annual }}{% endif %}</div>
-            <div class="subtle" style="font-size:11px;">{% if cm.target_annual %}target{% if cm.ytd_pct %} · {{ cm.ytd_pct }}%{% endif %}{% endif %}</div></div>
+            <div class="val">{{ cm.ytd_net if cm.ytd_net is not none else '—' }}{% if cm.target_annual %}<span style="color:var(--mq-subtle);font-weight:400;">/</span>{{ cm.target_annual }}{% endif %}{% if cm.ytd_pct %}<span style="color:var(--mq-subtle);font-weight:400;margin:0 5px;">·</span><span style="color:var(--mq-accent);">{{ cm.ytd_pct }}%</span>{% endif %}</div>
+            <div class="subtle" style="font-size:11px;">{% if cm.target_annual %}of annual target{% endif %}</div></div>
           <div class="summary-card"><div class="lbl">YTD Pace</div>
-            <div class="val {{ 'pos' if cm.on_track else ('neg' if cm.on_track is not none) }}">{{ cm.ytd_pace if cm.ytd_pace is not none else '—' }}{% if cm.target_monthly %}<span style="color:var(--mq-subtle);font-weight:400;">/</span>{{ cm.target_monthly }}{% endif %}</div>
-            <div class="subtle" style="font-size:11px;">{% if cm.target_monthly %}per month target{% if cm.pace_pct %} · {{ cm.pace_pct }}%{% endif %}{% endif %}</div></div>
+            <div class="val">{{ cm.ytd_pace if cm.ytd_pace is not none else '—' }}{% if cm.target_monthly %}<span style="color:var(--mq-subtle);font-weight:400;">/</span>{{ cm.target_monthly }}{% endif %}{% if cm.pace_pct %}<span style="color:var(--mq-subtle);font-weight:400;margin:0 5px;">·</span><span style="color:{{ '#1F9D6B' if cm.on_track else '#D2452F' }};">{{ cm.pace_pct }}%</span>{% endif %}</div>
+            <div class="subtle" style="font-size:11px;">{% if cm.target_monthly %}per month target{% endif %}</div></div>
           <div class="summary-card"><div class="lbl">Cancellations YTD</div><div class="val {{ 'neg' if cm.canc_ytd }}">{{ cm.canc_ytd if cm.canc_ytd is not none else '—' }}</div><div class="subtle" style="font-size:11px;">{% if cm.pace_prev %}prior-yr pace {{ cm.pace_prev }}/mo{% endif %}</div></div>
         </div>
         {% if cm.target_monthly and cm.pace_pct %}
