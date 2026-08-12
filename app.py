@@ -2148,7 +2148,7 @@ def ember_diagnostics():
     Never writes. Returns connection status, available report types, and the
     shape of the latest 'operations' report so we can map KPIs precisely."""
     info = {"configured": bool(os.environ.get("EMBER_DATABASE_URL", "").strip()),
-            "connected": False, "error": None, "report_types": []}
+            "connected": False, "error": None, "report_types": [], "budget_raw": None}
     if not info["configured"]:
         return info
     try:
@@ -2162,6 +2162,35 @@ def ember_diagnostics():
             (r["report_type"], r["n"], r["last"].strftime("%Y-%m-%d") if r["last"] else "—")
             for r in ecur.fetchall()
         ]
+
+        # ── Operating Budget shape probe — TEMPORARY diagnostic ──
+        try:
+            ecur.execute("SELECT data, uploaded_at FROM reports WHERE report_type='ember_budget' "
+                         "ORDER BY uploaded_at DESC LIMIT 1")
+            br = ecur.fetchone()
+            if br and br.get("data"):
+                d = br["data"]
+                if isinstance(d, str):
+                    d = json.loads(d)
+                shape = {"top_keys": sorted(d.keys()),
+                         "uploaded": str(br.get("uploaded_at"))[:10],
+                         "meta": {k: (v if not isinstance(v, list) else
+                                      {"len": len(v), "first": v[0] if v else None,
+                                       "last": v[-1] if v else None})
+                                  for k, v in (d.get("meta") or {}).items()},
+                         "kpi_keys": sorted((d.get("kpis") or {}).keys()),
+                         "revenue_keys": sorted((d.get("revenue") or {}).keys()),
+                         "revenue_lines": [l.get("name") for l in (d.get("revenue") or {}).get("lines") or []],
+                         "operations_keys": sorted((d.get("operations") or {}).keys()),
+                         "operations_lines": [l.get("name") for l in (d.get("operations") or {}).get("lines") or []],
+                         "series_keys": sorted((d.get("net_income") or {}).keys()),
+                         "n_months": len(((d.get("net_income") or {}).get("months") or {})),
+                         "sample_line": ((d.get("operations") or {}).get("lines") or [{}])[0]}
+                info["budget_raw"] = json.dumps(shape, default=str, ensure_ascii=False)[:3800]
+            else:
+                info["budget_raw"] = "NO ember_budget ROW IN reports"
+        except Exception as e:
+            info["budget_raw"] = "probe error: " + str(e)[:200]
 
         info["connected"] = True
         ecur.close(); econn.close()
