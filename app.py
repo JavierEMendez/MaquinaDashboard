@@ -1716,9 +1716,20 @@ def fetch_ember_capital():
                 "committed": vt.get("total_committed") or 0,
                 "allocated": vt.get("total_allocated") or 0,
                 "available": vt.get("available") or 0}
+            # Equity by asset class (mirrors Ember's capital donut)
+            classes = v.get("asset_classes") or []
+            eq_by = {}
+            for a in v_active:
+                eq_by[a.get("asset_class")] = eq_by.get(a.get("asset_class"), 0) + (a["equity"] or 0)
+            tot_eq_v = sum(eq_by.values()) or 1
+            by_class = [dict(id=c.get("id"), label=c.get("label"), color=c.get("color"),
+                             equity=eq_by.get(c.get("id"), 0),
+                             pct=round(eq_by.get(c.get("id"), 0) / tot_eq_v * 100))
+                        for c in classes if eq_by.get(c.get("id"))]
             return dict(
                 active=v_active, months=months, mdist=mdist, mprom=mprom,
                 pipeline=v_pipeline, commitments=groups, commit_totals=ctot,
+                by_class=by_class,
                 as_of=v.get("as_of") or d.get("date"), src="view",
                 src_asof=(v_asof.strftime("%Y-%m-%d %H:%M") if v_asof else None),
                 totals=dict(

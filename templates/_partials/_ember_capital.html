@@ -9,11 +9,33 @@
 </div>
 
 <div class="grid grid-4 mb-24">
-  <div class="kpi"><div class="kpi-top"><span class="kpi-label">LP Equity Invested</span></div><div class="kpi-value">{{ cap.totals.equity | money }}</div><div class="kpi-foot"><span class="kpi-sub">{{ cap.totals.count }} active projects</span></div></div>
-  <div class="kpi"><div class="kpi-top"><span class="kpi-label">Total LP Profit</span></div><div class="kpi-value {{ 'pos' if cap.totals.profit >= 0 else 'neg' }}">{{ cap.totals.profit | money }}</div></div>
-  <div class="kpi"><div class="kpi-top"><span class="kpi-label">Total Promote</span></div><div class="kpi-value">{{ cap.totals.promote | money }}</div><div class="kpi-foot"><span class="kpi-sub">forecasted carry to partners</span></div></div>
-  <div class="kpi"><div class="kpi-top"><span class="kpi-label">Equity-Wtd LP IRR</span></div><div class="kpi-value pos">{{ '%.1f'|format(cap.totals.weighted_irr) }}%</div>{% if cap.totals.lp_irr %}<div class="kpi-foot"><span class="kpi-sub">forecasted LP IRR {{ '%.1f'|format(cap.totals.lp_irr) }}%</span></div>{% endif %}</div>
+  <div class="kpi"><div class="kpi-top"><span class="kpi-label">Active Projects</span></div><div class="kpi-value">{{ cap.totals.count }}</div><div class="kpi-foot"><span class="kpi-sub">across portfolio</span></div></div>
+  <div class="kpi"><div class="kpi-top"><span class="kpi-label">Total Equity Deployed</span></div><div class="kpi-value" style="color:var(--mq-accent);">{{ cap.totals.equity | money }}</div><div class="kpi-foot"><span class="kpi-sub">LP capital at work</span></div></div>
+  <div class="kpi"><div class="kpi-top"><span class="kpi-label">Total Commitments</span></div><div class="kpi-value">{{ cap.commit_totals.committed | money }}</div><div class="kpi-foot"><span class="kpi-sub">MPC + Vertical</span></div></div>
+  <div class="kpi"><div class="kpi-top"><span class="kpi-label">Forecasted LP Profit</span></div><div class="kpi-value {{ 'pos' if cap.totals.profit >= 0 else 'neg' }}">{{ cap.totals.profit | money }}</div><div class="kpi-foot"><span class="kpi-sub">across all projects</span></div></div>
+  <div class="kpi"><div class="kpi-top"><span class="kpi-label">Forecasted LP IRR</span></div><div class="kpi-value pos">{{ '%.1f'|format(cap.totals.lp_irr if cap.totals.lp_irr is not none else cap.totals.weighted_irr) }}%</div><div class="kpi-foot"><span class="kpi-sub">LP-equity-weighted</span></div></div>
+  <div class="kpi"><div class="kpi-top"><span class="kpi-label">Forecasted Promote</span></div><div class="kpi-value" style="color:var(--mq-accent);">{{ cap.totals.promote | money }}</div><div class="kpi-foot"><span class="kpi-sub">across all projects</span></div></div>
+  <div class="kpi"><div class="kpi-top"><span class="kpi-label">Distributed YTD</span></div><div class="kpi-value">{{ cap.totals.dist_ytd | money }}</div><div class="kpi-foot"><span class="kpi-sub">{{ cap.totals.ytd_label or 'year to date' }}</span></div></div>
+  <div class="kpi"><div class="kpi-top"><span class="kpi-label">To Be Distributed</span></div><div class="kpi-value" style="color:var(--mq-accent);">{{ cap.totals.to_be_distributed | money if cap.totals.to_be_distributed is not none else '—' }}</div><div class="kpi-foot"><span class="kpi-sub">next 18 months</span></div></div>
 </div>
+
+{% if cap.by_class %}
+<div class="card mb-24">
+  <div class="card-head"><div><div class="card-title">Equity by Asset Class</div>
+    <div class="card-sub">LP capital deployed across the portfolio ({{ cap.totals.equity | money }}).</div></div></div>
+  <div class="row wrap" style="gap:28px;align-items:center;">
+    <div style="width:230px;height:230px;flex-shrink:0;"><canvas id="capClassChart"></canvas></div>
+    <div style="flex:1;min-width:220px;">
+      {% for c in cap.by_class %}
+      <div class="row between" style="font-size:13px;padding:6px 0;border-bottom:1px solid var(--mq-line);">
+        <span class="legend-left"><span class="legend-dot" style="background:{{ c.color }};"></span>{{ c.label }}</span>
+        <span class="row" style="gap:14px;"><span class="subtle tnum">{{ c.equity | money }}</span><span class="tnum" style="font-weight:700;min-width:38px;text-align:right;">{{ c.pct }}%</span></span>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+{% endif %}
 
 <div data-tabgroup>
   <div class="tabs">

@@ -1018,6 +1018,26 @@
   })();
   {% endif %}
 
+  {% if cap and cap.by_class %}
+  // ── Ember Capital: equity by asset class (mirrors Ember's donut) ──
+  (function(){
+    const BC = {{ cap.by_class | tojson }};
+    function classChart(){
+      const ctx = document.getElementById('capClassChart'); if (!ctx) return null;
+      return new Chart(ctx, {
+        type:'doughnut',
+        data:{ labels: BC.map(c=>c.label),
+               datasets:[{ data: BC.map(c=>c.equity),
+                           backgroundColor: BC.map(c=>c.color),
+                           borderWidth:0, cutout:'62%' }] },
+        options:{ responsive:true, maintainAspectRatio:false,
+          plugins:{ legend:{display:false},
+            tooltip:{ callbacks:{ label:c=>c.label+': $'+(c.parsed/1e6).toFixed(1)+'M' } } } } });
+    }
+    if (document.getElementById('capClassChart')) MQ.register(classChart);
+  })();
+  {% endif %}
+
   {% if ember_budget %}
   // ── Operating Budget: monthly revenue vs costs (bars) + net income (line) ──
   (function(){
