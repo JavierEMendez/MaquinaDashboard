@@ -102,7 +102,24 @@
           {% endif %}
         </div>
       </div>
-      {% if is_admin %}<div class="subtle" style="font-size:11px;margin-top:10px;">Driven by the inputs on the <strong>Operations</strong> tab (EBITDA × multiple − debt{{ ' / FRE + promotes' if valuation.model == 'sponsor' }}). Edit there to update.</div>{% endif %}
+      {% if is_admin and fin %}
+      <details class="editor" style="margin-top:12px;">
+        <summary>Edit valuation inputs</summary>
+        <form class="editor-body" method="POST" action="{{ url_for('update_financials', slug=c.slug) }}">
+          <div class="grid grid-3" style="gap:10px;">
+            <div><label class="fld-label">Valuation model</label><select class="input" name="valuation_model"><option value="ebitda" {{ 'selected' if fin.valuation_model != 'sponsor' }}>EV / EBITDA</option><option value="sponsor" {{ 'selected' if fin.valuation_model == 'sponsor' }}>Sponsor (FRE + carry)</option></select></div>
+            <div><label class="fld-label">EBITDA ({{ c.value_unit }})</label><input class="input" type="number" step="any" name="ebitda" value="{{ fin.ebitda }}"></div>
+            <div><label class="fld-label">EBITDA margin (%)</label><input class="input" type="number" step="any" name="ebitda_margin" value="{{ fin.ebitda_margin }}"></div>
+            <div><label class="fld-label">EBITDA multiple (x)</label><input class="input" type="number" step="any" name="ebitda_multiple" value="{{ fin.ebitda_multiple }}"></div>
+            <div><label class="fld-label">Total debt ({{ c.value_unit }})</label><input class="input" type="number" step="any" name="total_debt" value="{{ fin.total_debt }}"></div>
+            <div><label class="fld-label">FRE ({{ c.value_unit }})</label><input class="input" type="number" step="any" name="fre" value="{{ fin.fre }}"></div>
+            <div><label class="fld-label">FRE multiple (x)</label><input class="input" type="number" step="any" name="fre_multiple" value="{{ fin.fre_multiple }}"></div>
+            <div><label class="fld-label">Carry discount (0–1)</label><input class="input" type="number" step="0.01" name="carry_discount" value="{{ fin.carry_discount }}"></div>
+          </div>
+          <button class="btn btn-primary btn-sm mt-8" type="submit">Save valuation inputs</button>
+        </form>
+      </details>
+      {% endif %}
     </div>
     {% endif %}
     {% if summary %}
@@ -139,57 +156,69 @@
   </div>
 
   <div class="tab-panel" data-panel="commercial">
-    {% if ember_returns %}
-    <div class="card mb-24">
-      <div class="row wrap between" style="gap:8px;align-items:center;margin-bottom:16px;">
-        <div class="card-title">Project Returns &amp; Promotes</div>
-        <span class="row" style="gap:8px;align-items:center;"><span class="badge good">● Live from Ember</span>
-          <span class="subtle" style="font-size:12px;">{% if ember_returns.as_of %}as of {{ ember_returns.as_of }}{% endif %}</span></span>
-      </div>
-      <div class="grid grid-2 mb-24">
-        <div class="summary-card"><div class="lbl">Total Promote (carry to partners)</div><div class="val">{{ ember_returns.totals.promote | money }}</div></div>
-        <div class="summary-card"><div class="lbl">Total LP Distributions</div><div class="val">{{ ember_returns.totals.lp_dist | money }}</div></div>
-      </div>
-      <div class="table-scroll">
-        <table class="data-table">
-          <thead><tr><th style="text-align:left;">Project</th><th>LP IRR</th><th>Equity Multiple</th><th>LP Distributions</th><th>Promote</th></tr></thead>
-          <tbody>
-            {% for p in ember_returns.projects %}
-            <tr>
-              <td style="text-align:left;">{{ p.name }}</td>
-              <td>{{ (('%.1f'|format(p.lp_irr * 100)) ~ '%') if (p.lp_irr is not none and (p.lp_irr|abs) < 3) else ((('%.1f'|format(p.lp_irr)) ~ '%') if p.lp_irr is not none else '—') }}</td>
-              <td>{{ ('%.2f'|format(p.moic) ~ 'x') if p.moic is not none else '—' }}</td>
-              <td>{{ p.lp_dist | money }}</td>
-              <td>{{ p.promote | money }}</td>
-            </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      </div>
-      <p class="subtle" style="font-size:12px;margin-top:12px;">Promote is the carried interest Ember/partners earn above LP preferred returns — a key driver of Ember's valuation while corporate EBITDA is near breakeven.</p>
-    </div>
-    {% endif %}
 
-    {# ── Community Sales (MPCs) — live from Ember ── #}
+    {# ── Community Sales executive summary (MPCs) — live from Ember ── #}
     {% if sales %}
     <div class="card mb-24">
-      <div class="row wrap between" style="gap:8px;align-items:center;margin-bottom:16px;">
-        <div class="card-title">Community Sales — Master-Planned Communities</div>
+      <div class="row wrap between" style="gap:8px;align-items:center;margin-bottom:4px;">
+        <div class="card-title">Community Sales — Executive Summary</div>
         <span class="row" style="gap:8px;align-items:center;"><span class="badge good">● Live from Ember</span>
           <span class="subtle" style="font-size:12px;">{% if sales.as_of %}synced {{ sales.as_of }}{% endif %}</span></span>
       </div>
-      <div class="grid grid-3">
-        {% for cm in sales.communities %}
-        <div class="summary-card">
-          <div class="lbl">{{ cm.name }}</div>
-          <div class="val">{{ cm.total_net if cm.total_net is not none else '—' }} <span style="font-size:12px;font-weight:500;color:var(--mq-subtle);">net sales</span></div>
-          <div class="subtle" style="font-size:12px;margin-top:6px;line-height:1.7;">
-            {% if cm.gross_total is not none %}{{ cm.gross_total }} gross · {{ cm.canc_total or 0 }} cancels<br>{% endif %}
-            {% if cm.ytd_net is not none %}YTD {{ cm.ytd_net }}{% if cm.ytd_pace is not none %} · {{ cm.ytd_pace }}/mo pace{% endif %}<br>{% endif %}
-            {% if cm.avg_price %}avg price {{ cm.avg_price }}{% endif %}
+      <div class="card-sub mb-16">Net home sales at the active master-planned communities, against annual and monthly targets.</div>
+
+      {% if sales.combined and sales.combined.target_annual %}
+      <div class="grid grid-4 mb-24">
+        <div class="kpi"><div class="kpi-top"><span class="kpi-label">Combined YTD Net</span></div><div class="kpi-value">{{ sales.combined.ytd_net }}</div><div class="kpi-foot"><span class="kpi-sub">of {{ sales.combined.target_annual }} target{% if sales.combined.ytd_pct %} · {{ sales.combined.ytd_pct }}%{% endif %}</span></div></div>
+        <div class="kpi"><div class="kpi-top"><span class="kpi-label">Life-of-Project Net</span></div><div class="kpi-value">{{ sales.combined.total_net }}</div><div class="kpi-foot"><span class="kpi-sub">all communities</span></div></div>
+        <div class="kpi"><div class="kpi-top"><span class="kpi-label">Monthly Target</span></div><div class="kpi-value">{{ sales.combined.target_monthly }}</div><div class="kpi-foot"><span class="kpi-sub">homes / month combined</span></div></div>
+        <div class="kpi"><div class="kpi-top"><span class="kpi-label">Cancellations YTD</span></div><div class="kpi-value {{ 'neg' if sales.combined.canc_ytd }}">{{ sales.combined.canc_ytd }}</div><div class="kpi-foot"><span class="kpi-sub">across communities</span></div></div>
+      </div>
+      {% endif %}
+
+      {# per-community: KPIs + target vs actual #}
+      {% for cm in sales.communities %}
+      <div style="margin-bottom:18px;">
+        <div class="row wrap between" style="gap:8px;align-items:baseline;margin-bottom:8px;">
+          <div style="font-weight:700;color:var(--mq-ink-2);font-size:13.5px;">{{ cm.name }}
+            <span class="badge" style="margin-left:6px;">{{ cm.key|upper }}</span>
+            {% if cm.on_track is not none %}<span class="badge {{ 'good' if cm.on_track else '' }}" style="margin-left:4px;{{ '' if cm.on_track else 'border-color:#D2452F;color:#D2452F;' }}">{{ 'On pace' if cm.on_track else 'Behind pace' }}</span>{% endif %}
           </div>
+          <span class="subtle" style="font-size:11.5px;">{% if cm.earliest %}selling since {{ cm.earliest }}{% endif %}{% if cm.avg_price %} · avg price {{ cm.avg_price }}{% endif %}</span>
         </div>
-        {% endfor %}
+        <div class="grid grid-4" style="gap:12px;">
+          <div class="summary-card"><div class="lbl">LOP Net Sales</div><div class="val">{{ cm.total_net if cm.total_net is not none else '—' }}</div><div class="subtle" style="font-size:11px;">{{ cm.gross_total or 0 }} gross · {{ cm.canc_total or 0 }} cancels</div></div>
+          <div class="summary-card"><div class="lbl">YTD Net</div><div class="val">{{ cm.ytd_net if cm.ytd_net is not none else '—' }}</div><div class="subtle" style="font-size:11px;">{% if cm.target_annual %}vs {{ cm.target_annual }} target{% if cm.ytd_pct %} · {{ cm.ytd_pct }}%{% endif %}{% endif %}</div></div>
+          <div class="summary-card"><div class="lbl">YTD Pace</div>
+            <div class="val {{ 'pos' if cm.on_track else ('neg' if cm.on_track is not none) }}">{{ cm.ytd_pace if cm.ytd_pace is not none else '—' }}<span style="font-size:12px;font-weight:500;color:var(--mq-subtle);">/mo</span></div>
+            <div class="subtle" style="font-size:11px;">{% if cm.target_monthly %}target {{ cm.target_monthly }}/mo{% if cm.pace_pct %} · {{ cm.pace_pct }}%{% endif %}{% endif %}</div></div>
+          <div class="summary-card"><div class="lbl">Cancellations YTD</div><div class="val {{ 'neg' if cm.canc_ytd }}">{{ cm.canc_ytd if cm.canc_ytd is not none else '—' }}</div><div class="subtle" style="font-size:11px;">{% if cm.pace_prev %}prior-yr pace {{ cm.pace_prev }}/mo{% endif %}</div></div>
+        </div>
+        {% if cm.target_monthly and cm.pace_pct %}
+        <div style="margin-top:8px;">
+          <div class="row between" style="font-size:11px;color:var(--mq-subtle);margin-bottom:3px;"><span>Pace vs target</span><span>{{ cm.pace_pct }}%</span></div>
+          <span class="risk-track" style="display:block;"><span class="risk-fill" style="width:{{ [cm.pace_pct, 100] | min }}%;background:{{ '#1F9D6B' if cm.on_track else '#D2452F' }};"></span></span>
+        </div>
+        {% endif %}
+      </div>
+      {% endfor %}
+
+      {# attention flags — same rules as EmberApps #}
+      <div class="divider"></div>
+      <div style="font-size:10px;letter-spacing:0.14em;text-transform:uppercase;color:var(--mq-subtle);font-weight:700;margin-bottom:8px;">Attention</div>
+      {% if sales.flags %}
+      <ul style="margin:0;padding-left:18px;font-size:12.5px;line-height:1.75;color:var(--mq-ink-2);">
+        {% for f in sales.flags %}<li style="margin-bottom:3px;"><span style="color:#D2452F;font-weight:700;margin-right:5px;">▲</span>{{ f }}</li>{% endfor %}
+      </ul>
+      {% else %}
+      <p class="subtle" style="font-size:12.5px;font-style:italic;color:#1F9D6B;">All communities tracking on or above target. No flags.</p>
+      {% endif %}
+    </div>
+    {% elif ember_live %}
+    <div class="card mb-24">
+      <div class="row wrap" style="gap:10px;align-items:center;">
+        <span class="badge">Awaiting Ember sync</span>
+        <span class="subtle" style="font-size:12.5px;">Community Sales will appear here once EmberApps writes its sales snapshot to the shared database (<code>reports.report_type='sales'</code>). The Ember-side change hasn't been deployed yet.</span>
       </div>
     </div>
     {% endif %}
@@ -264,44 +293,130 @@
   <div class="tab-panel" data-panel="operations">
     {% if ember_live %}<div class="row wrap" style="gap:8px;margin-bottom:14px;align-items:center;"><span class="badge good">● Live from Ember</span><span class="subtle" style="font-size:12px;">Operating revenues{% if ember_asof %} · as of {{ ember_asof }}{% endif %}</span></div>{% endif %}
 
-    {# ── Operating Budget (firm P&L) — Ember-only, read from EmberApps /budget ── #}
+    {# ── Operating Budget (firm P&L) — Ember-only, ported from EmberApps /budget ── #}
     {% if ember_budget %}
     {% set EB = ember_budget %}
     {% set EBY = EB.meta.years %}
-    {% macro ebrow(label, series, years, signed=False, cls='') %}
-      <tr class="{{ cls }}"><td>{{ label }}</td>
-      {% for y in years %}{% set v = (series.by_year.get(y|string, 0)) if series else 0 %}<td class="{{ 'neg' if v < 0 else ('pos' if (signed and v > 0)) }}">{{ (v | smoney) if signed else (v | money) }}</td>{% endfor %}</tr>
+    {% set EBM = EB.meta.months %}
+    {% set EBML = EB.meta.month_labels %}
+    {# annual row: label + one cell per year + Total #}
+    {% macro yrow(label, series, cls='', child=False) %}
+      <tr class="{{ cls }}"><td style="text-align:left;{{ 'padding-left:22px;color:var(--mq-muted);' if child }}">{{ label }}</td>
+      {% for y in EBY %}{% set v = (series.by_year.get(y|string, 0)) if series else 0 %}<td class="{{ 'neg' if v < 0 }}">{{ v | money }}</td>{% endfor %}
+      {% set tot = (series.by_year.values() | sum) if series else 0 %}
+      <td class="{{ 'neg' if tot < 0 }}" style="font-weight:700;">{{ tot | money }}</td></tr>
     {% endmacro %}
+    {# monthly row: label + one cell per month + Total #}
+    {% macro mrow(label, series, cls='', child=False) %}
+      <tr class="{{ cls }}"><td style="text-align:left;white-space:nowrap;{{ 'padding-left:22px;color:var(--mq-muted);' if child }}">{{ label }}</td>
+      {% for mk in EBM %}{% set v = (series.months.get(mk, 0)) if series else 0 %}<td class="{{ 'neg' if v < 0 }}">{{ v | money }}</td>{% endfor %}
+      {% set tot = (series.by_year.values() | sum) if series else 0 %}
+      <td class="{{ 'neg' if tot < 0 }}" style="font-weight:700;">{{ tot | money }}</td></tr>
+    {% endmacro %}
+
     <div class="card mb-24">
       <div class="row between wrap" style="gap:8px;align-items:center;margin-bottom:4px;">
-        <div class="card-title">Operating Budget · Firm P&amp;L <span class="badge good" style="margin-left:6px;">● From Ember budget</span></div>
-        <span class="subtle" style="font-size:12px;">{{ EB.meta.report_date }} · {{ EB.kpis.horizon_label }}</span>
+        <div class="card-title">Operating Budget · Firm P&amp;L <span class="badge good" style="margin-left:6px;">● Live from Ember</span></div>
+        <span class="subtle" style="font-size:12px;">{{ EB.meta.report_date }} · {{ EB.kpis.horizon_label }}{% if EB.meta.filename %} · {{ EB.meta.filename }}{% endif %}</span>
       </div>
-      <div class="card-sub mb-16">Corporate revenue, personnel &amp; overhead → net income &amp; cashflow. Costs from the EmberApps Operating Budget upload{% if EB.revenue.source == 'operations' %}; <strong>revenue from the live Operating Revenues report</strong>{% endif %}.</div>
-      <div class="grid grid-4 mb-16">
-        <div class="kpi"><div class="kpi-top"><span class="kpi-label">Revenue</span></div><div class="kpi-value">{{ EB.kpis.revenue_life | money }}</div><div class="kpi-foot"><span class="kpi-sub">{{ EB.kpis.horizon_label }}</span></div></div>
-        <div class="kpi"><div class="kpi-top"><span class="kpi-label">Personnel + Overhead</span></div><div class="kpi-value neg">{{ EB.kpis.costs_life | money }}</div><div class="kpi-foot"><span class="kpi-sub">total operating costs</span></div></div>
+      <div class="card-sub mb-16">Corporate revenue, personnel &amp; overhead → net income &amp; cashflow, ported from the EmberApps Operating Budget{% if EB.revenue.source == 'operations' %}; <strong>revenue overlaid from the live Operating Revenues report</strong>{% endif %}. USD.</div>
+
+      <div class="grid grid-3 mb-24">
+        <div class="kpi"><div class="kpi-top"><span class="kpi-label">Total Revenue</span></div><div class="kpi-value">{{ EB.kpis.revenue_life | money }}</div><div class="kpi-foot"><span class="kpi-sub">{{ EB.kpis.horizon_label }}</span></div></div>
+        <div class="kpi"><div class="kpi-top"><span class="kpi-label">Personnel</span></div><div class="kpi-value neg">{{ EB.kpis.people_life | money }}</div><div class="kpi-foot"><span class="kpi-sub">people (E + M)</span></div></div>
+        <div class="kpi"><div class="kpi-top"><span class="kpi-label">Other Operating Costs</span></div><div class="kpi-value neg">{{ EB.kpis.operations_life | money }}</div><div class="kpi-foot"><span class="kpi-sub">insurance, rent, IT…</span></div></div>
+        <div class="kpi"><div class="kpi-top"><span class="kpi-label">Total Costs</span></div><div class="kpi-value neg">{{ EB.kpis.costs_life | money }}</div><div class="kpi-foot"><span class="kpi-sub">people + operations</span></div></div>
         <div class="kpi"><div class="kpi-top"><span class="kpi-label">Net Income</span></div><div class="kpi-value {{ 'pos' if EB.kpis.net_income_life >= 0 else 'neg' }}">{{ EB.kpis.net_income_life | smoney }}</div><div class="kpi-foot"><span class="kpi-sub">revenue − costs</span></div></div>
         <div class="kpi"><div class="kpi-top"><span class="kpi-label">Net Cash Flow</span></div><div class="kpi-value {{ 'pos' if EB.kpis.cash_flow_life >= 0 else 'neg' }}">{{ EB.kpis.cash_flow_life | smoney }}</div><div class="kpi-foot"><span class="kpi-sub">{{ EB.kpis.horizon_label }}</span></div></div>
       </div>
-      <div class="table-scroll">
-        <table class="data-table">
-          <thead><tr><th>Line item</th>{% for y in EBY %}<th>{{ y }}</th>{% endfor %}</tr></thead>
-          <tbody>
-            {{ ebrow('Revenue', EB.revenue.total, EBY) }}
-            {{ ebrow('Personnel (People)', EB.people, EBY) }}
-            {{ ebrow('Other Operating Costs', EB.operations.total, EBY) }}
-            {{ ebrow('Total Costs', EB.total_costs, EBY, false, 'parent-row') }}
-            {{ ebrow('Net Income', EB.net_income, EBY, true, 'parent-row') }}
-            {{ ebrow('Cash Flow', EB.cash_flow, EBY, true) }}
-            {{ ebrow('Cumulative Cash Flow', EB.cumulative, EBY, true) }}
-          </tbody>
-        </table>
+
+      <div class="card-head" style="padding:0;"><div>
+        <div class="card-title" style="font-size:14px;">Revenue vs Costs &amp; Net Income</div>
+        <div class="card-sub">Monthly — revenue and total costs (bars), net income (line). USD.</div>
+      </div></div>
+      <div class="chart-wrap" style="height:300px;"><canvas id="budgetChart"></canvas></div>
+
+      <div class="divider"></div>
+      <div data-tabgroup>
+        <div class="tabs">
+          <button class="tab active" data-tab="bud-annual">Annual Summary</button>
+          <button class="tab" data-tab="bud-costs">Cost Breakdown</button>
+          <button class="tab" data-tab="bud-rev">Revenue Breakdown</button>
+          <button class="tab" data-tab="bud-monthly">Monthly Detail</button>
+        </div>
+
+        <div class="tab-panel active" data-panel="bud-annual">
+          <div class="table-scroll" style="max-height:none;">
+            <table class="data-table">
+              <thead><tr><th style="text-align:left;">Line item</th>{% for y in EBY %}<th>{{ y }}</th>{% endfor %}<th>Total</th></tr></thead>
+              <tbody>
+                {{ yrow('Total Revenue', EB.revenue.total, 'parent-row') }}
+                {{ yrow('Personnel (People)', EB.people) }}
+                {{ yrow('Other Operating Costs', EB.operations.total) }}
+                {{ yrow('Total Costs', EB.total_costs, 'parent-row') }}
+                {{ yrow('Net Income', EB.net_income, 'parent-row') }}
+                {{ yrow('Cash Flow', EB.cash_flow) }}
+                {{ yrow('Cumulative Cash Flow', EB.cumulative) }}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="tab-panel" data-panel="bud-costs">
+          <div class="table-scroll" style="max-height:none;">
+            <table class="data-table">
+              <thead><tr><th style="text-align:left;">Expense line</th>{% for y in EBY %}<th>{{ y }}</th>{% endfor %}<th>Total</th></tr></thead>
+              <tbody>
+                {{ yrow('Personnel (People)', EB.people, '', True) }}
+                {% for line in EB.operations.lines %}{{ yrow(line.name, line, '', True) }}{% endfor %}
+                {{ yrow('Total Costs', EB.total_costs, 'parent-row') }}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="tab-panel" data-panel="bud-rev">
+          {% if EB.revenue.source == 'operations' %}
+          <div class="row" style="gap:8px;align-items:center;margin-bottom:10px;">
+            <span class="badge good">● From Operating Revenues</span>
+            <span class="subtle" style="font-size:12px;">Live from the Operating Revenues report, not the budget workbook.</span>
+          </div>
+          {% endif %}
+          <div class="table-scroll" style="max-height:none;">
+            <table class="data-table">
+              <thead><tr><th style="text-align:left;">Source</th>{% for y in EBY %}<th>{{ y }}</th>{% endfor %}<th>Total</th></tr></thead>
+              <tbody>
+                {% for line in EB.revenue.lines %}{{ yrow(line.name, line, '', True) }}{% endfor %}
+                {{ yrow('Total Revenue', EB.revenue.total, 'parent-row') }}
+                {% if EB.revenue.excel %}{{ yrow('(budget workbook revenue)', EB.revenue.excel, '', True) }}{% endif %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="tab-panel" data-panel="bud-monthly">
+          <div class="table-scroll" style="max-height:520px;">
+            <table class="data-table">
+              <thead><tr><th style="text-align:left;">Line item</th>{% for ml in EBML %}<th style="white-space:nowrap;">{{ ml }}</th>{% endfor %}<th>Total</th></tr></thead>
+              <tbody>
+                {{ mrow('Total Revenue', EB.revenue.total, 'parent-row') }}
+                {{ mrow('Personnel (People)', EB.people, '', True) }}
+                {% for line in EB.operations.lines %}{{ mrow(line.name, line, '', True) }}{% endfor %}
+                {{ mrow('Other Operating Costs', EB.operations.total) }}
+                {{ mrow('Total Costs', EB.total_costs, 'parent-row') }}
+                {{ mrow('Net Income', EB.net_income, 'parent-row') }}
+                {{ mrow('Cash Flow', EB.cash_flow) }}
+              </tbody>
+            </table>
+          </div>
+        </div>
       </div>
     </div>
     {% endif %}
 
-    {% if fin %}
+    {# Financial Health is superseded by the Operating Budget on Ember (real
+       P&L from EmberApps); other companies still show the modelled view. #}
+    {% if fin and not ember_budget %}
     <div class="card mb-24">
       <div class="row between wrap" style="gap:8px;align-items:center;margin-bottom:16px;">
         <div class="card-title">Financial Health
@@ -360,6 +475,39 @@
     {{ category_panel('Operations') }}
   </div>
   <div class="tab-panel" data-panel="finance">
+    {# Project Returns & Promotes — moved here from Commercial (returns/carry
+       are a finance topic; Commercial now covers sales & leasing). #}
+    {% if ember_returns %}
+    <div class="card mb-24">
+      <div class="row wrap between" style="gap:8px;align-items:center;margin-bottom:16px;">
+        <div class="card-title">Project Returns &amp; Promotes</div>
+        <span class="row" style="gap:8px;align-items:center;"><span class="badge good">● Live from Ember</span>
+          <span class="subtle" style="font-size:12px;">{% if ember_returns.as_of %}as of {{ ember_returns.as_of }}{% endif %}</span></span>
+      </div>
+      <div class="grid grid-2 mb-24">
+        <div class="summary-card"><div class="lbl">Total Promote (carry to partners)</div><div class="val">{{ ember_returns.totals.promote | money }}</div></div>
+        <div class="summary-card"><div class="lbl">Total LP Distributions</div><div class="val">{{ ember_returns.totals.lp_dist | money }}</div></div>
+      </div>
+      <div class="table-scroll">
+        <table class="data-table">
+          <thead><tr><th style="text-align:left;">Project</th><th>LP IRR</th><th>Equity Multiple</th><th>LP Distributions</th><th>Promote</th></tr></thead>
+          <tbody>
+            {% for p in ember_returns.projects %}
+            <tr>
+              <td style="text-align:left;">{{ p.name }}</td>
+              <td>{{ (('%.1f'|format(p.lp_irr * 100)) ~ '%') if (p.lp_irr is not none and (p.lp_irr|abs) < 3) else ((('%.1f'|format(p.lp_irr)) ~ '%') if p.lp_irr is not none else '—') }}</td>
+              <td>{{ ('%.2f'|format(p.moic) ~ 'x') if p.moic is not none else '—' }}</td>
+              <td>{{ p.lp_dist | money }}</td>
+              <td>{{ p.promote | money }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <p class="subtle" style="font-size:12px;margin-top:12px;">Promote is the carried interest Ember/partners earn above LP preferred returns — a key driver of Ember's valuation while corporate EBITDA is near breakeven.</p>
+    </div>
+    {% endif %}
+
     {% if leverage is not none or (fin and fin.total_debt) %}
     <div class="card mb-24">
       <div class="card-title mb-16">Leverage &amp; Debt</div>
@@ -867,6 +1015,32 @@
           plugins:{ tooltip:{ callbacks:{ label:c=>c.dataset.label+': $'+c.parsed.y.toFixed(1)+'M' } } } } });
     }
     if(document.getElementById('distChart')) MQ.register(distChart);
+  })();
+  {% endif %}
+
+  {% if ember_budget %}
+  // ── Operating Budget: monthly revenue vs costs (bars) + net income (line) ──
+  (function(){
+    const M  = {{ ember_budget.meta.month_labels | tojson }};
+    const MK = {{ ember_budget.meta.months | tojson }};
+    const REV = {{ (ember_budget.revenue.total.months or {}) | tojson }};
+    const CST = {{ (ember_budget.total_costs.months or {}) | tojson }};
+    const NI  = {{ (ember_budget.net_income.months or {}) | tojson }};
+    const pick = (o) => MK.map(k => (o && o[k]) || 0);
+    function budgetChart(){
+      const ctx = document.getElementById('budgetChart'); if (!ctx) return null;
+      return new Chart(ctx, { data: { labels: M, datasets: [
+          { type:'bar', label:'Revenue', data:pick(REV), backgroundColor:MQ.hexA(MQ.palette(2), 0.75), borderWidth:0 },
+          { type:'bar', label:'Total Costs', data:pick(CST).map(v => -Math.abs(v)), backgroundColor:MQ.hexA(MQ.palette(4), 0.65), borderWidth:0 },
+          { type:'line', label:'Net Income', data:pick(NI), borderColor:MQ.palette(0), borderWidth:2.4, pointRadius:0, tension:0.3 } ]},
+        options:{ responsive:true, maintainAspectRatio:false, interaction:{mode:'index',intersect:false},
+          scales:{ x:{ grid:{display:false}, ticks:{ color:MQ.muted(), maxTicksLimit:12 } },
+            y:{ grid:{color:MQ.grid()}, ticks:{ color:MQ.muted(),
+                callback:v => (v<0?'-$':'$') + Math.abs(v/1000).toFixed(0) + 'k' } } },
+          plugins:{ legend:{ display:true, position:'bottom', labels:{ color:MQ.muted(), boxWidth:10, font:{size:11} } },
+            tooltip:{ callbacks:{ label:c => c.dataset.label + ': $' + Math.abs(c.parsed.y).toLocaleString(undefined,{maximumFractionDigits:0}) } } } } });
+    }
+    if (document.getElementById('budgetChart')) MQ.register(budgetChart);
   })();
   {% endif %}
 

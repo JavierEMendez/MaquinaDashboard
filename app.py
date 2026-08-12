@@ -2121,22 +2121,58 @@ def fetch_ember_sales():
         if not row or not row.get("data"):
             return None
         d = row["data"]
+        if isinstance(d, str):
+            d = json.loads(d)
         comms = d.get("communities") or {}
+        tg = d.get("targets") or {}
         order = ["gpd", "hld", "wrg"] + [k for k in comms if k not in ("gpd", "hld", "wrg")]
         out = []
         for key in order:
             c = comms.get(key)
             if not isinstance(c, dict):
                 continue
+            t_ann = tg.get(key + "_annual")
+            t_mon = tg.get(key + "_monthly")
+            pace = c.get("ytd_pace")
+            ytd = c.get("ytd_net")
             out.append(dict(
                 key=key, name=c.get("name") or key.upper(),
                 gross_total=c.get("gross_total"), total_net=c.get("total_net"),
-                ytd_net=c.get("ytd_net"), ytd_pace=c.get("ytd_pace"),
-                canc_total=c.get("canc_total"), avg_price=c.get("avg_price"),
-                earliest=c.get("earliest")))
+                ytd_net=ytd, ytd_pace=pace,
+                pace_prev=c.get("pace_prev"), pace_prev2=c.get("pace_prev2"),
+                canc_ytd=c.get("canc_ytd"), canc_total=c.get("canc_total"),
+                avg_price=c.get("avg_price"), earliest=c.get("earliest"),
+                target_annual=t_ann, target_monthly=t_mon,
+                # target vs actual
+                pace_pct=(round(pace / t_mon * 100) if (pace and t_mon) else None),
+                ytd_pct=(round(ytd / t_ann * 100) if (ytd and t_ann) else None),
+                on_track=(pace is not None and t_mon and pace >= t_mon * 0.8)))
         if not out:
             return None
-        return dict(communities=out, generated_at=d.get("generated_at"),
+
+        # Attention flags — mirrors EmberApps' exec-summary rules exactly:
+        # pace < 80% of monthly target, or YTD cancels > 30% of YTD nets.
+        flags = []
+        for c in out:
+            if c["ytd_pace"] is not None and c["target_monthly"]:
+                ratio = c["ytd_pace"] / c["target_monthly"]
+                if ratio < 0.8:
+                    flags.append("%s YTD pace is %d%% of target (%.1f/mo vs %d/mo)."
+                                 % (c["name"], round(ratio * 100), c["ytd_pace"], c["target_monthly"]))
+            if c["canc_ytd"] and c["ytd_net"] and c["canc_ytd"] > c["ytd_net"] * 0.3:
+                flags.append("%s cancellations are heavy (%d YTD vs %d net)."
+                             % (c["name"], c["canc_ytd"], c["ytd_net"]))
+
+        combined = dict(
+            ytd_net=sum((c["ytd_net"] or 0) for c in out),
+            total_net=sum((c["total_net"] or 0) for c in out),
+            canc_ytd=sum((c["canc_ytd"] or 0) for c in out),
+            target_annual=tg.get("combined_annual"),
+            target_monthly=tg.get("combined_monthly"))
+        combined["ytd_pct"] = (round(combined["ytd_net"] / combined["target_annual"] * 100)
+                               if combined["target_annual"] else None)
+        return dict(communities=out, combined=combined, flags=flags, targets=tg,
+                    generated_at=d.get("generated_at"),
                     as_of=(row["uploaded_at"].strftime("%Y-%m-%d") if row.get("uploaded_at") else None))
     except Exception as e:  # pragma: no cover
         app.logger.warning("Ember sales fetch failed: %s", e)
@@ -2148,7 +2184,7 @@ def ember_diagnostics():
     Never writes. Returns connection status, available report types, and the
     shape of the latest 'operations' report so we can map KPIs precisely."""
     info = {"configured": bool(os.environ.get("EMBER_DATABASE_URL", "").strip()),
-            "connected": False, "error": None, "report_types": [], "budget_raw": None}
+            "connected": False, "error": None, "report_types": []}
     if not info["configured"]:
         return info
     try:
@@ -2162,35 +2198,6 @@ def ember_diagnostics():
             (r["report_type"], r["n"], r["last"].strftime("%Y-%m-%d") if r["last"] else "—")
             for r in ecur.fetchall()
         ]
-
-        # ── Operating Budget shape probe — TEMPORARY diagnostic ──
-        try:
-            ecur.execute("SELECT data, uploaded_at FROM reports WHERE report_type='ember_budget' "
-                         "ORDER BY uploaded_at DESC LIMIT 1")
-            br = ecur.fetchone()
-            if br and br.get("data"):
-                d = br["data"]
-                if isinstance(d, str):
-                    d = json.loads(d)
-                shape = {"top_keys": sorted(d.keys()),
-                         "uploaded": str(br.get("uploaded_at"))[:10],
-                         "meta": {k: (v if not isinstance(v, list) else
-                                      {"len": len(v), "first": v[0] if v else None,
-                                       "last": v[-1] if v else None})
-                                  for k, v in (d.get("meta") or {}).items()},
-                         "kpi_keys": sorted((d.get("kpis") or {}).keys()),
-                         "revenue_keys": sorted((d.get("revenue") or {}).keys()),
-                         "revenue_lines": [l.get("name") for l in (d.get("revenue") or {}).get("lines") or []],
-                         "operations_keys": sorted((d.get("operations") or {}).keys()),
-                         "operations_lines": [l.get("name") for l in (d.get("operations") or {}).get("lines") or []],
-                         "series_keys": sorted((d.get("net_income") or {}).keys()),
-                         "n_months": len(((d.get("net_income") or {}).get("months") or {})),
-                         "sample_line": ((d.get("operations") or {}).get("lines") or [{}])[0]}
-                info["budget_raw"] = json.dumps(shape, default=str, ensure_ascii=False)[:3800]
-            else:
-                info["budget_raw"] = "NO ember_budget ROW IN reports"
-        except Exception as e:
-            info["budget_raw"] = "probe error: " + str(e)[:200]
 
         info["connected"] = True
         ecur.close(); econn.close()
