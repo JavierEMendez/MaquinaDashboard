@@ -2239,7 +2239,7 @@ def ember_diagnostics():
     Never writes. Returns connection status, available report types, and the
     shape of the latest 'operations' report so we can map KPIs precisely."""
     info = {"configured": bool(os.environ.get("EMBER_DATABASE_URL", "").strip()),
-            "connected": False, "error": None, "report_types": [], "ops_raw": None}
+            "connected": False, "error": None, "report_types": []}
     if not info["configured"]:
         return info
     try:
@@ -2253,41 +2253,6 @@ def ember_diagnostics():
             (r["report_type"], r["n"], r["last"].strftime("%Y-%m-%d") if r["last"] else "—")
             for r in ecur.fetchall()
         ]
-
-        # ── TEMP: operations monthly-axis probe (verify budget overlay fidelity) ──
-        try:
-            ecur.execute("SELECT data FROM reports WHERE report_type='operations' "
-                         "ORDER BY uploaded_at DESC LIMIT 1")
-            orow = ecur.fetchone()
-            od = (orow or {}).get("data") or {}
-            if isinstance(od, str):
-                od = json.loads(od)
-            mo = od.get("monthly") or {}
-            dates = mo.get("dates") or []
-            tot = mo.get("totals") or []
-            bym = {}
-            for iso, v in zip(dates, tot):
-                s = str(iso or "")
-                if len(s) >= 7:
-                    bym[s[:7]] = round(bym.get(s[:7], 0.0) + float(v or 0), 2)
-            ecur.execute("SELECT data FROM reports WHERE report_type='ember_budget' "
-                         "ORDER BY uploaded_at DESC LIMIT 1")
-            brow = ecur.fetchone()
-            bd = (brow or {}).get("data") or {}
-            if isinstance(bd, str):
-                bd = json.loads(bd)
-            xl_m = ((bd.get("revenue") or {}).get("total") or {}).get("months") or {}
-            keys = ["2026-11", "2026-12", "2027-01", "2027-12"]
-            info["ops_raw"] = json.dumps({
-                "ops_monthly_present": bool(dates),
-                "ops_months": len(bym), "ops_first": (sorted(bym)[:1] or [None])[0],
-                "ops_last": (sorted(bym)[-1:] or [None])[0],
-                "compare_excel_vs_ops": {k: {"excel": xl_m.get(k), "ops": bym.get(k),
-                                             "delta": (round((bym.get(k) or 0) - (xl_m.get(k) or 0), 2))}
-                                         for k in keys},
-            }, default=str)[:2000]
-        except Exception as e:
-            info["ops_raw"] = "probe error: " + str(e)[:200]
 
         info["connected"] = True
         ecur.close(); econn.close()
