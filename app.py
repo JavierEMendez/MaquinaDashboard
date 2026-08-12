@@ -856,8 +856,18 @@ def _meta_base_assumptions(mc=None):
         a, b, yrs = R["model"][si], R["model"][-1], Y[-1] - Y[si]
         nom = (b / a) ** (1 / yrs) - 1
         ixg = (IX[-1] / IX[si]) ** (1 / yrs) - 1
+        # Decompose nominal revenue growth into its two independent drivers:
+        # vehicles (real volume) and tarifa (nominal price per passage).
+        # Revenue growth = (1+traffic) x (1+tarifa) - 1, exactly.
+        p0, p1 = R["passages"][si], R["passages"][-1]
+        pas = (p1 / p0) ** (1 / yrs) - 1
+        tar = ((b / p1) / (a / p0)) ** (1 / yrs) - 1
         out[key] = {"start_year": Y[si], "start": a, "end": b,
-                    "nom_cagr": nom * 100, "real_cagr": ((1 + nom) / (1 + ixg) - 1) * 100}
+                    "nom_cagr": nom * 100, "real_cagr": ((1 + nom) / (1 + ixg) - 1) * 100,
+                    "pas_start": p0, "pas_end": p1,
+                    "pas_cagr": pas * 100,                       # vehicles
+                    "tar_cagr": tar * 100,                       # tarifa, nominal
+                    "tar_real": ((1 + tar) / (1 + ixg) - 1) * 100}  # tarifa, real (~0)
     return out
 
 
