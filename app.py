@@ -2279,7 +2279,7 @@ def ember_diagnostics():
     Never writes. Returns connection status, available report types, and the
     shape of the latest 'operations' report so we can map KPIs precisely."""
     info = {"configured": bool(os.environ.get("EMBER_DATABASE_URL", "").strip()),
-            "connected": False, "error": None, "report_types": [], "views": []}
+            "connected": False, "error": None, "report_types": [], "views": [], "capv": None}
     if not info["configured"]:
         return info
     try:
@@ -2305,6 +2305,24 @@ def ember_diagnostics():
                              for r in ecur.fetchall()]
         except Exception as e:
             info["views_error"] = str(e)[:160]
+
+        # ── TEMP: view:capital value probe (unit verification) ──
+        try:
+            ecur.execute("SELECT data FROM reports WHERE report_type='view:capital' "
+                         "ORDER BY uploaded_at DESC LIMIT 1")
+            r = ecur.fetchone()
+            dd = (r or {}).get("data") or {}
+            if isinstance(dd, str):
+                dd = json.loads(dd)
+            info["capv"] = json.dumps({
+                "as_of": dd.get("as_of"),
+                "kpis": dd.get("kpis"),
+                "active_first2": (dd.get("active") or [])[:2],
+                "commit_totals": (dd.get("commitments") or {}).get("totals"),
+                "commit_group0": ((dd.get("commitments") or {}).get("groups") or [None])[0],
+            }, default=str, ensure_ascii=False)[:4200]
+        except Exception as e:
+            info["capv"] = "probe error: " + str(e)[:200]
 
         info["connected"] = True
         ecur.close(); econn.close()
