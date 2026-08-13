@@ -15,6 +15,9 @@
   --font-display: 'Space Grotesk', 'Inter', system-ui, -apple-system, sans-serif;
   --font-sans:    'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
   --font-mono:    'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+  /* Numbers: Inter's tabular figures — lighter and less bulky than the
+     display face at KPI sizes. Headings keep --font-display. */
+  --font-num:     'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
 
   --mq-radius:    14px;
   --mq-radius-sm: 10px;
@@ -272,7 +275,7 @@ body.sb-collapsed .main { margin-left: 0; }
 .kpi-top { display: flex; align-items: center; justify-content: space-between; }
 .kpi-label { font-size: 12px; color: var(--mq-muted); font-weight: 600; letter-spacing: 0.01em; }
 .kpi-icon { color: var(--mq-subtle); display: inline-flex; }
-.kpi-value { font-family: var(--font-display); font-size: 27px; font-weight: 700; color: var(--mq-ink-2); letter-spacing: -0.02em; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.kpi-value { font-family: var(--font-num); font-size: 23px; font-weight: 600; color: var(--mq-ink-2); letter-spacing: -0.015em; line-height: 1.15; font-variant-numeric: tabular-nums; font-feature-settings: 'tnum' 1, 'cv05' 1; }
 .kpi-foot { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--mq-subtle); margin-top: auto; }
 .kpi-sub { font-size: 11.5px; color: var(--mq-subtle); }
 
@@ -287,7 +290,7 @@ body.sb-collapsed .main { margin-left: 0; }
 /* Currency summary cards (home) */
 .summary-card { background: var(--mq-surface-2); border: 1px solid var(--mq-line); border-radius: var(--mq-radius-sm); padding: 18px; }
 .summary-card .lbl { display: flex; align-items: center; justify-content: space-between; font-size: 12.5px; color: var(--mq-muted); font-weight: 600; }
-.summary-card .val { font-family: var(--font-display); font-size: 28px; font-weight: 700; color: var(--mq-ink-2); margin-top: 8px; letter-spacing: -0.02em; }
+.summary-card .val { font-family: var(--font-num); font-size: 23px; font-weight: 600; color: var(--mq-ink-2); margin-top: 8px; letter-spacing: -0.015em; font-variant-numeric: tabular-nums; font-feature-settings: 'tnum' 1, 'cv05' 1; }
 .summary-card .cap { font-size: 12px; color: var(--mq-subtle); margin-top: 4px; }
 
 /* ============================================================
@@ -326,7 +329,7 @@ body.sb-collapsed .main { margin-left: 0; }
    Tables (summary + planning matrix)
    ============================================================ */
 .data-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-.data-table th, .data-table td { padding: 9px 12px; text-align: right; border-bottom: 1px solid var(--mq-line); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.data-table th, .data-table td { padding: 9px 12px; text-align: right; border-bottom: 1px solid var(--mq-line); white-space: nowrap; font-variant-numeric: tabular-nums; font-feature-settings: 'tnum' 1; }
 .data-table th { color: var(--mq-subtle); font-weight: 600; font-size: 11px; letter-spacing: 0.04em; text-transform: uppercase; position: sticky; top: 0; background: var(--mq-surface); z-index: 1; }
 .data-table th:first-child, .data-table td:first-child { text-align: left; position: sticky; left: 0; background: var(--mq-surface); font-weight: 500; color: var(--mq-ink); }
 .data-table tr:hover td { background: var(--mq-surface-2); }
@@ -394,7 +397,7 @@ select.input { appearance: none; background-image: url("data:image/svg+xml;utf8,
    ============================================================ */
 .muted { color: var(--mq-muted); }
 .subtle { color: var(--mq-subtle); }
-.tnum { font-variant-numeric: tabular-nums; }
+.tnum { font-family: var(--font-num); font-variant-numeric: tabular-nums; font-feature-settings: 'tnum' 1; }
 .row { display: flex; align-items: center; gap: 12px; }
 .between { justify-content: space-between; }
 .wrap { flex-wrap: wrap; }
