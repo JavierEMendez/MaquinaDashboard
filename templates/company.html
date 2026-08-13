@@ -677,6 +677,21 @@
       <div class="chart-wrap" style="height:340px;"><canvas id="compChart"></canvas></div>
     </div>
 
+    {# ── Distributions by investor (Meta's 5 LPs; Maquina also earns the promote) ── #}
+    <div class="card mb-24">
+      <div class="card-head"><div>
+        <div class="card-title">Distributions by Investor</div>
+        <div class="card-sub">Total cash out to each of Meta's five investors over the deal (mdp, nominal), split into the at-baseline slice, the above-baseline slice, and Maquina's promote on top. Live — responds to the sliders above.</div>
+      </div></div>
+
+      <div class="chart-wrap" style="height:300px;"><canvas id="investorChart"></canvas></div>
+
+      <p class="subtle" style="font-size:11.5px;line-height:1.6;margin-top:4px;">
+        Meta's five investors hold equal 20% stakes. Each receives their share of the at-baseline and above-baseline
+        distributions; <strong>Maquina additionally receives the entire promote</strong>, the third segment on bar 1.
+      </p>
+    </div>
+
     <div class="grid grid-2 mb-24" style="align-items:start;">
       <div class="card">
         <div class="row between wrap" style="gap:8px;margin-bottom:14px;">
@@ -700,11 +715,12 @@
           <span style="text-transform:none;letter-spacing:0;font-weight:500;">— sliders are deltas vs the workbook's own assumptions, shown beneath each</span></div>
         <div style="{{ srow }}"><span><span style="{{ slbl }}">Toll level — Ventura</span><span style="{{ sbase }}">base 100% = Valoran tarifas · Auto <strong>${{ '%.2f'|format(comp.ventura.toll_auto) }}</strong> · blended <strong>${{ '%.0f'|format(comp.ventura.toll_blend) }}</strong>/passage ({{ comp.ventura.toll_when }})</span></span><input type="range" id="comp-lvl-v" min="60" max="140" step="1" value="100" style="accent-color:var(--mq-accent);"><span style="{{ sval }}" id="lbl-lvl-v">100%</span></div>
         <div style="{{ srow }}"><span><span style="{{ slbl }}">Toll level — Pitahaya</span><span style="{{ sbase }}">base 100% = Valoran tarifas · Auto <strong>${{ '%.2f'|format(comp.pitahaya.toll_auto) }}</strong> · blended <strong>${{ '%.0f'|format(comp.pitahaya.toll_blend) }}</strong>/passage ({{ comp.pitahaya.toll_when }})</span></span><input type="range" id="comp-lvl-p" min="60" max="140" step="1" value="100" style="accent-color:var(--mq-accent);"><span style="{{ sval }}" id="lbl-lvl-p">100%</span></div>
-        <div style="{{ srow }}"><span><span style="{{ slbl }}">Traffic growth Δ (tcma)</span><span style="{{ sbase }}">base <strong>+{{ '%.1f'|format(bs.ventura.pas_cagr) }}%/yr in vehicles</strong> ({{ '{:,.1f}'.format(bs.ventura.pas_start) }}M→{{ '{:,.1f}'.format(bs.ventura.pas_end) }}M passages/yr, Ventura {{ bs.ventura.start_year }}→{{ comp.years[-1] }}) — the only <em>real</em> growth driver</span></span><input type="range" id="comp-growth" min="-3" max="3" step="0.25" value="0" style="accent-color:var(--mq-accent);"><span style="{{ sval }}" id="lbl-growth">+0.0%</span></div>
+        <div style="{{ srow }}"><span><span style="{{ slbl }}">Traffic growth Δ — Ventura</span><span style="{{ sbase }}">base <strong>+{{ '%.1f'|format(bs.ventura.pas_cagr) }}%/yr in vehicles</strong> ({{ '{:,.1f}'.format(bs.ventura.pas_start) }}M→{{ '{:,.1f}'.format(bs.ventura.pas_end) }}M passages/yr, {{ bs.ventura.start_year }}→{{ comp.years[-1] }})</span></span><input type="range" id="comp-growth-v" min="-3" max="3" step="0.25" value="0" style="accent-color:var(--mq-accent);"><span style="{{ sval }}" id="lbl-growth-v">+0.0%</span></div>
+        <div style="{{ srow }}"><span><span style="{{ slbl }}">Traffic growth Δ — Pitahaya</span><span style="{{ sbase }}">base <strong>+{{ '%.1f'|format(bs.pitahaya.pas_cagr) }}%/yr in vehicles</strong> ({{ '{:,.1f}'.format(bs.pitahaya.pas_start) }}M→{{ '{:,.1f}'.format(bs.pitahaya.pas_end) }}M passages/yr, {{ bs.pitahaya.start_year }}→{{ comp.years[-1] }})</span></span><input type="range" id="comp-growth-p" min="-3" max="3" step="0.25" value="0" style="accent-color:var(--mq-accent);"><span style="{{ sval }}" id="lbl-growth-p">+0.0%</span></div>
         <div style="{{ srow }}"><span><span style="{{ slbl }}">Inflation (INPC) Δ</span><span style="{{ sbase }}">base {{ '%.1f'|format(bs.infl_first) }}%/yr ({{ comp.years[0] }}→{{ comp.years[1] }}) easing to {{ '%.1f'|format(bs.infl_last) }}% by {{ comp.years[-1] }} — tarifas rise <strong>{{ '%.1f'|format(bs.ventura.tar_cagr) }}%/yr nominal, {{ '%+.1f'|format(bs.ventura.tar_real) }}% real</strong> (INPC only)</span></span><input type="range" id="comp-infl" min="-2" max="2" step="0.25" value="0" style="accent-color:var(--mq-accent);"><span style="{{ sval }}" id="lbl-infl">+0.0%</span></div>
         <div style="font-size:10.5px;color:var(--mq-subtle);line-height:1.55;margin:6px 0 2px;padding:7px 9px;background:var(--mq-surface-2);border-radius:6px;">
           <strong>How the two combine</strong> (CAGRs, Ventura {{ bs.ventura.start_year }}→{{ comp.years[-1] }}): revenue = vehicles × tarifa, so
-          ({{ '%.1f'|format(bs.ventura.pas_cagr) }}% traffic) × ({{ '%.1f'|format(bs.ventura.tar_cagr) }}% tarifa) = <strong>{{ '%.1f'|format(bs.ventura.nom_cagr) }}%/yr nominal revenue</strong>.
+          ({{ '%.1f'|format(bs.ventura.pas_cagr) }}% traffic, Ventura) × ({{ '%.1f'|format(bs.ventura.tar_cagr) }}% tarifa) = <strong>{{ '%.1f'|format(bs.ventura.nom_cagr) }}%/yr nominal revenue</strong>.
           Since tarifas only track inflation, <em>all</em> real growth comes from traffic.
         </div>
         <div style="font-size:10px;letter-spacing:0.13em;text-transform:uppercase;color:var(--mq-subtle);font-weight:700;margin:12px 0 2px;">Valuation</div>
@@ -741,21 +757,6 @@
         <div style="margin:12px 0;"></div>
         <p class="subtle" style="font-size:11.5px;line-height:1.6;margin-top:12px;">Method: yearly excess = max(0, model revenues − concession-title baseline indexed by INPC). The excess is layered against the baseline hurdles and promoted at the hurdle percentages. NPV deflates nominal flows to 2026 pesos and discounts at the real rate, post-tax. Base series extracted 1-for-1 from Valoran's updated workbook ("Aux. Compartición": H2-2026 stub period, then annual through concession end 2050 — base-case nominal total <strong>$2,849 mdp</strong>, ties to the Excel).</p>
       </div>
-    </div>
-
-    {# ── Distributions by investor (Meta's 5 LPs; Maquina also earns the promote) ── #}
-    <div class="card mb-24">
-      <div class="card-head"><div>
-        <div class="card-title">Distributions by Investor</div>
-        <div class="card-sub">Total cash out to each of Meta's five investors over the deal (mdp, nominal), split into the at-baseline slice, the above-baseline slice, and Maquina's promote on top. Live — responds to the sliders above.</div>
-      </div></div>
-
-      <div class="chart-wrap" style="height:300px;"><canvas id="investorChart"></canvas></div>
-
-      <p class="subtle" style="font-size:11.5px;line-height:1.6;margin-top:4px;">
-        Meta's five investors hold equal 20% stakes. Each receives their share of the at-baseline and above-baseline
-        distributions; <strong>Maquina additionally receives the entire promote</strong>, the third segment on bar 1.
-      </p>
     </div>
 
     {# ── Toll economics: model tarifa vs título-implied, per passage ── #}
@@ -1268,7 +1269,7 @@
     const COMP = {{ comp | tojson }};
     const N = COMP.years.length, Y = COMP.years;
     const $ = id => document.getElementById(id);
-    const SLIDERS = ['lvl-v','lvl-p','growth','infl','disc','tax','th1','th2','th3','sh1','sh2','sh3','sh4'];
+    const SLIDERS = ['lvl-v','lvl-p','growth-v','growth-p','infl','disc','tax','th1','th2','th3','sh1','sh2','sh3','sh4'];
     let compChart = null;
 
     function cfg(){
@@ -1277,7 +1278,8 @@
       return {
         roads: { ventura: $('comp-road-v').checked, pitahaya: $('comp-road-p').checked },
         level: { ventura: +$('comp-lvl-v').value/100, pitahaya: +$('comp-lvl-p').value/100 },
-        growth: +$('comp-growth').value/100, infl: +$('comp-infl').value/100,
+        growth: { ventura: +$('comp-growth-v').value/100, pitahaya: +$('comp-growth-p').value/100 },
+        infl: +$('comp-infl').value/100,
         disc: +$('comp-disc').value/100, tax: +$('comp-tax').value/100,
         th: [t1/100, t2/100, t3/100],
         sh: [+$('comp-sh1').value/100, +$('comp-sh2').value/100, +$('comp-sh3').value/100, +$('comp-sh4').value/100],
@@ -1304,7 +1306,7 @@
           const ix = COMP.index[i] * Math.pow(1 + c.infl, Y[i] - 2026);
           const base = R.tdc[i] * ix;
           const real = R.model[i] / COMP.index[i];             // base-case real revenues
-          const model = real * ix * c.level[key] * Math.pow(1 + c.growth, Math.max(0, Y[i] - 2027));
+          const model = real * ix * c.level[key] * Math.pow(1 + c.growth[key], Math.max(0, Y[i] - 2027));
           const exc = Math.max(0, model - base);
           const b = [
             Math.min(exc, base * c.th[0]),
@@ -1319,7 +1321,7 @@
           road.shareY[i] = s; road.retainedY[i] = model - s;
           // Toll economics: the growth slider moves VEHICLES, so passages scale
           // with it and cancel out of the model tarifa (level/inflation remain).
-          const pas = (R.passages ? R.passages[i] : 0) * Math.pow(1 + c.growth, Math.max(0, Y[i] - 2027));
+          const pas = (R.passages ? R.passages[i] : 0) * Math.pow(1 + c.growth[key], Math.max(0, Y[i] - 2027));
           if (pas > 0){
             const gap = base > 0 ? (model / base - 1) : null;
             road.tollY[i] = { pas: pas, model: model / pas, base: base / pas,
@@ -1346,7 +1348,10 @@
     function syncLabels(c){
       $('lbl-lvl-v').textContent = Math.round(c.level.ventura*100) + '%';
       $('lbl-lvl-p').textContent = Math.round(c.level.pitahaya*100) + '%';
-      $('lbl-growth').textContent = (c.growth>=0?'+':'') + (c.growth*100).toFixed(1) + '%';
+      ['v','p'].forEach(k => {
+        const g = k === 'v' ? c.growth.ventura : c.growth.pitahaya;
+        $('lbl-growth-' + k).textContent = (g>=0?'+':'') + (g*100).toFixed(1) + '%';
+      });
       $('lbl-infl').textContent = (c.infl>=0?'+':'') + (c.infl*100).toFixed(1) + '%';
       $('lbl-disc').textContent = (c.disc*100).toFixed(1) + '%';
       $('lbl-tax').textContent = Math.round(c.tax*100) + '%';
@@ -1579,13 +1584,13 @@
 
     window.compPreset = function(name){
       const set = (id, v) => { $(id).value = v; };
-      set('comp-lvl-v', 100); set('comp-lvl-p', 100); set('comp-growth', 0); set('comp-infl', 0);
+      set('comp-lvl-v', 100); set('comp-lvl-p', 100); set('comp-growth-v', 0); set('comp-growth-p', 0); set('comp-infl', 0);
       set('comp-disc', 9); set('comp-tax', 30);
       set('comp-th1', 30); set('comp-th2', 50); set('comp-th3', 75);
       set('comp-sh1', 5); set('comp-sh2', 40); set('comp-sh3', 60); set('comp-sh4', 75);
       $('comp-road-v').checked = true; $('comp-road-p').checked = true;
-      if (name === 'cons'){ set('comp-lvl-v', 90); set('comp-lvl-p', 90); set('comp-growth', -1); }
-      if (name === 'opt'){ set('comp-lvl-v', 110); set('comp-lvl-p', 110); set('comp-growth', 1); }
+      if (name === 'cons'){ set('comp-lvl-v', 90); set('comp-lvl-p', 90); set('comp-growth-v', -1); set('comp-growth-p', -1); }
+      if (name === 'opt'){ set('comp-lvl-v', 110); set('comp-lvl-p', 110); set('comp-growth-v', 1); set('comp-growth-p', 1); }
       recompute();
     };
 
