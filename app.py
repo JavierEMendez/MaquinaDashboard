@@ -2443,7 +2443,7 @@ def ember_diagnostics():
     Never writes. Returns connection status, available report types, and the
     shape of the latest 'operations' report so we can map KPIs precisely."""
     info = {"configured": bool(os.environ.get("EMBER_DATABASE_URL", "").strip()),
-            "connected": False, "error": None, "report_types": [], "views": []}
+            "connected": False, "error": None, "report_types": [], "views": [], "hw_raw": None}
     if not info["configured"]:
         return info
     try:
@@ -2469,6 +2469,26 @@ def ember_diagnostics():
                              for r in ecur.fetchall()]
         except Exception as e:
             info["views_error"] = str(e)[:160]
+
+        # ── TEMP: Hawthorne title vs level probe ──
+        try:
+            ecur.execute("SELECT data FROM vd_hawthorne_data WHERE vertical='hawthorne' "
+                         "ORDER BY created_at DESC LIMIT 1")
+            r = ecur.fetchone()
+            dd = (r or {}).get("data") or {}
+            if isinstance(dd, str):
+                dd = json.loads(dd)
+            us = [u for u in (dd.get("units") or []) if isinstance(u, dict)]
+            pairs = [(u.get("title"), u.get("level")) for u in us]
+            lv = {}
+            for ti, l in pairs:
+                lv.setdefault(l, []).append(ti)
+            info["hw_raw"] = json.dumps({
+                "n": len(us),
+                "levels": {str(k): v for k, v in sorted(lv.items(), key=lambda x: (x[0] is None, x[0]))},
+            }, default=str, ensure_ascii=False)[:4000]
+        except Exception as e:
+            info["hw_raw"] = "probe error: " + str(e)[:200]
 
         info["connected"] = True
         ecur.close(); econn.close()
