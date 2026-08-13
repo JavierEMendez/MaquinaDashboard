@@ -2334,13 +2334,28 @@ def fetch_ember_verticals():
                     sold_ppsf += float(u.get("ppsf") or 0)
             # Stacking plan: floors top-down, units left-to-right — mirrors
             # the building layout on EmberApps' Hawthorne report.
+            def _hw_level(u):
+                """Floor for a Hawthorne unit. Ember's data carries a null
+                `level` on a few units (806, 1701 as of Aug-2026), so fall back
+                to the unit number, where the trailing two digits are the unit
+                and the leading digits are the floor: 806 -> 8, 1701 -> 17."""
+                lv = u.get("level")
+                if lv is not None:
+                    try:
+                        return int(lv)
+                    except (TypeError, ValueError):
+                        pass
+                digits = "".join(ch for ch in str(u.get("title") or "") if ch.isdigit())
+                if len(digits) >= 3:
+                    try:
+                        return int(digits[:-2])
+                    except ValueError:
+                        pass
+                return 0
+
             by_level = {}
             for u in units:
-                try:
-                    lv = int(u.get("level") or 0)
-                except (TypeError, ValueError):
-                    lv = 0
-                by_level.setdefault(lv, []).append(u)
+                by_level.setdefault(_hw_level(u), []).append(u)
             stacking = []
             for lv in sorted(by_level, reverse=True):
                 row = sorted(by_level[lv], key=lambda x: str(x.get("title") or ""))
@@ -2443,7 +2458,7 @@ def ember_diagnostics():
     Never writes. Returns connection status, available report types, and the
     shape of the latest 'operations' report so we can map KPIs precisely."""
     info = {"configured": bool(os.environ.get("EMBER_DATABASE_URL", "").strip()),
-            "connected": False, "error": None, "report_types": [], "views": [], "hw_raw": None}
+            "connected": False, "error": None, "report_types": [], "views": []}
     if not info["configured"]:
         return info
     try:
@@ -2469,26 +2484,6 @@ def ember_diagnostics():
                              for r in ecur.fetchall()]
         except Exception as e:
             info["views_error"] = str(e)[:160]
-
-        # ── TEMP: Hawthorne title vs level probe ──
-        try:
-            ecur.execute("SELECT data FROM vd_hawthorne_data WHERE vertical='hawthorne' "
-                         "ORDER BY created_at DESC LIMIT 1")
-            r = ecur.fetchone()
-            dd = (r or {}).get("data") or {}
-            if isinstance(dd, str):
-                dd = json.loads(dd)
-            us = [u for u in (dd.get("units") or []) if isinstance(u, dict)]
-            pairs = [(u.get("title"), u.get("level")) for u in us]
-            lv = {}
-            for ti, l in pairs:
-                lv.setdefault(l, []).append(ti)
-            info["hw_raw"] = json.dumps({
-                "n": len(us),
-                "levels": {str(k): v for k, v in sorted(lv.items(), key=lambda x: (x[0] is None, x[0]))},
-            }, default=str, ensure_ascii=False)[:4000]
-        except Exception as e:
-            info["hw_raw"] = "probe error: " + str(e)[:200]
 
         info["connected"] = True
         ecur.close(); econn.close()
