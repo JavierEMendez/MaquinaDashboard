@@ -737,33 +737,28 @@
       <div class="row between wrap" style="gap:12px;align-items:flex-start;">
         <div style="max-width:900px;">
           <div class="card-title" style="font-size:16px;">Enterprise Value Analysis — Meta &amp; IPC toll roads</div>
-          <div class="card-sub">Enterprise value is the NPV of each highway's Ingresos × an EBITDA margin per company
+          <div class="card-sub">META and IPC each carry their own enterprise value — the NPV of their highways' Ingresos × an EBITDA margin per company
             (inputs below, <strong id="ev-mg-txt">80% META · 80% IPC</strong>; the model's own cash flows imply META {{ '%.1f'|format((polaris.meta.margins.META or 1) * 100) }}% · IPC {{ '%.1f'|format((polaris.meta.margins.IPC or 1) * 100) }}%),
-            discounted monthly from {{ polaris.meta.model_start }}. The baseline is the model exactly as uploaded. The sliders reprice each highway; the highways add up to the
-            total, and any value created above the baseline is shared — <strong id="ev-rule-txt">20% to Maquina first, the rest split five ways</strong>.</div>
+            discounted monthly from {{ polaris.meta.model_start }}. The baseline is the model exactly as uploaded. The sliders reprice each highway; highways add up to their company's EV, and value created above
+            that company's baseline is shared within the company — <strong id="ev-rule-txt">20% to Maquina first, the rest split five ways</strong>.</div>
         </div>
         <button class="btn btn-sm btn-ghost" type="button" onclick="evReset()">Reset to model</button>
       </div>
-      <div class="grid grid-4" style="margin-top:16px;">
-        <div class="kpi"><div class="kpi-top"><span class="kpi-label">Baseline EV</span></div><div class="kpi-value" id="ev-base">—</div><div class="kpi-foot"><span class="kpi-sub" id="ev-base-usd">model as uploaded</span></div></div>
-        <div class="kpi"><div class="kpi-top"><span class="kpi-label">Scenario EV</span></div><div class="kpi-value" id="ev-scen">—</div><div class="kpi-foot"><span class="kpi-sub" id="ev-scen-usd">with slider settings</span></div></div>
-        <div class="kpi"><div class="kpi-top"><span class="kpi-label">Value Created</span></div><div class="kpi-value" id="ev-delta">—</div><div class="kpi-foot"><span class="kpi-sub" id="ev-delta-sub">Δ vs baseline</span></div></div>
-        <div class="kpi"><div class="kpi-top"><span class="kpi-label">Maquina Ownership</span></div><div class="kpi-value" style="color:var(--mq-accent);" id="ev-own">20.0%</div><div class="kpi-foot"><span class="kpi-sub" id="ev-mq">—</span></div></div>
-      </div>
+      <div id="ev-summary" style="margin-top:16px;"></div>
       <p class="subtle" style="font-size:11.5px;line-height:1.6;margin-top:14px;">
         Nominal MXN, sin IVA. USD at {{ '%.2f'|format(polaris.rate) }} MXN.
         {% if polaris.meta.concession_end and polaris.meta.concession_end.IPC %}The IPC concession runs to {{ polaris.meta.concession_end.IPC }} but the model's revenue ends {{ polaris.meta.horizon_end }}; nothing is extrapolated past the model.{% endif %}
-        The discount rate moves baseline and scenario together, so it changes total value but never the split. Ownership floors at the baseline stake when a scenario destroys value.
+        The discount rate and margins move baseline and scenario together, so they change value but never the split. Ownership floors at the baseline stake when a company's scenario destroys value, and the rollup simply sums the two companies — a loss in one never offsets upside in the other.
       </p>
     </div>
 
     <div class="card mb-24">
       <div class="card-head"><div><div class="card-title">Enterprise Ownership by Investor</div>
-        <div class="card-sub">Each investor's baseline stake plus their share of value created. Maquina holds a 20% stake and takes the first slice of any upside.</div></div></div>
+        <div class="card-sub">Each bar is one investor's capital value across both companies: their baseline stake in META and in IPC, plus their share of value created in each. Maquina holds a 20% stake in both and takes the first slice of any upside. The end label is rollup ownership.</div></div></div>
       <div class="chart-wrap" style="height:280px;"><canvas id="ownChart"></canvas></div>
       <div class="table-scroll" style="max-height:none;border:none;margin-top:14px;">
         <table class="data-table">
-          <thead><tr><th style="text-align:left;">Investor</th><th>Ownership</th><th>Baseline stake</th><th>Share of value created</th><th>Capital value (MXN)</th><th>Capital value (USD)</th></tr></thead>
+          <thead><tr><th style="text-align:left;">Investor</th><th>META ownership</th><th>META value</th><th>IPC ownership</th><th>IPC value</th><th>Rollup ownership</th><th>Rollup value (MXN)</th><th>Rollup value (USD)</th></tr></thead>
           <tbody id="own-tbody"></tbody>
         </table>
       </div>
@@ -771,7 +766,7 @@
 
     <div class="card mb-24">
       <div class="card-head"><div><div class="card-title">Value by Highway</div>
-        <div class="card-sub">NPV per highway at the current discount rate — baseline vs scenario. The highways sum to the enterprise value above.</div></div></div>
+        <div class="card-sub">NPV per highway at the current discount rate — baseline vs scenario. Highways sum to their company's enterprise value; the two companies sum to the rollup.</div></div></div>
       <div class="table-scroll" style="max-height:none;border:none;">
         <table class="data-table">
           <thead><tr><th style="text-align:left;">Highway</th><th style="text-align:left;">Company</th><th>Opens</th><th>Baseline NPV</th><th>Scenario NPV</th><th>Δ</th><th>Δ %</th></tr></thead>
@@ -1297,23 +1292,30 @@
   })();
 
   // ── Meta: Enterprise Value engine ───────────────────────────────────
-  // EV = Σ_highways NPV( Ingresos × EBITDA margin ), monthly discounting.
-  // Sliders reprice each highway; value created above the baseline is shared:
-  // `first` to Maquina off the top, the remainder split equally five ways.
-  // Downside is floored — nobody's stake dilutes when value falls.
+  // Two enterprise values — META and IPC — each the Σ of its highways'
+  // NPV(Ingresos × that company's EBITDA margin), monthly discounting from
+  // the model start. Value created above a company's baseline is shared
+  // WITHIN that company: `first` to Maquina off the top, the remainder split
+  // equally among all five investors. Downside is floored per company. The
+  // rollup sums the two — no netting across companies.
   (function(){
     const P = {{ polaris | tojson }};
     const $ = id => document.getElementById(id);
     const H = P.highways, M = P.months.length;
+    const COS = ['META', 'IPC'].filter(co => H.some(h => h.company === co));
+    const CO_COLOR = { META: '#0568B3', IPC: '#B5179E' };
     const INVESTORS = P.investors || ['Maquina', 'Investor 2', 'Investor 3', 'Investor 4', 'Investor 5'];
     const N_INV = INVESTORS.length, BASE_SHARE = 1 / N_INV;
     const USD = P.rate || 17.3;
     const DEF_DISC = 12.5, DEF_FIRST = P.maquina_first_pct || 20;   // base rate per Javier; model's own 11% shown as reference
     const DEF_MG = 80;   // EBITDA margin input default, both companies
-    const bn = v => (v / 1e9).toFixed(2) + ' bn';
     const mxn = v => Math.abs(v) >= 1e9 ? '$' + (v / 1e9).toFixed(2) + ' bn' : '$' + Math.round(v / 1e6).toLocaleString() + ' mdp';
     const usd = v => { const u = v / USD; return Math.abs(u) >= 1e9 ? '$' + (u / 1e9).toFixed(2) + ' bn' : '$' + Math.round(u / 1e6).toLocaleString() + 'M'; };
-    const sgn = v => (v >= 0 ? '+' : '−');
+    const sgn = v => (v >= 0 ? '+' : '\u2212');
+    const pct = v => (v * 100).toFixed(2) + '%';
+    const dcls = v => v > 0.5e6 ? 'pos' : (v < -0.5e6 ? 'neg' : '');
+    const dtxt = v => Math.abs(v) < 0.5e6 ? '\u2014' : sgn(v) + mxn(Math.abs(v));
+    const dpct = (v, b) => (!b || Math.abs(v) < 0.5e6) ? '\u2014' : sgn(v) + (Math.abs(v) / b * 100).toFixed(1) + '%';
     let ownChart = null;
 
     function val(id, dflt){ const el = $(id); return el ? +el.value : dflt; }
@@ -1338,19 +1340,34 @@
       for (let m = 0; m < M; m++){ v += series[m] * margin / df; df *= k; }
       return v;
     }
-    function calc(c){
-      const rows = H.map(h => { const mg = (c.mg && c.mg[h.company] != null) ? c.mg[h.company] : (h.margin == null ? 1 : h.margin);
-        const b = npv(h.monthly, mg, c.r), s = npv(scenarioSeries(h, c), mg, c.r);
-        return { h, base: b, scen: s, delta: s - b }; });
-      const base = rows.reduce((a, x) => a + x.base, 0), scen = rows.reduce((a, x) => a + x.scen, 0), delta = scen - base;
-      const up = Math.max(0, delta);
-      const inv = INVESTORS.map((name, i) => {
+    // Share one company's value between the investors (floor on the downside).
+    function shareOut(base, scen, c){
+      const delta = scen - base, up = Math.max(0, delta);
+      return INVESTORS.map((name, i) => {
         const extra = (i === 0 ? c.first * up : 0) + (1 - c.first) * up / N_INV;
-        const stake = BASE_SHARE * (delta > 0 ? base : scen);   // floor on the downside
+        const stake = BASE_SHARE * (delta > 0 ? base : scen);
         const value = stake + (delta > 0 ? extra : 0);
         return { name, stake, upside: delta > 0 ? extra : 0, value, own: scen > 0 ? value / scen : BASE_SHARE };
       });
-      return { rows, base, scen, delta, inv };
+    }
+    function calc(c){
+      const rows = H.map(h => {
+        const mg = (c.mg && c.mg[h.company] != null) ? c.mg[h.company] : (h.margin == null ? 1 : h.margin);
+        const b = npv(h.monthly, mg, c.r), s = npv(scenarioSeries(h, c), mg, c.r);
+        return { h, base: b, scen: s, delta: s - b }; });
+      const byCo = {};
+      COS.forEach(co => {
+        const rs = rows.filter(x => x.h.company === co);
+        const base = rs.reduce((a, x) => a + x.base, 0), scen = rs.reduce((a, x) => a + x.scen, 0);
+        byCo[co] = { rows: rs, base, scen, delta: scen - base, inv: shareOut(base, scen, c) };
+      });
+      const base = COS.reduce((a, co) => a + byCo[co].base, 0), scen = COS.reduce((a, co) => a + byCo[co].scen, 0);
+      const inv = INVESTORS.map((name, i) => {
+        const per = {}; let value = 0;
+        COS.forEach(co => { per[co] = byCo[co].inv[i]; value += per[co].value; });
+        return { name, per, value, own: scen > 0 ? value / scen : BASE_SHARE };
+      });
+      return { rows, byCo, base, scen, delta: scen - base, inv };
     }
 
     const barLabels = { id: 'evBarLabels', afterDatasetsDraw(chart){
@@ -1361,16 +1378,22 @@
         meta.data.forEach((bar, i) => { const v = ds.data[i] || 0; if (v <= 0) return; const w = Math.abs(bar.x - bar.base); if (w < 54) return;
           ctx.fillStyle = ds.labelColor || '#fff'; ctx.fillText(mxn(v * 1e9), (bar.x + bar.base) / 2, bar.y); }); });
       ctx.textAlign = 'left'; ctx.fillStyle = MQ.ink();
-      last.data.forEach((bar, i) => { const r = R[i]; if (r) ctx.fillText((r.own * 100).toFixed(1) + '% · ' + mxn(r.value), bar.x + 8, bar.y); });
+      last.data.forEach((bar, i) => { const r = R[i]; if (r) ctx.fillText(pct(r.own) + ' \u00b7 ' + mxn(r.value), bar.x + 8, bar.y); });
       ctx.restore(); } };
 
+    function datasetsFor(r){
+      const ds = [];
+      COS.forEach(co => ds.push({ label: co + ' stake', data: r.inv.map(x => x.per[co].stake / 1e9),
+        backgroundColor: MQ.hexA(CO_COLOR[co], 0.42), borderWidth: 0, stack: 'v', labelColor: MQ.ink() }));
+      COS.forEach(co => ds.push({ label: co + ' value created', data: r.inv.map(x => x.per[co].upside / 1e9),
+        backgroundColor: MQ.hexA(CO_COLOR[co], 0.95), borderWidth: 0, stack: 'v', labelColor: '#fff' }));
+      return ds;
+    }
     function buildOwnChart(){
       const ctx = $('ownChart'); if (!ctx) return null;
       const r = calc(cfg());
       ownChart = new Chart(ctx, { type: 'bar', plugins: [barLabels],
-        data: { labels: r.inv.map(x => x.name), datasets: [
-          { label: 'Baseline stake', data: r.inv.map(x => x.stake / 1e9), backgroundColor: MQ.hexA(MQ.palette(5), 0.55), borderWidth: 0, stack: 'v', labelColor: MQ.ink() },
-          { label: 'Share of value created', data: r.inv.map(x => x.upside / 1e9), backgroundColor: MQ.hexA(MQ.palette(0), 0.95), borderWidth: 0, stack: 'v', labelColor: '#fff' } ] },
+        data: { labels: r.inv.map(x => x.name), datasets: datasetsFor(r) },
         options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false, layout: { padding: { right: 150 } },
           interaction: { mode: 'index', intersect: false },
           scales: { x: { stacked: true, grid: { color: MQ.grid() }, ticks: { color: MQ.muted(), callback: v => '$' + v.toFixed(0) + 'bn' },
@@ -1378,9 +1401,23 @@
                     y: { stacked: true, grid: { display: false }, ticks: { color: MQ.muted(), font: { size: 12 } } } },
           plugins: { legend: { position: 'bottom', labels: { color: MQ.muted(), boxWidth: 10, font: { size: 11 } } },
             tooltip: { callbacks: { label: c => c.dataset.label + ': ' + mxn(c.parsed.x * 1e9),
-              footer: items => 'Total: ' + mxn(items.reduce((a, i) => a + i.parsed.x, 0) * 1e9) } } } } });
+              footer: items => 'Rollup: ' + mxn(items.reduce((a, i) => a + i.parsed.x, 0) * 1e9) } } } } });
       ownChart.$ev = r.inv;
       return ownChart;
+    }
+
+    // One summary column: a company, or the rollup.
+    function kpiBlock(title, x, rollup){
+      const mq = x.inv[0];
+      const line = (l, v, cls) => '<div class="row between" style="padding:5px 0;border-bottom:1px solid var(--mq-line);font-size:12.5px;"><span class="subtle">' + l + '</span><span class="tnum ' + (cls || '') + '" style="font-weight:600;">' + v + '</span></div>';
+      return '<div class="card" style="padding:14px 16px;' + (rollup ? 'border-color:var(--mq-accent);' : '') + '">' +
+        '<div style="font-size:10px;letter-spacing:0.13em;text-transform:uppercase;color:' + (rollup ? 'var(--mq-accent)' : 'var(--mq-subtle)') + ';font-weight:700;margin-bottom:6px;">' + title + '</div>' +
+        line('Baseline EV', mxn(x.base) + ' <span class="subtle" style="font-weight:500;">' + usd(x.base) + '</span>') +
+        line('Scenario EV', mxn(x.scen) + ' <span class="subtle" style="font-weight:500;">' + usd(x.scen) + '</span>') +
+        line('Value created', dtxt(x.delta) + ' <span class="subtle" style="font-weight:500;">' + dpct(x.delta, x.base) + '</span>', dcls(x.delta)) +
+        '<div class="row between" style="padding:8px 0 2px;align-items:baseline;"><span class="subtle" style="font-size:12.5px;">Maquina</span>' +
+        '<span><span style="font-family:var(--font-num);font-size:20px;font-weight:600;color:var(--mq-accent);">' + (mq.own * 100).toFixed(1) + '%</span>' +
+        ' <span class="subtle tnum" style="font-size:12px;">' + mxn(mq.value) + ' \u00b7 ' + usd(mq.value) + '</span></span></div></div>';
     }
 
     function recompute(){
@@ -1389,32 +1426,38 @@
       $('lbl-disc').textContent = (c.r * 100).toFixed(2) + '%';
       $('lbl-first').textContent = Math.round(c.first * 100) + '%';
       ['META', 'IPC'].forEach(co => { const l = $('lbl-mg-' + co); if (l) l.textContent = (c.mg[co] * 100).toFixed(1) + '%'; });
-      const mt = $('ev-mg-txt'); if (mt) mt.textContent = (c.mg.META * 100).toFixed(0) + '% META · ' + (c.mg.IPC * 100).toFixed(0) + '% IPC';
+      const mt = $('ev-mg-txt'); if (mt) mt.textContent = (c.mg.META * 100).toFixed(0) + '% META \u00b7 ' + (c.mg.IPC * 100).toFixed(0) + '% IPC';
       const rt = $('ev-rule-txt'); if (rt) rt.textContent = Math.round(c.first * 100) + '% to Maquina first, the rest split ' + (N_INV === 5 ? 'five' : N_INV) + ' ways';
       H.forEach(h => { const g = c.g[h.key] * 100, t = c.t[h.key] * 100, d = c.d[h.key];
         const lg = $('lbl-g-' + h.key); if (lg) lg.textContent = (g >= 0 ? '+' : '') + g.toFixed(2);
         const lt = $('lbl-t-' + h.key); if (lt) lt.textContent = Math.round(t) + '%';
         const ld = $('lbl-d-' + h.key); if (ld) ld.textContent = Math.round(d) + ' mo'; });
-      // KPIs
-      $('ev-base').textContent = mxn(r.base); $('ev-base-usd').textContent = usd(r.base) + ' · model as uploaded';
-      $('ev-scen').textContent = mxn(r.scen); $('ev-scen-usd').textContent = usd(r.scen) + ' · with slider settings';
-      const dEl = $('ev-delta'); dEl.textContent = sgn(r.delta) + mxn(Math.abs(r.delta)); dEl.className = 'kpi-value ' + (r.delta > 0 ? 'pos' : (r.delta < 0 ? 'neg' : ''));
-      $('ev-delta-sub').textContent = (r.base ? sgn(r.delta) + (Math.abs(r.delta) / r.base * 100).toFixed(1) + '% vs baseline' : '—') + (r.delta < 0 ? ' · floored, no dilution' : '');
-      const mq = r.inv[0]; $('ev-own').textContent = (mq.own * 100).toFixed(1) + '%';
-      $('ev-mq').textContent = mxn(mq.value) + ' · ' + usd(mq.value);
+      // summary: one column per company + the rollup
+      const sm = $('ev-summary');
+      if (sm) sm.innerHTML = '<div class="grid grid-3" style="gap:12px;">' + COS.map(co => kpiBlock(co, r.byCo[co], false)).join('') +
+                             kpiBlock('Rollup \u00b7 ' + COS.join(' + '), r, true) + '</div>';
       // investor table
+      const cell = (x, co) => x.per[co] ? '<td>' + pct(x.per[co].own) + '</td><td>' + mxn(x.per[co].value) + (x.per[co].upside > 0 ? ' <span class="pos" style="font-size:11px;">+' + mxn(x.per[co].upside) + '</span>' : '') + '</td>' : '<td>\u2014</td><td>\u2014</td>';
       $('own-tbody').innerHTML = r.inv.map((x, i) => '<tr><td style="text-align:left;' + (i === 0 ? 'font-weight:700;color:var(--mq-ink-2);' : '') + '">' + x.name + '</td>' +
-        '<td style="font-weight:700;">' + (x.own * 100).toFixed(2) + '%</td><td>' + mxn(x.stake) + '</td><td class="' + (x.upside > 0 ? 'pos' : '') + '">' + (x.upside > 0 ? '+' + mxn(x.upside) : '—') + '</td>' +
-        '<td>' + mxn(x.value) + '</td><td>' + usd(x.value) + '</td></tr>').join('') +
-        '<tr style="font-weight:700;"><td style="text-align:left;">Total</td><td>100.00%</td><td>' + mxn(r.inv.reduce((a, x) => a + x.stake, 0)) + '</td><td>' + (r.delta > 0 ? '+' + mxn(r.delta) : '—') + '</td><td>' + mxn(r.scen) + '</td><td>' + usd(r.scen) + '</td></tr>';
-      // highway table
-      $('hw-tbody').innerHTML = r.rows.map(x => '<tr><td style="text-align:left;"><span class="legend-left"><span class="legend-dot" style="background:' + x.h.color + ';"></span>' + x.h.name + '</span></td>' +
-        '<td style="text-align:left;">' + x.h.company + '</td><td>' + (x.h.in_development ? x.h.open_month : 'operating') + '</td><td>' + mxn(x.base) + '</td><td>' + mxn(x.scen) + '</td>' +
-        '<td class="' + (x.delta > 0.5e6 ? 'pos' : (x.delta < -0.5e6 ? 'neg' : '')) + '">' + (Math.abs(x.delta) < 0.5e6 ? '—' : sgn(x.delta) + mxn(Math.abs(x.delta))) + '</td>' +
-        '<td>' + (x.base ? (Math.abs(x.delta) < 0.5e6 ? '—' : sgn(x.delta) + (Math.abs(x.delta) / x.base * 100).toFixed(1) + '%') : '—') + '</td></tr>').join('') +
-        '<tr style="font-weight:700;"><td style="text-align:left;">Enterprise value</td><td></td><td></td><td>' + mxn(r.base) + '</td><td>' + mxn(r.scen) + '</td><td class="' + (r.delta > 0 ? 'pos' : (r.delta < 0 ? 'neg' : '')) + '">' + (Math.abs(r.delta) < 0.5e6 ? '—' : sgn(r.delta) + mxn(Math.abs(r.delta))) + '</td><td>' + (r.base ? sgn(r.delta) + (Math.abs(r.delta) / r.base * 100).toFixed(1) + '%' : '—') + '</td></tr>';
+          cell(x, 'META') + cell(x, 'IPC') + '<td style="font-weight:700;">' + pct(x.own) + '</td><td>' + mxn(x.value) + '</td><td>' + usd(x.value) + '</td></tr>').join('') +
+        '<tr style="font-weight:700;"><td style="text-align:left;">Total</td>' +
+          COS.map(co => '<td>100.00%</td><td>' + mxn(r.byCo[co].scen) + '</td>').join('') + (COS.length < 2 ? '<td></td><td></td>' : '') +
+          '<td>100.00%</td><td>' + mxn(r.scen) + '</td><td>' + usd(r.scen) + '</td></tr>';
+      // highway table grouped by company, subtotals, rollup
+      let html = '';
+      COS.forEach(co => {
+        const x = r.byCo[co];
+        html += x.rows.map(y => '<tr><td style="text-align:left;"><span class="legend-left"><span class="legend-dot" style="background:' + y.h.color + ';"></span>' + y.h.name + '</span></td>' +
+          '<td style="text-align:left;">' + y.h.company + '</td><td>' + (y.h.in_development ? y.h.open_month + ' \u00b7 en obra' : 'operating') + '</td><td>' + mxn(y.base) + '</td><td>' + mxn(y.scen) + '</td>' +
+          '<td class="' + dcls(y.delta) + '">' + dtxt(y.delta) + '</td><td>' + dpct(y.delta, y.base) + '</td></tr>').join('');
+        html += '<tr style="font-weight:700;background:var(--mq-surface-2);"><td style="text-align:left;">' + co + ' enterprise value</td><td></td><td></td><td>' + mxn(x.base) + '</td><td>' + mxn(x.scen) + '</td>' +
+          '<td class="' + dcls(x.delta) + '">' + dtxt(x.delta) + '</td><td>' + dpct(x.delta, x.base) + '</td></tr>';
+      });
+      html += '<tr style="font-weight:700;"><td style="text-align:left;color:var(--mq-accent);">Rollup \u00b7 ' + COS.join(' + ') + '</td><td></td><td></td><td>' + mxn(r.base) + '</td><td>' + mxn(r.scen) + '</td>' +
+        '<td class="' + dcls(r.delta) + '">' + dtxt(r.delta) + '</td><td>' + dpct(r.delta, r.base) + '</td></tr>';
+      $('hw-tbody').innerHTML = html;
       // chart
-      if (ownChart){ ownChart.data.datasets[0].data = r.inv.map(x => x.stake / 1e9); ownChart.data.datasets[1].data = r.inv.map(x => x.upside / 1e9); ownChart.$ev = r.inv; ownChart.update('none'); }
+      if (ownChart){ const ds = datasetsFor(r); ds.forEach((d, i) => { if (ownChart.data.datasets[i]) ownChart.data.datasets[i].data = d.data; }); ownChart.$ev = r.inv; ownChart.update('none'); }
     }
     window.evReset = function(){
       const set = (id, v) => { const el = $(id); if (el) el.value = v; };
