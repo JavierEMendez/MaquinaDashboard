@@ -7,6 +7,7 @@ hand fully-shaped data to Jinja templates (charts are rendered client-side
 with Chart.js from embedded JSON).
 """
 import os
+import re
 import io
 import json
 import calendar
@@ -23,6 +24,7 @@ from werkzeug.security import check_password_hash, generate_password_hash
 import db
 import seed_data
 import maquina_cf_parser
+import polaris_parser
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "maquina-dev-secret-change-me")
@@ -735,163 +737,57 @@ def _exit_calc(series, entry_year, target_hold_years, exit_value_usd):
                 moic=(dist + ev) / invested, dpi=dist / invested, irr=annual_irr(cfs))
 
 
-# ─── META: PROMOTE / COMPARTICIÓN DE INGRESOS (highway revenue share) ─
-# Extracted 1-for-1 from Valoran's UPDATED proposal workbook
-# ("Libro1 1.xlsx" → "Aux. Compartición", validated to the peso).
-# Series in MILLIONS of MXN. Periods: an H2-2026 stub, then annual
-# 2027–2050 (concession end; the workbook's 2051+ columns are zero).
-# tdc = concession-title baseline revenue for the period's YEAR in
-# Dec-2024 pesos (actualized +33.07% / +29.59% from title base dates —
-# the stub period is compared against its FULL-year título value, per
-# the workbook's own XLOOKUP logic); model = Valoran's revised revenue
-# projection (nominal, ~130–150% of título vs 2–4× in the old draft);
-# index = INPC index (~3.5–3.8%/yr). Nominal baseline_t = tdc_t ×
-# index_t; excess over baseline is split into hurdles vs the baseline
-# (0–30–50–75%+) promoted to Maquina at 5/40/60/75%. Base-case nominal
-# total: $2,849.1 mdp (V $1,996.0 + P $853.1). The client-side engine
-# in company.html recomputes everything from the sliders.
-META_COMP = {
-    "years": [2026, 2027, 2028, 2029, 2030, 2031, 2032, 2033, 2034, 2035, 2036, 2037, 2038, 2039, 2040, 2041, 2042, 2043, 2044, 2045, 2046, 2047, 2048, 2049, 2050],
-    "labels": ["2026 H2", "2027", "2028", "2029", "2030", "2031", "2032", "2033", "2034", "2035", "2036", "2037", "2038", "2039", "2040", "2041", "2042", "2043", "2044", "2045", "2046", "2047", "2048", "2049", "2050"],
-    "index": [1.038, 1.076406, 1.115695, 1.154744, 1.19516, 1.236991, 1.280285, 1.325095, 1.371474, 1.419475, 1.469157, 1.520578, 1.573798, 1.628881, 1.685891, 1.744898, 1.805969, 1.869178, 1.934599, 2.00231, 2.072391, 2.144925, 2.219997, 2.297697, 2.378116],
-    "ventura": {
-        "passages": [2.4024, 4.8848, 5.0696, 5.2428, 5.4368, 5.638, 5.8626, 6.0629, 6.2872, 6.5198, 6.7796, 7.0112, 7.2706, 7.5397, 7.84, 8.1079, 8.4079, 8.719, 9.0664, 9.3761, 9.7231, 10.0828, 10.4845, 10.8427, 11.2439],
-        "toll_auto": 89.66, "toll_blend": 197.07, "toll_when": "Jul-2026",
-        "name": "Ventura – El Peyote",
-        "tdc": [678.89, 711.394, 746.653, 778.562, 811.681, 845.496, 882.432, 915.271, 951.261, 988.007, 1026.543, 1060.184, 1097.358, 1135.276, 1171.352, 1201.585, 1235.587, 1270.168, 1308.912, 1341.102, 1377.476, 1414.733, 1456.986, 1453.005, 1453.005],
-        "model": [491.54, 1035.335, 1114.1, 1193.809, 1281.31, 1375.223, 1480.029, 1584.205, 1700.319, 1824.944, 1964.023, 2102.267, 2256.352, 2421.732, 2606.292, 2789.743, 2994.218, 3213.679, 3458.593, 3702.036, 3973.377, 4264.606, 4589.612, 4912.665, 5272.738]},
-    "pitahaya": {
-        "passages": [0.0, 0.0, 1.0248, 4.2162, 4.3722, 4.534, 4.7147, 4.8757, 5.0561, 5.2432, 5.4521, 5.6384, 5.847, 6.0634, 6.3049, 6.5203, 6.7616, 7.0118, 7.2911, 7.5402, 7.8192, 8.1085, 8.4316, 8.7197, 9.0423],
-        "toll_auto": 138.70, "toll_blend": 374.12, "toll_when": "Oct-2028",
-        "name": "La Pitahaya – Libramiento Oriente",
-        "tdc": [1122.797, 1166.857, 1216.325, 1260.855, 1310.892, 1363.119, 1421.301, 1474.097, 1533.217, 1594.918, 1641.939, 1681.028, 1725.871, 1771.797, 1824.214, 1868.073, 1917.82, 1969.444, 2027.927, 2076.881, 2132.716, 2190.25, 2196.249, 2190.25, 2190.25],
-        "model": [0.0, 0.0, 383.401, 1619.958, 1738.693, 1866.131, 2008.348, 2149.712, 2307.275, 2476.387, 2665.112, 2852.704, 3061.793, 3286.207, 3536.649, 3785.586, 4063.05, 4360.851, 4693.192, 5023.536, 5391.736, 5786.923, 6227.945, 6666.317, 7154.924]},
+# ─── META · Modelo Polaris (toll roads) ────────────────────────────
+# Valoran's model is uploaded by an admin on the Meta company page and parsed
+# by polaris_parser into a JSON snapshot (db.meta_model_uploads). Display
+# metadata per highway (name, length, colour, company) lives in
+# db.meta_highways and is merged in here. The EV Analysis engine runs
+# client-side on this payload.
+_HW_COLORS = ["#E0701F", "#0568B3", "#1F9D6B", "#7A5AF8",
+              "#C98A00", "#D2452F", "#0E9AA7", "#B5179E"]
+META_INVESTORS = ["Maquina", "Investor 2", "Investor 3", "Investor 4", "Investor 5"]
+# Display names per parser key (Javier, Aug-2026). Seeded into meta_highways on
+# upload and editable there; "en obra" is shown as a status badge from the
+# model's opening dates rather than baked into the name.
+_HW_DEFAULT_NAMES = {
+    "lib_oriente": "Oriente", "conexion_rio_verde": "Rio Verde", "arco_norte": "Norte",
+    "arco_poniente": "Poniente", "avenida_horizontes": "Horizontes", "ventura": "Cervical 1",
+    "pitahaya": "Backbone", "el_peyote_matehuala": "Cervical 2",
 }
 
 
-# v1 reference case — the ORIGINAL proposal workbook (Libro1.xlsx,
-# "Compartición" sheet), kept only for the static v1-vs-v2 comparison
-# card on the Promote Analysis tab. Same units/semantics as META_COMP.
-META_COMP_V1 = {
-    "years": [2024, 2025, 2026, 2027, 2028, 2029, 2030, 2031, 2032, 2033, 2034, 2035, 2036, 2037, 2038, 2039, 2040, 2041, 2042, 2043, 2044, 2045, 2046, 2047, 2048, 2049, 2050],
-    "index": [1.003113, 1.041231, 1.079965, 1.123163, 1.16809, 1.214814, 1.263406, 1.313942, 1.3665, 1.42116, 1.478007, 1.537127, 1.598612, 1.662556, 1.729059, 1.798221, 1.87015, 1.944956, 2.022754, 2.103664, 2.187811, 2.275323, 2.366336, 2.46099, 2.559429, 2.661806, 2.768279],
-    "ventura": {
-        "tdc": [616.268, 647.086, 678.89, 711.394, 746.653, 778.562, 811.681, 845.496, 882.432, 915.271, 951.261, 988.007, 1026.543, 1060.184, 1097.358, 1135.276, 1171.352, 1201.585, 1235.587, 1270.168, 1308.912, 1341.102, 1377.476, 1414.733, 1456.986, 1453.005, 1453.005],
-        "model": [0.0, 1460.097, 1711.77, 1955.562, 2221.795, 2480.762, 2777.693, 3110.452, 3492.834, 3841.887, 4703.467, 5269.347, 5902.226, 6534.313, 7215.311, 7931.869, 8715.477, 9496.574, 10331.293, 11226.384, 12187.705, 13136.902, 14167.155, 15273.952, 16466.302, 17607.056, 14954.654]},
-    "pitahaya": {
-        "tdc": [719.828, 864.321, 1122.797, 1166.857, 1216.325, 1260.855, 1310.892, 1363.119, 1421.301, 1474.097, 1533.217, 1594.918, 1641.939, 1681.028, 1725.871, 1771.797, 1824.214, 1868.073, 1917.82, 1969.444, 2027.927, 2076.881, 2132.716, 2190.25, 2196.249, 2190.25, 2190.25],
-        "model": [0.0, 0.0, 0.0, 0.0, 804.485, 3270.647, 3834.922, 4321.547, 4883.447, 5294.338, 6516.7, 7345.837, 8230.207, 9113.28, 10064.432, 11065.143, 12159.653, 13250.961, 14416.778, 15667.802, 17011.05, 18338.067, 19778.657, 21327.96, 22996.818, 24593.447, 20892.732]},
-}
+def load_polaris():
+    """Latest parsed Modelo Polaris + the admin-editable highway registry, or
+    None when nothing has been uploaded yet."""
+    try:
+        snap = db.latest_meta_model()
+    except Exception as e:  # table missing on a fresh DB, etc.
+        app.logger.warning("meta model load failed: %s", e)
+        return None
+    if not snap:
+        return None
+    data = snap["data"]
+    if isinstance(data, str):
+        data = json.loads(data)
+    try:
+        reg = {r["key"]: r for r in db.meta_highways()}
+    except Exception:
+        reg = {}
+    for i, h in enumerate(data.get("highways") or []):
+        m = reg.get(h["key"]) or {}
+        h["name"] = m.get("display_name") or _HW_DEFAULT_NAMES.get(h["key"]) or h["model_name"]
+        h["company"] = m.get("company") or h.get("company")
+        h["length_km"] = m.get("length_km")
+        h["color"] = m.get("color") or _HW_COLORS[i % len(_HW_COLORS)]
+    ua = snap.get("uploaded_at")
+    data["src_filename"] = snap.get("filename")
+    data["uploaded_at"] = ua.strftime("%Y-%m-%d %H:%M") if hasattr(ua, "strftime") else (str(ua)[:16] if ua else None)
+    data["rate"] = usd_mxn_rate()
+    data["investors"] = META_INVESTORS
+    data["maquina_first_pct"] = 20
+    return data
 
 
-def _promote_case(mc, npv_base_idx, disc=0.09, tax=0.30):
-    """Run one workbook's base case through the promote waterfall.
-    Returns totals, NPV, effective share of excess, hurdle mix, first
-    sharing year and model-vs-baseline %. Values in mdp (millions MXN)."""
-    TH, SH = (0.30, 0.50, 0.75), (0.05, 0.40, 0.60, 0.75)
-    years, ix = mc["years"], mc["index"]
-    n = len(years)
-    promote = [0.0] * n
-    hurdles = [0.0] * 4
-    pct, first = {}, {}
-    total = excess = npv = 0.0
-    for key in ("ventura", "pitahaya"):
-        R = mc[key]
-        pr = []
-        first[key] = None
-        for i in range(n):
-            b = R["tdc"][i] * ix[i]
-            m = R["model"][i]
-            pr.append(round(m / b * 100, 1) if (m and b) else None)
-            e = max(0.0, m - b)
-            l1 = min(e, b * TH[0])
-            l2 = min(max(e - b * TH[0], 0), b * (TH[1] - TH[0]))
-            l3 = min(max(e - b * TH[1], 0), b * (TH[2] - TH[1]))
-            l4 = max(e - b * TH[2], 0)
-            parts = (l1 * SH[0], l2 * SH[1], l3 * SH[2], l4 * SH[3])
-            s = sum(parts)
-            for k in range(4):
-                hurdles[k] += parts[k]
-            promote[i] += s
-            total += s
-            excess += e
-            if s > 1e-9 and first[key] is None:
-                first[key] = years[i]
-            npv += s * (1 - tax) / (ix[i] / ix[npv_base_idx]) / ((1 + disc) ** max(0, years[i] - years[npv_base_idx]))
-        pct[key] = pr
-
-    def _rng(vals):
-        xs = [v for v in vals if v is not None]
-        return "%.0f%%–%.0f%%" % (min(xs), max(xs)) if xs else "—"
-    return dict(years=years, promote=[round(x, 1) for x in promote], pct=pct,
-                total_nom=round(total, 1), npv=round(npv, 1),
-                share_of_excess=(round(total / excess * 100, 1) if excess else None),
-                hurdle_mix=[(round(h / total * 100, 1) if total else 0) for h in hurdles],
-                first=first, rng_v=_rng(pct["ventura"]), rng_p=_rng(pct["pitahaya"]))
-
-
-def _build_meta_compare():
-    """Static v1-vs-v2 comparison payload for the Promote Analysis tab."""
-    v1 = _promote_case(META_COMP_V1, npv_base_idx=1)   # discount to 2025 (first flow year)
-    v2 = _promote_case(META_COMP, npv_base_idx=0)      # discount to H2-2026
-    # v2's H2-2026 stub compares a half-year of revenue against the FULL-year
-    # título value (the workbook's own XLOOKUP logic) — not a comparable %.
-    for k in ("ventura", "pitahaya"):
-        v2["pct"][k][0] = None
-
-    def _rng(vals):
-        xs = [v for v in vals if v is not None]
-        return "%.0f%%–%.0f%%" % (min(xs), max(xs)) if xs else "—"
-    v2["rng_v"] = _rng(v2["pct"]["ventura"])
-    v2["rng_p"] = _rng(v2["pct"]["pitahaya"])
-    pad = [None] * (len(META_COMP_V1["years"]) - len(META_COMP["years"]))
-    return dict(
-        axis=[str(y) for y in META_COMP_V1["years"]],
-        chart=dict(
-            v1_v=v1["pct"]["ventura"], v1_p=v1["pct"]["pitahaya"],
-            v2_v=pad + v2["pct"]["ventura"], v2_p=pad + v2["pct"]["pitahaya"]),
-        v1=dict(nom=v1["total_nom"], npv=v1["npv"], soe=v1["share_of_excess"],
-                mix=v1["hurdle_mix"], first=v1["first"], rng_v=v1["rng_v"], rng_p=v1["rng_p"]),
-        v2=dict(nom=v2["total_nom"], npv=v2["npv"], soe=v2["share_of_excess"],
-                mix=v2["hurdle_mix"], first=v2["first"], rng_v=v2["rng_v"], rng_p=v2["rng_p"]),
-        d_nom=round((v2["total_nom"] / v1["total_nom"] - 1) * 100, 1),
-        d_npv=round((v2["npv"] / v1["npv"] - 1) * 100, 1),
-    )
-
-
-META_COMPARE = _build_meta_compare()
-
-
-def _meta_base_assumptions(mc=None):
-    """Derive the base assumptions embedded in the workbook so the slider
-    labels can state what "0% delta" / "100% level" actually mean."""
-    mc = mc or META_COMP
-    Y, IX = mc["years"], mc["index"]
-    infl_first = IX[1] / IX[0] - 1
-    infl_last = IX[-1] / IX[-2] - 1
-    out = {"infl_first": infl_first * 100, "infl_last": infl_last * 100,
-           "infl_cagr": ((IX[-1] / IX[0]) ** (1 / (Y[-1] - Y[0])) - 1) * 100}
-    for key, si in (("ventura", 1), ("pitahaya", 3)):   # first FULL year of each road
-        R = mc[key]
-        a, b, yrs = R["model"][si], R["model"][-1], Y[-1] - Y[si]
-        nom = (b / a) ** (1 / yrs) - 1
-        ixg = (IX[-1] / IX[si]) ** (1 / yrs) - 1
-        # Decompose nominal revenue growth into its two independent drivers:
-        # vehicles (real volume) and tarifa (nominal price per passage).
-        # Revenue growth = (1+traffic) x (1+tarifa) - 1, exactly.
-        p0, p1 = R["passages"][si], R["passages"][-1]
-        pas = (p1 / p0) ** (1 / yrs) - 1
-        tar = ((b / p1) / (a / p0)) ** (1 / yrs) - 1
-        out[key] = {"start_year": Y[si], "start": a, "end": b,
-                    "nom_cagr": nom * 100, "real_cagr": ((1 + nom) / (1 + ixg) - 1) * 100,
-                    "pas_start": p0, "pas_end": p1,
-                    "pas_cagr": pas * 100,                       # vehicles
-                    "tar_cagr": tar * 100,                       # tarifa, nominal
-                    "tar_real": ((1 + tar) / (1 + ixg) - 1) * 100}  # tarifa, real (~0)
-    return out
-
-
-META_BASE = _meta_base_assumptions()
 
 
 def exit_returns(cid, entry_year, target_hold_years, exit_value_usd):
@@ -1165,6 +1061,79 @@ def cashflow_upload():
           + (f"actuals {yrs[0]}–{yrs[-1]} + projections through "
              f"{data['meta']['years'][-1]}." if yrs else "snapshot saved."), "ok")
     return redirect(url_for("cashflow"))
+
+
+@app.route("/company/<slug>/model/upload", methods=["POST"])
+@login_required
+def meta_model_upload(slug):
+    """Admin-only — accept Valoran's Modelo Polaris workbook for Meta, parse it,
+    persist the snapshot and seed the highway registry. Latest upload wins."""
+    if not session.get("is_admin"):
+        abort(403)
+    c = _company_or_404(slug)
+    if c["slug"] != "meta":
+        abort(404)
+    f = request.files.get("file")
+    if not f or not f.filename:
+        flash("Choose the Modelo Polaris .xlsx file first.", "error")
+        return redirect(url_for("company", slug=slug))
+    if not f.filename.lower().endswith((".xlsx", ".xlsm")):
+        flash("That isn't an Excel workbook — upload the .xlsx file.", "error")
+        return redirect(url_for("company", slug=slug))
+    try:
+        data = polaris_parser.parse_polaris(f.read(), filename=f.filename)
+    except ValueError as e:
+        flash(str(e), "error")
+        return redirect(url_for("company", slug=slug))
+    except Exception as e:  # pragma: no cover
+        app.logger.warning("Modelo Polaris parse failed: %s", e)
+        flash("Could not read that workbook — is it the Modelo Polaris file?", "error")
+        return redirect(url_for("company", slug=slug))
+    db.save_meta_model(json.dumps(data), f.filename, session.get("username") or "admin")
+    db.seed_meta_highways([
+        dict(key=h["key"], model_name=h["model_name"], company=h["company"],
+             display_name=_HW_DEFAULT_NAMES.get(h["key"]),
+             color=_HW_COLORS[i % len(_HW_COLORS)], sort=h.get("sort") or i + 1)
+        for i, h in enumerate(data.get("highways") or [])])
+    hw = data.get("highways") or []
+    flash("Modelo Polaris imported — %d highways, revenue %s → %s, %.1f bn MXN lifetime."
+          % (len(hw), data["meta"]["model_start"], data["meta"]["horizon_end"],
+             (data["totals"]["lifetime"] or 0) / 1e9), "ok")
+    return redirect(url_for("company", slug=slug))
+
+
+@app.route("/company/<slug>/highways", methods=["POST"])
+@login_required
+def meta_highways_update(slug):
+    """Admin-only — edit display name, length, company and colour per highway."""
+    if not session.get("is_admin"):
+        abort(403)
+    c = _company_or_404(slug)
+    if c["slug"] != "meta":
+        abort(404)
+    f = request.form
+    n = 0
+    for key in f.getlist("key"):
+        if not re.fullmatch(r"[a-z0-9_]{1,80}", key or ""):
+            continue
+        name = (f.get("name_" + key) or "").strip() or None
+        comp = (f.get("company_" + key) or "").strip().upper() or None
+        if comp not in ("META", "IPC", None):
+            comp = None
+        km = f.get("km_" + key)
+        try:
+            km = float(km) if km not in (None, "") else None
+            if km is not None and km < 0:
+                km = None
+        except (TypeError, ValueError):
+            km = None
+        color = (f.get("color_" + key) or "").strip()
+        if not re.fullmatch(r"#[0-9a-fA-F]{6}", color):
+            color = None
+        db.update_meta_highway(key, name, comp, km, color)
+        n += 1
+    flash("Saved %d highway%s." % (n, "" if n == 1 else "s"), "ok")
+    return redirect(url_for("company", slug=slug))
 
 
 @app.route("/strategy")
@@ -1861,9 +1830,9 @@ def company(slug):
     cap = None        # Ember Capital (Projects tab) — Ember only
     verticals = sales = None  # Commercial tab — Ember only
     ember_budget = None  # Operating Budget (firm P&L) — Ember only, from Ember DB
-    comp = None       # Compartición de Ingresos scenario model — Meta only
+    polaris = None    # Modelo Polaris toll-road model — Meta only
     if c["slug"] == "meta":
-        comp = dict(META_COMP, rate=usd_mxn_rate(), compare=META_COMPARE, base=META_BASE)
+        polaris = load_polaris()
     if c["slug"] == "ember":
         ember_loans = fetch_ember_loans()
         ember_returns = fetch_ember_returns()
@@ -1986,7 +1955,7 @@ def company(slug):
         ember_live=ember_live, ember_asof=ember_asof, ember_loans=ember_loans,
         ember_returns=ember_returns, summary=summary, fin=fin, leverage=leverage,
         valuation=valuation, cap=cap, hold=hold, exitr=exitr, fre_basis=fre_basis,
-        verticals=verticals, sales=sales, ember_budget=ember_budget, comp=comp,
+        verticals=verticals, sales=sales, ember_budget=ember_budget, polaris=polaris,
     )
 
 

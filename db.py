@@ -221,7 +221,32 @@ CREATE TABLE IF NOT EXISTS maquina_cf_uploads (
     uploaded_at TIMESTAMP DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS maquina_cf_uploads_ts ON maquina_cf_uploads (uploaded_at DESC);
+
+-- Meta (Valoran toll roads) — each row is one uploaded "Modelo Polaris"
+-- workbook parsed into JSON (polaris_parser). Latest row wins; history kept.
+CREATE TABLE IF NOT EXISTS meta_model_uploads (
+    id SERIAL PRIMARY KEY,
+    data JSONB NOT NULL,
+    filename TEXT,
+    uploaded_by TEXT,
+    uploaded_at TIMESTAMP DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS meta_model_uploads_ts ON meta_model_uploads (uploaded_at DESC);
+
+-- Display metadata per highway (keyed by the parser's slug of the model
+-- name). Names, lengths and colours are admin-editable; the parser seeds a
+-- row per highway on upload without overwriting existing edits.
+CREATE TABLE IF NOT EXISTS meta_highways (
+    key TEXT PRIMARY KEY,
+    model_name TEXT,
+    display_name TEXT,
+    company TEXT,
+    length_km DOUBLE PRECISION,
+    color TEXT,
+    sort INT DEFAULT 0
+);
 """
+
 
 
 def init_schema():
@@ -270,3 +295,50 @@ def save_maquina_cf(data_json: str, filename: str, uploaded_by: str):
     conn.commit()
     cur.close()
     conn.close()
+
+
+# ── Meta / Modelo Polaris ────────────────────────────────────────────────────
+def save_meta_model(data_json: str, filename: str, uploaded_by: str) -> int:
+    conn = get_db(); cur = conn.cursor()
+    cur.execute("INSERT INTO meta_model_uploads (data, filename, uploaded_by) "
+                "VALUES (%s, %s, %s) RETURNING id", (data_json, filename, uploaded_by))
+    new_id = cur.fetchone()["id"]
+    conn.commit(); cur.close(); conn.close()
+    return new_id
+
+
+def latest_meta_model():
+    conn = get_db(); cur = conn.cursor()
+    cur.execute("SELECT id, data, filename, uploaded_by, uploaded_at FROM meta_model_uploads "
+                "ORDER BY uploaded_at DESC, id DESC LIMIT 1")
+    row = cur.fetchone()
+    cur.close(); conn.close()
+    return row
+
+
+def meta_highways() -> list:
+    conn = get_db(); cur = conn.cursor()
+    cur.execute("SELECT key, model_name, display_name, company, length_km, color, sort "
+                "FROM meta_highways ORDER BY sort, key")
+    rows = cur.fetchall()
+    cur.close(); conn.close()
+    return rows
+
+
+def seed_meta_highways(rows: list) -> None:
+    """Insert a registry row per highway; never overwrite admin edits."""
+    conn = get_db(); cur = conn.cursor()
+    for r in rows:
+        cur.execute("INSERT INTO meta_highways (key, model_name, display_name, company, color, sort) "
+                    "VALUES (%s, %s, %s, %s, %s, %s) ON CONFLICT (key) DO UPDATE SET "
+                    "model_name = EXCLUDED.model_name, sort = EXCLUDED.sort, "
+                    "display_name = COALESCE(meta_highways.display_name, EXCLUDED.display_name)",
+                    (r["key"], r["model_name"], r.get("display_name"), r["company"], r["color"], r["sort"]))
+    conn.commit(); cur.close(); conn.close()
+
+
+def update_meta_highway(key: str, display_name, company, length_km, color) -> None:
+    conn = get_db(); cur = conn.cursor()
+    cur.execute("UPDATE meta_highways SET display_name = %s, company = %s, length_km = %s, "
+                "color = %s WHERE key = %s", (display_name, company, length_km, color, key))
+    conn.commit(); cur.close(); conn.close()

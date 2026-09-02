@@ -58,13 +58,17 @@
 
 <div data-tabgroup>
   <div class="tabs">
+    {% set is_meta = (c.slug == 'meta') %}
     <button class="tab active" data-tab="dashboard">Dashboard</button>
+    {% if is_meta %}
+    <button class="tab" data-tab="ev">Enterprise Value Analysis</button>
+    {% else %}
     <button class="tab" data-tab="commercial">Commercial</button>
     <button class="tab" data-tab="operations">Operations</button>
     <button class="tab" data-tab="finance">Finance</button>
     {% if cap %}<button class="tab" data-tab="projects">Projects</button>{% endif %}
-    {% if comp %}<button class="tab" data-tab="promote">Promote Analysis</button>{% endif %}
     <button class="tab" data-tab="strategy">Strategy</button>
+    {% endif %}
   </div>
 
   {# ───────── Dashboard ───────── #}
@@ -139,7 +143,75 @@
       {% endif %}
     </div>
     {% endif %}
-    {% if summary %}
+    {% if is_meta %}
+      {% if polaris %}
+      <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+      <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+      {% endif %}
+      {% if is_admin %}
+      <div class="card mb-24">
+        <div class="row between wrap" style="gap:12px;align-items:center;">
+          <div>
+            <div class="card-title">Modelo Polaris</div>
+            <div class="card-sub">{% if polaris %}Loaded from <strong>{{ polaris.src_filename }}</strong> · uploaded {{ polaris.uploaded_at }} · {{ polaris.highways|length }} highways · revenue {{ polaris.meta.model_start }} → {{ polaris.meta.horizon_end }}{% else %}Upload Valoran's Modelo Polaris workbook to populate the map, the highway table, the revenue baseline and the Enterprise Value Analysis.{% endif %}</div>
+          </div>
+          <form method="POST" action="{{ url_for('meta_model_upload', slug=c.slug) }}" enctype="multipart/form-data" class="row" style="gap:8px;align-items:center;">
+            <input class="input" type="file" name="file" accept=".xlsx,.xlsm" required style="padding:7px;font-size:12px;max-width:280px;">
+            <button class="btn btn-primary btn-sm" type="submit">{{ 'Re-upload model' if polaris else 'Upload model' }}</button>
+          </form>
+        </div>
+      </div>
+      {% endif %}
+      {% if polaris %}
+      <div class="grid grid-2 mb-24" style="align-items:stretch;">
+        <div class="card" style="padding:0;overflow:hidden;min-height:400px;display:flex;flex-direction:column;">
+          <div class="card-head" style="padding:16px 18px 10px;margin:0;"><div><div class="card-title">Highway Map</div>
+            <div class="card-sub">Routes will be drawn from the KMZ files once received. Colours match the table and the chart.</div></div></div>
+          <div id="hwMap" style="flex:1;min-height:330px;background:var(--mq-surface-2);"></div>
+        </div>
+        <div class="card">
+          <div class="card-head"><div><div class="card-title">Highways</div>
+            <div class="card-sub">{{ polaris.highways|length }} concessions · META and IPC.</div></div></div>
+          <div class="table-scroll" style="max-height:none;border:none;">
+          <table class="data-table">
+            <thead><tr><th style="text-align:left;">Highway</th><th>Length (km)</th><th style="text-align:left;">Company</th><th>Opens</th></tr></thead>
+            <tbody>
+            {% for h in polaris.highways %}
+              <tr><td style="text-align:left;"><span class="legend-left"><span class="legend-dot" style="background:{{ h.color }};"></span>{{ h.name }}{% if h.in_development %}<span class="badge" style="margin-left:6px;font-size:10px;">en obra</span>{% endif %}</span></td>
+                  <td>{{ ('%.1f'|format(h.length_km)) if h.length_km is not none else '—' }}</td>
+                  <td style="text-align:left;"><span class="badge {{ 'accent' if h.company == 'IPC' }}">{{ h.company }}</span></td>
+                  <td>{{ h.open_month if h.in_development else 'operating' }}</td></tr>
+            {% endfor %}
+            </tbody>
+          </table>
+          </div>
+          {% if is_admin %}
+          <details class="editor" style="margin-top:12px;"><summary>Edit highway names, lengths &amp; colours</summary>
+            <form class="editor-body" method="POST" action="{{ url_for('meta_highways_update', slug=c.slug) }}">
+              <div style="display:grid;grid-template-columns:1.7fr 86px 86px 54px;gap:8px;font-size:10px;letter-spacing:0.08em;text-transform:uppercase;color:var(--mq-subtle);font-weight:700;margin-bottom:4px;"><span>Name</span><span>km</span><span>Company</span><span>Colour</span></div>
+              {% for h in polaris.highways %}
+              <input type="hidden" name="key" value="{{ h.key }}">
+              <div style="display:grid;grid-template-columns:1.7fr 86px 86px 54px;gap:8px;align-items:center;margin-bottom:6px;">
+                <input class="input" name="name_{{ h.key }}" value="{{ h.name }}" title="Model name: {{ h.model_name }}" style="font-size:12.5px;">
+                <input class="input" type="number" step="0.1" min="0" name="km_{{ h.key }}" value="{{ h.length_km if h.length_km is not none else '' }}" placeholder="—" style="font-size:12.5px;">
+                <select class="input" name="company_{{ h.key }}" style="font-size:12.5px;"><option {{ 'selected' if h.company == 'META' }}>META</option><option {{ 'selected' if h.company == 'IPC' }}>IPC</option></select>
+                <input class="input" type="color" name="color_{{ h.key }}" value="{{ h.color }}" style="padding:2px 4px;height:34px;">
+              </div>
+              {% endfor %}
+              <button class="btn btn-primary btn-sm mt-8" type="submit">Save highways</button>
+            </form></details>
+          {% endif %}
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-head"><div><div class="card-title">Baseline Ingresos by Highway</div>
+          <div class="card-sub">Model toll revenue per highway, {{ polaris.years[0] }}–{{ polaris.years[-1] }}, nominal mdp sin IVA. Lifetime {{ '%.1f'|format(polaris.totals.lifetime / 1e9) }} bn MXN.{% if polaris.meta.concession_end and polaris.meta.concession_end.IPC %} The IPC concession runs to {{ polaris.meta.concession_end.IPC }}; the model's revenue stops at {{ polaris.meta.horizon_end }} and is not extrapolated.{% endif %}</div></div></div>
+        <div class="chart-wrap" style="height:340px;"><canvas id="hwRevChart"></canvas></div>
+      </div>
+      {% elif not is_admin %}
+      <div class="card"><span class="subtle">The Meta model hasn't been uploaded yet.</span></div>
+      {% endif %}
+    {% elif summary %}
     <div class="row wrap" style="gap:8px;margin-bottom:14px;align-items:center;">
       <span class="badge good">● Live from Ember</span>
       <span class="subtle" style="font-size:12px;">Key values across Operations, Finance &amp; Strategy{% if ember_asof %} · as of {{ ember_asof }}{% endif %}</span>
@@ -639,205 +711,94 @@
   </div>
   {% endif %}
 
-  {# ───────── Promote Analysis (Meta scenario model) ───────── #}
-  {% if comp %}
-  <div class="tab-panel" data-panel="promote">
-    <div class="row wrap between" style="gap:8px;margin-bottom:16px;align-items:center;">
-      <div>
-        <div class="card-title" style="font-size:16px;">Promote Analysis — Valoran / Meta proposal (Compartición de Ingresos)</div>
-        <div class="subtle" style="font-size:12.5px;margin-top:2px;">Maquina's promote on toll revenues <strong>above the concession-title baseline</strong> on Ventura–El Peyote and La Pitahaya–Libramiento Oriente. Move the sliders to run scenarios — everything recomputes live.</div>
-      </div>
-      <span class="badge accent">Scenario model</span>
-    </div>
-
-    <div class="grid grid-4 mb-24">
-      <div class="kpi"><div class="kpi-top"><span class="kpi-label">NPV to Maquina</span></div>
-        <div class="kpi-value" id="comp-npv" style="color:var(--mq-accent);">—</div>
-        <div class="kpi-foot"><span class="kpi-sub" id="comp-npv-sub">post-tax · real discount · pesos 2026</span></div></div>
-      <div class="kpi"><div class="kpi-top"><span class="kpi-label">≈ USD</span></div>
-        <div class="kpi-value" id="comp-usd">—</div>
-        <div class="kpi-foot"><span class="kpi-sub">at {{ '%.2f'|format(comp.rate) }} MXN/USD</span></div></div>
-      <div class="kpi"><div class="kpi-top"><span class="kpi-label">Nominal Total 2026–50</span></div>
-        <div class="kpi-value" id="comp-nom">—</div>
-        <div class="kpi-foot"><span class="kpi-sub" id="comp-nom-usd">pre-tax, undiscounted</span></div></div>
-      <div class="kpi"><div class="kpi-top"><span class="kpi-label">Share of Excess</span></div>
-        <div class="kpi-value" id="comp-eff">—</div>
-        <div class="kpi-foot"><span class="kpi-sub">blended across hurdles</span></div></div>
-    </div>
-
+  {# ───────── Enterprise Value Analysis (Meta) ───────── #}
+  {% if is_meta %}
+  <div class="tab-panel" data-panel="ev">
+    {% if not polaris %}
+    <div class="card"><span class="subtle">Upload the Modelo Polaris workbook on the Dashboard tab to enable the analysis.</span></div>
+    {% else %}
+    {% set K = 'font-size:10px;letter-spacing:0.13em;text-transform:uppercase;color:var(--mq-subtle);font-weight:700;' %}
+    {% set SV = 'font-family:var(--font-num);font-variant-numeric:tabular-nums;font-size:12px;font-weight:600;min-width:64px;text-align:right;color:var(--mq-ink-2);' %}
+    {% set SR = 'display:grid;grid-template-columns:1fr 150px 64px;gap:12px;align-items:center;padding:6px 0;' %}
     <div class="card mb-24">
-      <div class="card-head">
-        <div><div class="card-title">Annual Promote vs Project Distributions</div>
-          <div class="card-sub" id="comp-chart-sub">Bars: Maquina's promote by hurdle (mdp, nominal). Lines: <strong>each highway vs its own</strong> indexed título baseline, right axis — a road only pays when it clears its own line (no netting between roads).</div></div>
-        <div class="row" style="gap:6px;">
-          <button class="btn btn-sm btn-primary" id="comp-view-hurdle" type="button" onclick="compView('hurdle')">Promote by Hurdle</button>
-          <button class="btn btn-sm btn-ghost" id="comp-view-stack" type="button" onclick="compView('stack')">Promote on Distributions</button>
+      <div class="row between wrap" style="gap:12px;align-items:flex-start;">
+        <div style="max-width:900px;">
+          <div class="card-title" style="font-size:16px;">Enterprise Value Analysis — Meta &amp; IPC toll roads</div>
+          <div class="card-sub">Enterprise value is the NPV of each highway's Ingresos × its company's EBITDA margin
+            (META {{ '%.1f'|format((polaris.meta.margins.META or 1) * 100) }}% · IPC {{ '%.1f'|format((polaris.meta.margins.IPC or 1) * 100) }}%),
+            discounted monthly from {{ polaris.meta.model_start }}. The baseline is the model exactly as uploaded. The sliders reprice each highway; the highways add up to the
+            total, and any value created above the baseline is shared — <strong id="ev-rule-txt">20% to Maquina first, the rest split five ways</strong>.</div>
         </div>
+        <button class="btn btn-sm btn-ghost" type="button" onclick="evReset()">Reset to model</button>
       </div>
-      <div class="chart-wrap" style="height:340px;"><canvas id="compChart"></canvas></div>
-    </div>
-
-    {# ── Distributions by investor (Meta's 5 LPs; Maquina also earns the promote) ── #}
-    <div class="card mb-24">
-      <div class="card-head"><div>
-        <div class="card-title">Distributions by Investor</div>
-        <div class="card-sub">Total cash out to each of Meta's five investors over the deal (mdp, nominal), split into the at-baseline slice, the above-baseline slice, and Maquina's promote on top. Live — responds to the sliders above.</div>
-      </div></div>
-
-      <div class="chart-wrap" style="height:300px;"><canvas id="investorChart"></canvas></div>
-
-      <p class="subtle" style="font-size:11.5px;line-height:1.6;margin-top:4px;">
-        Meta's five investors hold equal 20% stakes. Each receives their share of the at-baseline and above-baseline
-        distributions; <strong>Maquina additionally receives the entire promote</strong>, the third segment on bar 1.
+      <div class="grid grid-4" style="margin-top:16px;">
+        <div class="kpi"><div class="kpi-top"><span class="kpi-label">Baseline EV</span></div><div class="kpi-value" id="ev-base">—</div><div class="kpi-foot"><span class="kpi-sub" id="ev-base-usd">model as uploaded</span></div></div>
+        <div class="kpi"><div class="kpi-top"><span class="kpi-label">Scenario EV</span></div><div class="kpi-value" id="ev-scen">—</div><div class="kpi-foot"><span class="kpi-sub" id="ev-scen-usd">with slider settings</span></div></div>
+        <div class="kpi"><div class="kpi-top"><span class="kpi-label">Value Created</span></div><div class="kpi-value" id="ev-delta">—</div><div class="kpi-foot"><span class="kpi-sub" id="ev-delta-sub">Δ vs baseline</span></div></div>
+        <div class="kpi"><div class="kpi-top"><span class="kpi-label">Maquina Ownership</span></div><div class="kpi-value" style="color:var(--mq-accent);" id="ev-own">20.0%</div><div class="kpi-foot"><span class="kpi-sub" id="ev-mq">—</span></div></div>
+      </div>
+      <p class="subtle" style="font-size:11.5px;line-height:1.6;margin-top:14px;">
+        Nominal MXN, sin IVA. USD at {{ '%.2f'|format(polaris.rate) }} MXN.
+        {% if polaris.meta.concession_end and polaris.meta.concession_end.IPC %}The IPC concession runs to {{ polaris.meta.concession_end.IPC }} but the model's revenue ends {{ polaris.meta.horizon_end }}; nothing is extrapolated past the model.{% endif %}
+        The discount rate moves baseline and scenario together, so it changes total value but never the split. Ownership floors at the baseline stake when a scenario destroys value.
       </p>
     </div>
 
-    <div class="grid grid-2 mb-24" style="align-items:start;">
-      <div class="card">
-        <div class="row between wrap" style="gap:8px;margin-bottom:14px;">
-          <div class="card-title">Scenario Controls</div>
-          <div class="row" style="gap:6px;">
-            <button class="btn btn-sm btn-ghost" type="button" onclick="compPreset('base')">Base (Excel)</button>
-            <button class="btn btn-sm btn-ghost" type="button" onclick="compPreset('cons')">Conservador</button>
-            <button class="btn btn-sm btn-ghost" type="button" onclick="compPreset('opt')">Optimista</button>
-          </div>
-        </div>
-        <div class="row" style="gap:18px;margin-bottom:12px;">
-          <label class="row" style="gap:7px;font-size:13px;color:var(--mq-muted);cursor:pointer;"><input type="checkbox" id="comp-road-v" checked style="accent-color:var(--mq-accent);"> Ventura–El Peyote</label>
-          <label class="row" style="gap:7px;font-size:13px;color:var(--mq-muted);cursor:pointer;"><input type="checkbox" id="comp-road-p" checked style="accent-color:var(--mq-accent);"> La Pitahaya–Libr. Oriente</label>
-        </div>
-        {% set srow = 'display:grid;grid-template-columns:210px 1fr 60px;gap:10px;align-items:center;padding:6px 0;' %}
-        {% set slbl = 'font-size:12px;color:var(--mq-muted);display:block;' %}
-        {% set sbase = 'font-size:10.5px;color:var(--mq-subtle);display:block;line-height:1.4;margin-top:1px;' %}
-        {% set sval = 'font-size:12px;font-weight:700;color:var(--mq-ink-2);text-align:right;font-variant-numeric:tabular-nums;' %}
-        {% set bs = comp.base %}
-        <div style="font-size:10px;letter-spacing:0.13em;text-transform:uppercase;color:var(--mq-subtle);font-weight:700;margin:8px 0 2px;">Traffic &amp; revenue
-          <span style="text-transform:none;letter-spacing:0;font-weight:500;">— sliders are deltas vs the workbook's own assumptions, shown beneath each</span></div>
-        <div style="{{ srow }}"><span><span style="{{ slbl }}">Toll level — Ventura</span><span style="{{ sbase }}">base 100% = Valoran tarifas · Auto <strong>${{ '%.2f'|format(comp.ventura.toll_auto) }}</strong> · blended <strong>${{ '%.0f'|format(comp.ventura.toll_blend) }}</strong>/passage ({{ comp.ventura.toll_when }})</span></span><input type="range" id="comp-lvl-v" min="60" max="140" step="1" value="100" style="accent-color:var(--mq-accent);"><span style="{{ sval }}" id="lbl-lvl-v">100%</span></div>
-        <div style="{{ srow }}"><span><span style="{{ slbl }}">Toll level — Pitahaya</span><span style="{{ sbase }}">base 100% = Valoran tarifas · Auto <strong>${{ '%.2f'|format(comp.pitahaya.toll_auto) }}</strong> · blended <strong>${{ '%.0f'|format(comp.pitahaya.toll_blend) }}</strong>/passage ({{ comp.pitahaya.toll_when }})</span></span><input type="range" id="comp-lvl-p" min="60" max="140" step="1" value="100" style="accent-color:var(--mq-accent);"><span style="{{ sval }}" id="lbl-lvl-p">100%</span></div>
-        <div style="{{ srow }}"><span><span style="{{ slbl }}">Traffic growth Δ — Ventura</span><span style="{{ sbase }}">base <strong>+{{ '%.1f'|format(bs.ventura.pas_cagr) }}%/yr in vehicles</strong> ({{ '{:,.1f}'.format(bs.ventura.pas_start) }}M→{{ '{:,.1f}'.format(bs.ventura.pas_end) }}M passages/yr, {{ bs.ventura.start_year }}→{{ comp.years[-1] }})</span></span><input type="range" id="comp-growth-v" min="-3" max="3" step="0.25" value="0" style="accent-color:var(--mq-accent);"><span style="{{ sval }}" id="lbl-growth-v">+0.0%</span></div>
-        <div style="{{ srow }}"><span><span style="{{ slbl }}">Traffic growth Δ — Pitahaya</span><span style="{{ sbase }}">base <strong>+{{ '%.1f'|format(bs.pitahaya.pas_cagr) }}%/yr in vehicles</strong> ({{ '{:,.1f}'.format(bs.pitahaya.pas_start) }}M→{{ '{:,.1f}'.format(bs.pitahaya.pas_end) }}M passages/yr, {{ bs.pitahaya.start_year }}→{{ comp.years[-1] }})</span></span><input type="range" id="comp-growth-p" min="-3" max="3" step="0.25" value="0" style="accent-color:var(--mq-accent);"><span style="{{ sval }}" id="lbl-growth-p">+0.0%</span></div>
-        <div style="{{ srow }}"><span><span style="{{ slbl }}">Inflation (INPC) Δ</span><span style="{{ sbase }}">base {{ '%.1f'|format(bs.infl_first) }}%/yr ({{ comp.years[0] }}→{{ comp.years[1] }}) easing to {{ '%.1f'|format(bs.infl_last) }}% by {{ comp.years[-1] }} — tarifas rise <strong>{{ '%.1f'|format(bs.ventura.tar_cagr) }}%/yr nominal, {{ '%+.1f'|format(bs.ventura.tar_real) }}% real</strong> (INPC only)</span></span><input type="range" id="comp-infl" min="-2" max="2" step="0.25" value="0" style="accent-color:var(--mq-accent);"><span style="{{ sval }}" id="lbl-infl">+0.0%</span></div>
-        <div style="font-size:10.5px;color:var(--mq-subtle);line-height:1.55;margin:6px 0 2px;padding:7px 9px;background:var(--mq-surface-2);border-radius:6px;">
-          <strong>How the two combine</strong> (CAGRs, Ventura {{ bs.ventura.start_year }}→{{ comp.years[-1] }}): revenue = vehicles × tarifa, so
-          ({{ '%.1f'|format(bs.ventura.pas_cagr) }}% traffic, Ventura) × ({{ '%.1f'|format(bs.ventura.tar_cagr) }}% tarifa) = <strong>{{ '%.1f'|format(bs.ventura.nom_cagr) }}%/yr nominal revenue</strong>.
-          Since tarifas only track inflation, <em>all</em> real growth comes from traffic.
-        </div>
-        <div style="font-size:10px;letter-spacing:0.13em;text-transform:uppercase;color:var(--mq-subtle);font-weight:700;margin:12px 0 2px;">Valuation</div>
-        <div style="{{ srow }}"><span><span style="{{ slbl }}">Real discount rate</span><span style="{{ sbase }}">base 9.0% real — Valoran deck premise</span></span><input type="range" id="comp-disc" min="6" max="12" step="0.25" value="9" style="accent-color:var(--mq-accent);"><span style="{{ sval }}" id="lbl-disc">9.0%</span></div>
-        <div style="{{ srow }}"><span><span style="{{ slbl }}">Tax rate</span><span style="{{ sbase }}">base 30% — Mexican ISR corporate rate</span></span><input type="range" id="comp-tax" min="0" max="35" step="1" value="30" style="accent-color:var(--mq-accent);"><span style="{{ sval }}" id="lbl-tax">30%</span></div>
-        <div style="font-size:10px;letter-spacing:0.13em;text-transform:uppercase;color:var(--mq-subtle);font-weight:700;margin:12px 0 2px;">Deal terms — hurdles over baseline
-          <span style="text-transform:none;letter-spacing:0;font-weight:500;">— base = proposal: 30/50/75% hurdles at 5/40/60/75%</span></div>
-        <div style="{{ srow }}"><span style="{{ slbl }}">Hurdle 1 ends at (excess ≤)</span><input type="range" id="comp-th1" min="10" max="60" step="1" value="30" style="accent-color:var(--mq-accent);"><span style="{{ sval }}" id="lbl-th1">30%</span></div>
-        <div style="{{ srow }}"><span style="{{ slbl }}">Hurdle 2 ends at</span><input type="range" id="comp-th2" min="20" max="80" step="1" value="50" style="accent-color:var(--mq-accent);"><span style="{{ sval }}" id="lbl-th2">50%</span></div>
-        <div style="{{ srow }}"><span style="{{ slbl }}">Hurdle 3 ends at</span><input type="range" id="comp-th3" min="30" max="100" step="1" value="75" style="accent-color:var(--mq-accent);"><span style="{{ sval }}" id="lbl-th3">75%</span></div>
-        <div style="{{ srow }}"><span style="{{ slbl }}">Promote — Hurdle 1</span><input type="range" id="comp-sh1" min="0" max="100" step="1" value="5" style="accent-color:var(--mq-accent);"><span style="{{ sval }}" id="lbl-sh1">5%</span></div>
-        <div style="{{ srow }}"><span style="{{ slbl }}">Promote — Hurdle 2</span><input type="range" id="comp-sh2" min="0" max="100" step="1" value="40" style="accent-color:var(--mq-accent);"><span style="{{ sval }}" id="lbl-sh2">40%</span></div>
-        <div style="{{ srow }}"><span style="{{ slbl }}">Promote — Hurdle 3</span><input type="range" id="comp-sh3" min="0" max="100" step="1" value="60" style="accent-color:var(--mq-accent);"><span style="{{ sval }}" id="lbl-sh3">60%</span></div>
-        <div style="{{ srow }}"><span style="{{ slbl }}">Promote — Hurdle 4 (&gt;Hurdle 3)</span><input type="range" id="comp-sh4" min="0" max="100" step="1" value="75" style="accent-color:var(--mq-accent);"><span style="{{ sval }}" id="lbl-sh4">75%</span></div>
-      </div>
-
-      <div class="card">
-        <div class="card-title mb-16">Breakdown &amp; References</div>
-        <div class="table-scroll" style="max-height:none;">
-          <table class="data-table">
-            <thead><tr><th style="text-align:left;">Highway</th><th>First sharing yr</th><th>Nominal total</th><th>NPV (post-tax)</th></tr></thead>
-            <tbody>
-              <tr><td style="text-align:left;">Ventura – El Peyote</td><td id="comp-v-first">—</td><td id="comp-v-nom">—</td><td id="comp-v-npv">—</td></tr>
-              <tr><td style="text-align:left;">La Pitahaya – Libr. Oriente</td><td id="comp-p-first">—</td><td id="comp-p-nom">—</td><td id="comp-p-npv">—</td></tr>
-            </tbody>
-          </table>
-        </div>
-        <div class="divider"></div>
-        <div style="font-size:10px;letter-spacing:0.13em;text-transform:uppercase;color:var(--mq-subtle);font-weight:700;margin-bottom:8px;">Distribution split 2026–50 (nominal)</div>
-        <div class="row between" style="font-size:12.5px;padding:4px 0;"><span class="muted">Total project distributions</span><span class="tnum" style="font-weight:600;" id="comp-tot-dist">—</span></div>
-        <div class="row between" style="font-size:12.5px;padding:4px 0;"><span class="muted">Promote to Maquina</span><span class="tnum" style="font-weight:600;color:var(--mq-accent);" id="comp-tot-prom">—</span></div>
-        <div class="row between" style="font-size:12.5px;padding:4px 0;"><span class="muted" style="padding-left:12px;">— in USD</span><span class="tnum" style="font-weight:600;color:var(--mq-accent);" id="comp-tot-prom-usd">—</span></div>
-        <div class="row between" style="font-size:12.5px;padding:4px 0;border-bottom:1px solid var(--mq-line);"><span class="muted">Meta retained (non-promote)</span><span class="tnum" style="font-weight:600;" id="comp-tot-ret">—</span></div>
-        <div style="margin:12px 0;"></div>
-        <p class="subtle" style="font-size:11.5px;line-height:1.6;margin-top:12px;">Method: yearly excess = max(0, model revenues − concession-title baseline indexed by INPC). The excess is layered against the baseline hurdles and promoted at the hurdle percentages. NPV deflates nominal flows to 2026 pesos and discounts at the real rate, post-tax. Base series extracted 1-for-1 from Valoran's updated workbook ("Aux. Compartición": H2-2026 stub period, then annual through concession end 2050 — base-case nominal total <strong>$2,849 mdp</strong>, ties to the Excel).</p>
-      </div>
-    </div>
-
-    {# ── Toll economics: model tarifa vs título-implied, per passage ── #}
     <div class="card mb-24">
-      <div class="card-head"><div>
-        <div class="card-title">Toll Economics — Model Tarifa vs Título-Implied, per Vehicle Passage</div>
-        <div class="card-sub">What each highway charges per vehicle versus what the concession title assumed. Live — responds to the sliders above.</div>
-      </div></div>
-      <div class="table-scroll" style="max-height:420px;">
+      <div class="card-head"><div><div class="card-title">Enterprise Ownership by Investor</div>
+        <div class="card-sub">Each investor's baseline stake plus their share of value created. Maquina holds a 20% stake and takes the first slice of any upside.</div></div></div>
+      <div class="chart-wrap" style="height:280px;"><canvas id="ownChart"></canvas></div>
+      <div class="table-scroll" style="max-height:none;border:none;margin-top:14px;">
         <table class="data-table">
-          <thead><tr>
-            <th style="text-align:left;">Year</th><th style="text-align:left;">Highway</th>
-            <th>Passages (M)</th><th>Model tarifa</th><th>Título-implied</th>
-            <th>Gap</th><th style="text-align:left;">Hurdle reached</th><th>Promote / passage</th>
-          </tr></thead>
-          <tbody id="comp-toll-tbody"></tbody>
+          <thead><tr><th style="text-align:left;">Investor</th><th>Ownership</th><th>Baseline stake</th><th>Share of value created</th><th>Capital value (MXN)</th><th>Capital value (USD)</th></tr></thead>
+          <tbody id="own-tbody"></tbody>
         </table>
       </div>
-      <div class="divider"></div>
-      <div class="grid grid-2" style="gap:22px;">
-        <div>
-          <div style="font-size:10px;letter-spacing:0.13em;text-transform:uppercase;color:var(--mq-subtle);font-weight:700;margin-bottom:8px;">What this table is doing</div>
-          <p class="subtle" style="font-size:12px;line-height:1.65;">
-            The <strong>model tarifa</strong> is Valoran's projected revenue for the year divided by the vehicles projected to pass — the average toll actually collected per vehicle, across all classes.<br><br>
-            The <strong>título-implied</strong> figure is the concession title's contractual revenue for that year divided by the <em>same</em> vehicle count. The título is only a peso total — it contains no traffic and no tariff — so this converts it into per-vehicle terms to make the two comparable. <em>It is a derived comparison, not a rate anyone charges.</em><br><br>
-            The <strong>gap</strong> is the excess as a % of the baseline — and that percentage is precisely what the hurdle ladder measures, so the "hurdle reached" column shows where each road's year lands.
-          </p>
-        </div>
-        <div>
-          <div style="font-size:10px;letter-spacing:0.13em;text-transform:uppercase;color:var(--mq-subtle);font-weight:700;margin-bottom:8px;">Why it matters</div>
-          <p class="subtle" style="font-size:12px;line-height:1.65;">
-            It reduces the whole deal to one number per road per year: <strong>how much more revenue per vehicle the model assumes than the concession promised.</strong> That gap is the entire source of Maquina's promote — no gap, no payment.<br><br>
-            It also shows why v2 is worth so much less than v1: a ~30–35% gap on Ventura barely clears Hurdle 1, while Pitahaya's ~11% gap sits deep inside it at 5%. Under v1's forecast the gap was 120–350%, landing most of the excess in Hurdle 4 at 75%.<br><br>
-            <strong>The diligence question:</strong> is a ~30% revenue-per-vehicle premium over the título realistic? That single judgement drives the valuation more than any other input — test it with the toll-level sliders.
-          </p>
-        </div>
-      </div>
     </div>
 
-    {# ── Proposal comparison: v1 (original) vs v2 (updated) — static reference ── #}
-    {% set cmp = comp.compare %}
     <div class="card mb-24">
-      <div class="card-head"><div>
-        <div class="card-title">Proposal Comparison — Original (v1) vs Updated (v2)</div>
-        <div class="card-sub">Base cases of the two workbooks as received from Valoran. Fixed reference for team review — the scenario sliders above don't affect this section. NPV at 9% real, 30% tax.</div>
-      </div></div>
-
-      <div class="grid grid-3 mb-24">
-        <div class="summary-card"><div class="lbl">Nominal Promote (life of deal)</div>
-          <div class="val">${{ '{:,.0f}'.format(cmp.v1.nom) }} → ${{ '{:,.0f}'.format(cmp.v2.nom) }} <span style="font-size:12px;font-weight:500;color:var(--mq-subtle);">mdp</span></div>
-          <div style="font-size:11.5px;font-weight:700;color:#D2452F;margin-top:4px;">{{ cmp.d_nom }}% <span style="font-weight:500;color:var(--mq-subtle);">· v1 2024–50 → v2 2026–50</span></div></div>
-        <div class="summary-card"><div class="lbl">NPV (post-tax · 9% real)</div>
-          <div class="val">${{ '{:,.0f}'.format(cmp.v1.npv) }} → ${{ '{:,.0f}'.format(cmp.v2.npv) }} <span style="font-size:12px;font-weight:500;color:var(--mq-subtle);">mdp</span></div>
-          <div style="font-size:11.5px;font-weight:700;color:#D2452F;margin-top:4px;">{{ cmp.d_npv }}% <span style="font-weight:500;color:var(--mq-subtle);">· discounted to 2025 / 2026</span></div></div>
-        <div class="summary-card"><div class="lbl">Blended Share of Excess</div>
-          <div class="val">{{ cmp.v1.soe }}% → {{ cmp.v2.soe }}%</div>
-          <div class="subtle" style="font-size:11.5px;margin-top:4px;">life of deal · promote mix moved from Hurdle 4 to Hurdles 1–2</div></div>
-      </div>
-
-      <div class="chart-wrap" style="height:320px;"><canvas id="compareChart"></canvas></div>
-      <p class="subtle" style="font-size:11.5px;line-height:1.6;margin-top:10px;">Model revenues as a % of the indexed título baseline — the single assumption that drives the promote. Dotted guides mark where each hurdle ends (130% / 150% / 175% of baseline). v1 (dashed) lived far above the Hurdle-3 line, paying 75% on every marginal peso; v2 (solid) barely clears Hurdle 1. Opening years are partial; v2's H2-2026 stub is excluded from the % lines.</p>
-
-      <div class="divider"></div>
-      <div class="table-scroll" style="max-height:none;">
+      <div class="card-head"><div><div class="card-title">Value by Highway</div>
+        <div class="card-sub">NPV per highway at the current discount rate — baseline vs scenario. The highways sum to the enterprise value above.</div></div></div>
+      <div class="table-scroll" style="max-height:none;border:none;">
         <table class="data-table">
-          <thead><tr><th style="text-align:left;">Assumption / Result</th><th style="text-align:left;">v1 — original (Libro1.xlsx · "Compartición")</th><th style="text-align:left;">v2 — updated (Libro1 1.xlsx · "Aux. Compartición")</th></tr></thead>
-          <tbody>
-            <tr><td style="text-align:left;color:var(--mq-ink-2);font-weight:600;">Revenue model vs título — Ventura</td><td style="text-align:left;">{{ cmp.v1.rng_v }} <span class="subtle">(2–4.5× the plan)</span></td><td style="text-align:left;">{{ cmp.v2.rng_v }}</td></tr>
-            <tr><td style="text-align:left;color:var(--mq-ink-2);font-weight:600;">Revenue model vs título — Pitahaya</td><td style="text-align:left;">{{ cmp.v1.rng_p }}</td><td style="text-align:left;">{{ cmp.v2.rng_p }}</td></tr>
-            <tr><td style="text-align:left;color:var(--mq-ink-2);font-weight:600;">Sharing window</td><td style="text-align:left;">2024–2050, annual</td><td style="text-align:left;">H2-2026 stub + 2027–2050</td></tr>
-            <tr><td style="text-align:left;color:var(--mq-ink-2);font-weight:600;">First promote year (Ventura / Pitahaya)</td><td style="text-align:left;">{{ cmp.v1.first.ventura }} / {{ cmp.v1.first.pitahaya }}</td><td style="text-align:left;">{{ cmp.v2.first.ventura }} / {{ cmp.v2.first.pitahaya }}</td></tr>
-            <tr><td style="text-align:left;color:var(--mq-ink-2);font-weight:600;">Promote mix by hurdle</td><td style="text-align:left;">H1 {{ cmp.v1.mix[0] }}% · H2 {{ cmp.v1.mix[1] }}% · H3 {{ cmp.v1.mix[2] }}% · <strong>H4 {{ cmp.v1.mix[3] }}%</strong></td><td style="text-align:left;"><strong>H1 {{ cmp.v2.mix[0] }}% · H2 {{ cmp.v2.mix[1] }}%</strong> · H3 {{ cmp.v2.mix[2] }}% · H4 {{ cmp.v2.mix[3] }}%</td></tr>
-            <tr><td style="text-align:left;color:var(--mq-ink-2);font-weight:600;">Blended share of excess</td><td style="text-align:left;">{{ cmp.v1.soe }}%</td><td style="text-align:left;">{{ cmp.v2.soe }}%</td></tr>
-            <tr><td style="text-align:left;color:var(--mq-ink-2);font-weight:600;">Nominal promote</td><td style="text-align:left;">${{ '{:,.0f}'.format(cmp.v1.nom) }} mdp</td><td style="text-align:left;">${{ '{:,.0f}'.format(cmp.v2.nom) }} mdp <span style="color:#D2452F;font-weight:700;">({{ cmp.d_nom }}%)</span></td></tr>
-            <tr><td style="text-align:left;color:var(--mq-ink-2);font-weight:600;">NPV @ 9% real · 30% tax</td><td style="text-align:left;">${{ '{:,.0f}'.format(cmp.v1.npv) }} mdp</td><td style="text-align:left;">${{ '{:,.0f}'.format(cmp.v2.npv) }} mdp <span style="color:#D2452F;font-weight:700;">({{ cmp.d_npv }}%)</span></td></tr>
-            <tr><td style="text-align:left;color:var(--mq-ink-2);font-weight:600;">Unchanged between versions</td><td colspan="2" style="text-align:left;" class="subtle">Título baselines and actualization (+33.07% Ventura / +29.59% Pitahaya) · hurdle thresholds 30/50/75% · promote rates 5/40/60/75% · INPC indexation ~3.5–4%/yr</td></tr>
-          </tbody>
+          <thead><tr><th style="text-align:left;">Highway</th><th style="text-align:left;">Company</th><th>Opens</th><th>Baseline NPV</th><th>Scenario NPV</th><th>Δ</th><th>Δ %</th></tr></thead>
+          <tbody id="hw-tbody"></tbody>
         </table>
       </div>
-      <p class="subtle" style="font-size:11.5px;line-height:1.6;margin-top:12px;">Takeaway: the deal terms didn't change — the <strong>revenue model did</strong>. v1 projected revenues at 2–4.5× the concession-title plan, pushing nearly all excess into Hurdle 4 at a 75% promote. v2 re-cut revenues to ~1.1–1.5× the plan, so the excess barely clears Hurdle 1 and the promote falls ~99%. The valuation is therefore extremely sensitive to which traffic model you believe — see the Revenue level and growth sliders above.</p>
     </div>
+
+    <div class="card mb-24">
+      <div class="card-head"><div><div class="card-title">Scenario Controls</div>
+        <div class="card-sub">Valuation inputs first, then one row per highway. Aforo and tarifa sliders scale that highway's model revenue; the delay slider pushes an in-development road's opening back, losing the tail past the concession end.</div></div></div>
+      <div style="{{ SR }}"><span><span style="{{ K }}">Discount rate</span><span class="subtle" style="display:block;font-size:11px;">model uses {{ '%.2f'|format(polaris.meta.discount_rate * 100) }}% ({{ polaris.meta.discount_rate_src }}); moves baseline and scenario together</span></span>
+        <input type="range" id="ev-disc" min="5" max="20" step="0.25" value="{{ polaris.meta.discount_rate * 100 }}" style="accent-color:var(--mq-accent);"><span style="{{ SV }}" id="lbl-disc">—</span></div>
+      <div style="{{ SR }}"><span><span style="{{ K }}">Maquina's first share of value created</span><span class="subtle" style="display:block;font-size:11px;">taken off the top; the remainder is split equally among all five investors, Maquina included</span></span>
+        <input type="range" id="ev-first" min="0" max="50" step="1" value="{{ polaris.maquina_first_pct }}" style="accent-color:var(--mq-accent);"><span style="{{ SV }}" id="lbl-first">—</span></div>
+      <div class="divider"></div>
+      {% for h in polaris.highways %}
+      <div style="padding:10px 0;border-bottom:1px solid var(--mq-line);">
+        <div class="row between wrap" style="gap:8px;align-items:baseline;margin-bottom:6px;">
+          <span class="legend-left" style="font-weight:700;color:var(--mq-ink-2);font-size:13px;"><span class="legend-dot" style="background:{{ h.color }};"></span>{{ h.name }} <span class="badge {{ 'accent' if h.company == 'IPC' }}" style="margin-left:6px;">{{ h.company }}</span>{% if h.in_development %}<span class="badge" style="margin-left:6px;font-size:10px;">en obra</span>{% endif %}</span>
+          <span class="subtle" style="font-size:11px;">
+            {% if h.tpda and h.tpda.Total %}TPDA {{ '{:,.0f}'.format(h.tpda.Total) }}{% if h.tpda_src == 'model@open' %} at opening{% endif %}{% endif %}
+            {% if h.avg_tarifa_sin_iva %} · avg tarifa ${{ '%.0f'|format(h.avg_tarifa_sin_iva) }} sin IVA{% endif %}
+            {% if h.in_development %} · opens {{ h.open_month }}{% else %} · operating{% endif %}
+            · lifetime {{ '%.1f'|format(h.lifetime / 1e9) }} bn</span>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat({{ 3 if h.in_development else 2 }}, 1fr);gap:14px;">
+          <div style="display:grid;grid-template-columns:1fr 60px;gap:8px;align-items:center;"><span><span style="{{ K }}">Aforo Δ</span><span class="subtle" style="display:block;font-size:10.5px;">growth vs model, pp/yr, compounding from opening</span>
+            <input type="range" id="ev-g-{{ h.key }}" min="-3" max="3" step="0.25" value="0" style="accent-color:var(--mq-accent);width:100%;"></span><span style="{{ SV }}" id="lbl-g-{{ h.key }}">+0.00</span></div>
+          <div style="display:grid;grid-template-columns:1fr 60px;gap:8px;align-items:center;"><span><span style="{{ K }}">Tarifa level</span><span class="subtle" style="display:block;font-size:10.5px;">average toll vs model</span>
+            <input type="range" id="ev-t-{{ h.key }}" min="70" max="130" step="1" value="100" style="accent-color:var(--mq-accent);width:100%;"></span><span style="{{ SV }}" id="lbl-t-{{ h.key }}">100%</span></div>
+          {% if h.in_development %}
+          <div style="display:grid;grid-template-columns:1fr 60px;gap:8px;align-items:center;"><span><span style="{{ K }}">Opening delay</span><span class="subtle" style="display:block;font-size:10.5px;">months after {{ h.open_month }}; concession end is fixed</span>
+            <input type="range" id="ev-d-{{ h.key }}" min="0" max="36" step="1" value="0" style="accent-color:var(--mq-accent);width:100%;"></span><span style="{{ SV }}" id="lbl-d-{{ h.key }}">0 mo</span></div>
+          {% endif %}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
   </div>
   {% endif %}
 
@@ -1261,370 +1222,172 @@
   })();
   {% endif %}
 
-  {% if comp %}
-  // ── Compartición de Ingresos: live scenario engine (Meta) ──────────
-  // Replicates the proposal workbook's band math exactly at defaults.
-  // Series are in MILLIONS of MXN ("mdp" = millones de pesos).
+  {% if c.slug == 'meta' and polaris %}
+  // ── Meta: Modelo Polaris dashboard (map + revenue baseline) ─────────
   (function(){
-    const COMP = {{ comp | tojson }};
-    const N = COMP.years.length, Y = COMP.years;
+    const P = {{ polaris | tojson }};
     const $ = id => document.getElementById(id);
-    const SLIDERS = ['lvl-v','lvl-p','growth-v','growth-p','infl','disc','tax','th1','th2','th3','sh1','sh2','sh3','sh4'];
-    let compChart = null;
+    // Map — base layer only until the KMZ routes arrive.
+    if (window.L && $('hwMap')){
+      const map = L.map('hwMap', { scrollWheelZoom: false }).setView([22.15, -100.95], 8);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 18,
+        attribution: '&copy; OpenStreetMap contributors' }).addTo(map);
+      const legend = L.control({ position: 'bottomright' });
+      legend.onAdd = function(){
+        const d = L.DomUtil.create('div');
+        d.style.cssText = 'background:rgba(255,255,255,.94);padding:8px 10px;border-radius:8px;font:11.5px Inter,system-ui,sans-serif;color:#1b1f23;box-shadow:0 1px 4px rgba(0,0,0,.2);max-width:230px;';
+        d.innerHTML = '<div style="font-weight:700;margin-bottom:4px;">Highways · routes pending KMZ</div>' +
+          P.highways.map(h => '<div style="display:flex;align-items:center;gap:6px;line-height:1.7;"><span style="width:10px;height:10px;border-radius:50%;background:' + h.color + ';display:inline-block;"></span>' + h.name + ' <span style="color:#6b7280;">' + h.company + (h.in_development ? ' · en obra' : '') + '</span></div>').join('');
+        return d;
+      };
+      legend.addTo(map);
+      document.querySelectorAll('[data-tab]').forEach(b => b.addEventListener('click', () => setTimeout(() => map.invalidateSize(), 60)));
+    }
+    // Baseline revenue — stacked by highway, colours shared with table/map.
+    function buildHwRevChart(){
+      const ctx = $('hwRevChart'); if (!ctx) return null;
+      const years = P.years.map(String);
+      return new Chart(ctx, { type: 'bar',
+        data: { labels: years, datasets: P.highways.map(h => ({ label: h.name, stack: 'rev',
+          data: years.map(y => (h.annual[y] || 0) / 1e6), backgroundColor: MQ.hexA(h.color, 0.88), borderWidth: 0 })) },
+        options: { responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+          scales: { x: { stacked: true, grid: { display: false }, ticks: { color: MQ.muted(), maxRotation: 0, autoSkip: true } },
+                    y: { stacked: true, grid: { color: MQ.grid() }, ticks: { color: MQ.muted(), callback: v => '$' + (v / 1000).toFixed(1) + 'bn' },
+                         title: { display: true, text: 'Ingresos (nominal, mdp)', color: MQ.muted(), font: { size: 10 } } } },
+          plugins: { legend: { position: 'bottom', labels: { color: MQ.muted(), boxWidth: 10, font: { size: 11 } } },
+            tooltip: { callbacks: { label: c => c.dataset.label + ': $' + Math.round(c.parsed.y).toLocaleString() + ' mdp',
+              footer: items => 'Total: $' + Math.round(items.reduce((a, i) => a + i.parsed.y, 0)).toLocaleString() + ' mdp' } } } } });
+    }
+    if ($('hwRevChart')) MQ.register(buildHwRevChart);
+  })();
 
+  // ── Meta: Enterprise Value engine ───────────────────────────────────
+  // EV = Σ_highways NPV( Ingresos × EBITDA margin ), monthly discounting.
+  // Sliders reprice each highway; value created above the baseline is shared:
+  // `first` to Maquina off the top, the remainder split equally five ways.
+  // Downside is floored — nobody's stake dilutes when value falls.
+  (function(){
+    const P = {{ polaris | tojson }};
+    const $ = id => document.getElementById(id);
+    const H = P.highways, M = P.months.length;
+    const INVESTORS = P.investors || ['Maquina', 'Investor 2', 'Investor 3', 'Investor 4', 'Investor 5'];
+    const N_INV = INVESTORS.length, BASE_SHARE = 1 / N_INV;
+    const USD = P.rate || 17.3;
+    const DEF_DISC = (P.meta.discount_rate || 0.11) * 100, DEF_FIRST = P.maquina_first_pct || 20;
+    const bn = v => (v / 1e9).toFixed(2) + ' bn';
+    const mxn = v => Math.abs(v) >= 1e9 ? '$' + (v / 1e9).toFixed(2) + ' bn' : '$' + Math.round(v / 1e6).toLocaleString() + ' mdp';
+    const usd = v => { const u = v / USD; return Math.abs(u) >= 1e9 ? '$' + (u / 1e9).toFixed(2) + ' bn' : '$' + Math.round(u / 1e6).toLocaleString() + 'M'; };
+    const sgn = v => (v >= 0 ? '+' : '−');
+    let ownChart = null;
+
+    function val(id, dflt){ const el = $(id); return el ? +el.value : dflt; }
     function cfg(){
-      // clamp band thresholds so they stay ordered
-      let t1 = +$('comp-th1').value, t2 = Math.max(+$('comp-th2').value, t1+1), t3 = Math.max(+$('comp-th3').value, t2+1);
-      return {
-        roads: { ventura: $('comp-road-v').checked, pitahaya: $('comp-road-p').checked },
-        level: { ventura: +$('comp-lvl-v').value/100, pitahaya: +$('comp-lvl-p').value/100 },
-        growth: { ventura: +$('comp-growth-v').value/100, pitahaya: +$('comp-growth-p').value/100 },
-        infl: +$('comp-infl').value/100,
-        disc: +$('comp-disc').value/100, tax: +$('comp-tax').value/100,
-        th: [t1/100, t2/100, t3/100],
-        sh: [+$('comp-sh1').value/100, +$('comp-sh2').value/100, +$('comp-sh3').value/100, +$('comp-sh4').value/100],
-        _t: [t1, t2, t3]
-      };
+      const c = { r: val('ev-disc', DEF_DISC) / 100, first: val('ev-first', DEF_FIRST) / 100, g: {}, t: {}, d: {} };
+      H.forEach(h => { c.g[h.key] = val('ev-g-' + h.key, 0) / 100; c.t[h.key] = val('ev-t-' + h.key, 100) / 100; c.d[h.key] = val('ev-d-' + h.key, 0); });
+      return c;
     }
-
+    function scenarioSeries(h, c){
+      const g = c.g[h.key] || 0, t = c.t[h.key] || 1, N = Math.round(c.d[h.key] || 0);
+      const open = h.open_idx == null ? 0 : h.open_idx;
+      const out = new Array(M).fill(0);
+      for (let m = 0; m < M; m++){
+        const s = m - N; if (s < open) continue;               // not yet open (after delay)
+        out[m] = h.monthly[s] * t * Math.pow(1 + g, (s - open) / 12);
+      }
+      return out;                                              // months pushed past M are lost
+    }
+    function npv(series, margin, r){
+      const k = Math.pow(1 + r, 1 / 12); let df = 1, v = 0;
+      for (let m = 0; m < M; m++){ v += series[m] * margin / df; df *= k; }
+      return v;
+    }
     function calc(c){
-      const bands = [Array(N).fill(0), Array(N).fill(0), Array(N).fill(0), Array(N).fill(0)];
-      const modelT = Array(N).fill(0), baseT = Array(N).fill(0), shareT = Array(N).fill(0);
-      let totBaseDist = 0;   // sum of min(model, baseline) = the at-baseline slice
-      const per = {};
-      let totShare = 0, totExcess = 0, npvAll = 0;
-      const ix0 = COMP.index[0];   // first period (H2-2026) — NPV deflation base
-      for (const key of ['ventura','pitahaya']){
-        const road = { nom: 0, npv: 0, first: null,
-                       shareY: Array(N).fill(0), retainedY: Array(N).fill(0),
-                       modelY: Array(N).fill(null), baseY: Array(N).fill(null),
-                       tollY: Array(N).fill(null) };
-        per[key] = road;
-        if (!c.roads[key]) continue;
-        const R = COMP[key];
-        for (let i = 0; i < N; i++){
-          const ix = COMP.index[i] * Math.pow(1 + c.infl, Y[i] - 2026);
-          const base = R.tdc[i] * ix;
-          const real = R.model[i] / COMP.index[i];             // base-case real revenues
-          const model = real * ix * c.level[key] * Math.pow(1 + c.growth[key], Math.max(0, Y[i] - 2027));
-          const exc = Math.max(0, model - base);
-          const b = [
-            Math.min(exc, base * c.th[0]),
-            Math.min(Math.max(exc - base * c.th[0], 0), base * (c.th[1] - c.th[0])),
-            Math.min(Math.max(exc - base * c.th[1], 0), base * (c.th[2] - c.th[1])),
-            Math.max(exc - base * c.th[2], 0)
-          ];
-          let s = 0;
-          for (let k = 0; k < 4; k++){ const v = b[k] * c.sh[k]; bands[k][i] += v; s += v; }
-          modelT[i] += model; baseT[i] += base; shareT[i] += s;
-          totBaseDist += Math.min(model, base);
-          road.shareY[i] = s; road.retainedY[i] = model - s;
-          // Toll economics: the growth slider moves VEHICLES, so passages scale
-          // with it and cancel out of the model tarifa (level/inflation remain).
-          const pas = (R.passages ? R.passages[i] : 0) * Math.pow(1 + c.growth[key], Math.max(0, Y[i] - 2027));
-          if (pas > 0){
-            const gap = base > 0 ? (model / base - 1) : null;
-            road.tollY[i] = { pas: pas, model: model / pas, base: base / pas,
-                              gap: gap, prom: s / pas,
-                              hurdle: gap === null || gap <= 0 ? 0
-                                    : gap <= c.th[0] ? 1 : gap <= c.th[1] ? 2 : gap <= c.th[2] ? 3 : 4 };
-          }
-          // Only chart a road's baseline once it is actually producing
-          // revenue — a closed road's título baseline is not a comparator.
-          if (model > 0){ road.modelY[i] = model; road.baseY[i] = base; }
-          totShare += s; totExcess += exc; road.nom += s;
-          if (s > 1e-6 && road.first === null) road.first = Y[i];
-          const pv = (s * (1 - c.tax)) / (ix / ix0) / Math.pow(1 + c.disc, Y[i] - 2026);
-          road.npv += pv; npvAll += pv;
-        }
-      }
-      const retainedT = modelT.map((m, i) => m - shareT[i]);
-      return { bands, modelT, baseT, shareT, retainedT, per, totShare, totExcess, npvAll, totBaseDist };
-    }
-
-    const fmtMdp = x => '$' + Math.round(x).toLocaleString('en-US') + ' mdp';
-    const fmtUsd = x => { const usd = x * 1e6 / COMP.rate; return usd >= 1e9 ? '$' + (usd/1e9).toFixed(2) + 'B' : '$' + (usd/1e6).toFixed(0) + 'M'; };
-
-    function syncLabels(c){
-      $('lbl-lvl-v').textContent = Math.round(c.level.ventura*100) + '%';
-      $('lbl-lvl-p').textContent = Math.round(c.level.pitahaya*100) + '%';
-      ['v','p'].forEach(k => {
-        const g = k === 'v' ? c.growth.ventura : c.growth.pitahaya;
-        $('lbl-growth-' + k).textContent = (g>=0?'+':'') + (g*100).toFixed(1) + '%';
+      const rows = H.map(h => { const mg = h.margin == null ? 1 : h.margin;
+        const b = npv(h.monthly, mg, c.r), s = npv(scenarioSeries(h, c), mg, c.r);
+        return { h, base: b, scen: s, delta: s - b }; });
+      const base = rows.reduce((a, x) => a + x.base, 0), scen = rows.reduce((a, x) => a + x.scen, 0), delta = scen - base;
+      const up = Math.max(0, delta);
+      const inv = INVESTORS.map((name, i) => {
+        const extra = (i === 0 ? c.first * up : 0) + (1 - c.first) * up / N_INV;
+        const stake = BASE_SHARE * (delta > 0 ? base : scen);   // floor on the downside
+        const value = stake + (delta > 0 ? extra : 0);
+        return { name, stake, upside: delta > 0 ? extra : 0, value, own: scen > 0 ? value / scen : BASE_SHARE };
       });
-      $('lbl-infl').textContent = (c.infl>=0?'+':'') + (c.infl*100).toFixed(1) + '%';
-      $('lbl-disc').textContent = (c.disc*100).toFixed(1) + '%';
-      $('lbl-tax').textContent = Math.round(c.tax*100) + '%';
-      $('lbl-th1').textContent = c._t[0] + '%'; $('lbl-th2').textContent = c._t[1] + '%'; $('lbl-th3').textContent = c._t[2] + '%';
-      $('lbl-sh1').textContent = Math.round(c.sh[0]*100) + '%'; $('lbl-sh2').textContent = Math.round(c.sh[1]*100) + '%';
-      $('lbl-sh3').textContent = Math.round(c.sh[2]*100) + '%'; $('lbl-sh4').textContent = Math.round(c.sh[3]*100) + '%';
+      return { rows, base, scen, delta, inv };
     }
 
-    let viewMode = 'hurdle';   // 'hurdle' = promote by hurdle · 'stack' = promote on total distributions
-    let invChart = null;
-
-    // ── Distributions by investor ──────────────────────────────────
-    // Meta has five investors holding equal 20% stakes. Retained cash
-    // (at-baseline + above-baseline net of promote) splits by that share;
-    // Maquina additionally takes the whole promote.
-    const INVESTORS = [
-      { name: 'Maquina',    share: 0.20 },
-      { name: 'Investor 2', share: 0.20 },
-      { name: 'Investor 3', share: 0.20 },
-      { name: 'Investor 4', share: 0.20 },
-      { name: 'Investor 5', share: 0.20 }];
-
-    function investorSeries(r){
-      const promote = r.totShare;
-      const atBase = r.totBaseDist;                       // min(model, baseline)
-      const above = Math.max(0, r.totExcess - promote);   // excess Meta keeps
-      return {
-        labels:  INVESTORS.map(o => o.name),
-        base:    INVESTORS.map(o => atBase * o.share),
-        above:   INVESTORS.map(o => above * o.share),
-        promote: INVESTORS.map((o, i) => i === 0 ? promote : 0)
-      };
-    }
-
-    const mdp = v => v >= 1000 ? '$' + (v / 1000).toFixed(1) + 'k'
-                               : '$' + Math.round(v).toLocaleString();
-
-    // Draw each segment's value inside the bar, plus the row total at the end.
-    const barLabels = {
-      id: 'barLabels',
-      afterDatasetsDraw(chart){
-        const ctx = chart.ctx;
-        ctx.save();
-        ctx.font = "700 11px 'Inter', system-ui, sans-serif";
+    const barLabels = { id: 'evBarLabels', afterDatasetsDraw(chart){
+      const ctx = chart.ctx; ctx.save(); ctx.font = "700 11px 'Inter', system-ui, sans-serif"; ctx.textBaseline = 'middle';
+      const R = chart.$ev || []; const last = chart.getDatasetMeta(chart.data.datasets.length - 1);
+      chart.data.datasets.forEach((ds, di) => { const meta = chart.getDatasetMeta(di); if (meta.hidden) return;
         ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        const totals = [];
-        chart.data.datasets.forEach((ds, di) => {
-          const meta = chart.getDatasetMeta(di);
-          if (meta.hidden) return;
-          meta.data.forEach((bar, i) => {
-            const v = ds.data[i] || 0;
-            totals[i] = (totals[i] || 0) + v;
-            if (v <= 0) return;
-            const w = Math.abs(bar.x - bar.base);
-            if (w < 44) return;                    // too narrow to read
-            ctx.fillStyle = ds.labelColor || '#fff';
-            ctx.fillText(mdp(v), (bar.x + bar.base) / 2, bar.y);
-          });
-        });
-        // row totals just past the end of each bar
-        const last = chart.getDatasetMeta(chart.data.datasets.length - 1);
-        ctx.textAlign = 'left';
-        ctx.fillStyle = MQ.ink();
-        last.data.forEach((bar, i) => {
-          if (totals[i]) ctx.fillText(mdp(totals[i]), bar.x + 8, bar.y);
-        });
-        ctx.restore();
-      }
-    };
+        meta.data.forEach((bar, i) => { const v = ds.data[i] || 0; if (v <= 0) return; const w = Math.abs(bar.x - bar.base); if (w < 54) return;
+          ctx.fillStyle = ds.labelColor || '#fff'; ctx.fillText(mxn(v * 1e9), (bar.x + bar.base) / 2, bar.y); }); });
+      ctx.textAlign = 'left'; ctx.fillStyle = MQ.ink();
+      last.data.forEach((bar, i) => { const r = R[i]; if (r) ctx.fillText((r.own * 100).toFixed(1) + '% · ' + mxn(r.value), bar.x + 8, bar.y); });
+      ctx.restore(); } };
 
-    function buildInvestorChart(){
-      const ctx = $('investorChart'); if (!ctx) return null;
-      const s = investorSeries(calc(cfg()));
-      invChart = new Chart(ctx, {
-        type: 'bar',
-        plugins: [barLabels],
-        data: { labels: s.labels, datasets: [
-          { label: 'At baseline (Título)', data: s.base,    backgroundColor: MQ.hexA(MQ.palette(5), 0.55), borderWidth: 0, stack: 'd', labelColor: MQ.ink() },
-          { label: 'Above baseline',       data: s.above,   backgroundColor: MQ.hexA(MQ.palette(2), 0.90), borderWidth: 0, stack: 'd', labelColor: '#fff' },
-          { label: 'Promote to Maquina',   data: s.promote, backgroundColor: MQ.hexA(MQ.palette(0), 0.95), borderWidth: 0, stack: 'd', labelColor: '#fff' } ]},
-        options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false,
-          layout: { padding: { right: 62 } },
+    function buildOwnChart(){
+      const ctx = $('ownChart'); if (!ctx) return null;
+      const r = calc(cfg());
+      ownChart = new Chart(ctx, { type: 'bar', plugins: [barLabels],
+        data: { labels: r.inv.map(x => x.name), datasets: [
+          { label: 'Baseline stake', data: r.inv.map(x => x.stake / 1e9), backgroundColor: MQ.hexA(MQ.palette(5), 0.55), borderWidth: 0, stack: 'v', labelColor: MQ.ink() },
+          { label: 'Share of value created', data: r.inv.map(x => x.upside / 1e9), backgroundColor: MQ.hexA(MQ.palette(0), 0.95), borderWidth: 0, stack: 'v', labelColor: '#fff' } ] },
+        options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false, layout: { padding: { right: 150 } },
           interaction: { mode: 'index', intersect: false },
-          scales: {
-            x: { stacked: true, grid: { color: MQ.grid() },
-                 title: { display: true, text: 'Distributions (mdp, nominal)', color: MQ.muted(), font: { size: 10 } },
-                 ticks: { color: MQ.muted(), callback: v => '$' + (v / 1000).toFixed(1) + 'k' } },
-            y: { stacked: true, grid: { display: false }, ticks: { color: MQ.muted(), font: { size: 12 } } } },
-          plugins: { legend: { display: true, position: 'bottom', labels: { color: MQ.muted(), boxWidth: 10, font: { size: 11 } } },
-            tooltip: { callbacks: {
-              label: c => c.dataset.label + ': $' + Math.round(c.parsed.x).toLocaleString() + ' mdp',
-              footer: items => 'Total: $' + Math.round(items.reduce((a, i) => a + i.parsed.x, 0)).toLocaleString() + ' mdp' } } } } });
-      return invChart;
+          scales: { x: { stacked: true, grid: { color: MQ.grid() }, ticks: { color: MQ.muted(), callback: v => '$' + v.toFixed(0) + 'bn' },
+                         title: { display: true, text: 'Capital value (MXN, bn)', color: MQ.muted(), font: { size: 10 } } },
+                    y: { stacked: true, grid: { display: false }, ticks: { color: MQ.muted(), font: { size: 12 } } } },
+          plugins: { legend: { position: 'bottom', labels: { color: MQ.muted(), boxWidth: 10, font: { size: 11 } } },
+            tooltip: { callbacks: { label: c => c.dataset.label + ': ' + mxn(c.parsed.x * 1e9),
+              footer: items => 'Total: ' + mxn(items.reduce((a, i) => a + i.parsed.x, 0) * 1e9) } } } } });
+      ownChart.$ev = r.inv;
+      return ownChart;
     }
 
     function recompute(){
       const c = cfg(), r = calc(c);
-      syncLabels(c);
-      $('comp-npv').textContent = fmtMdp(r.npvAll);
-      $('comp-npv-sub').textContent = 'post-tax ' + Math.round(c.tax*100) + '% · ' + (c.disc*100).toFixed(1) + '% real · pesos 2026';
-      $('comp-usd').textContent = fmtUsd(r.npvAll);
-      $('comp-nom').textContent = fmtMdp(r.totShare);
-      $('comp-nom-usd').textContent = '≈ ' + fmtUsd(r.totShare) + ' USD · pre-tax, undiscounted';
-      $('comp-eff').textContent = r.totExcess ? (r.totShare / r.totExcess * 100).toFixed(1) + '%' : '—';
-      $('comp-v-first').textContent = r.per.ventura.first || '—';
-      $('comp-v-nom').textContent = fmtMdp(r.per.ventura.nom);
-      $('comp-v-npv').textContent = fmtMdp(r.per.ventura.npv);
-      $('comp-p-first').textContent = r.per.pitahaya.first || '—';
-      $('comp-p-nom').textContent = fmtMdp(r.per.pitahaya.nom);
-      $('comp-p-npv').textContent = fmtMdp(r.per.pitahaya.npv);
-      renderTollTable(r, c);
-      if (invChart){
-        const s = investorSeries(r);
-        invChart.data.labels = s.labels;
-        invChart.data.datasets[0].data = s.base;
-        invChart.data.datasets[1].data = s.above;
-        invChart.data.datasets[2].data = s.promote;
-        invChart.update('none');
-      }
-      const totDist = r.modelT.reduce((a, b) => a + b, 0);
-      $('comp-tot-dist').textContent = fmtMdp(totDist);
-      $('comp-tot-prom').textContent = fmtMdp(r.totShare);
-      $('comp-tot-prom-usd').textContent = fmtUsd(r.totShare) + ' USD';
-      $('comp-tot-ret').textContent = fmtMdp(totDist - r.totShare);
-      if (compChart){
-        const ds = compChart.data.datasets;
-        if (viewMode === 'hurdle'){
-          for (let k = 0; k < 4; k++){ ds[k].data = r.bands[k]; ds[k].label = hurdleLbl(c, k); }
-          ds[4].data = r.per.ventura.modelY;
-          ds[5].data = r.per.ventura.baseY;
-          ds[6].data = r.per.pitahaya.modelY;
-          ds[7].data = r.per.pitahaya.baseY;
-        } else {
-          ds[0].data = r.per.ventura.retainedY;
-          ds[1].data = r.per.pitahaya.retainedY;
-          ds[2].data = r.per.ventura.shareY;
-          ds[3].data = r.per.pitahaya.shareY;
-          ds[4].data = r.baseT;
-        }
-        compChart.update('none');
-      }
-      return r;
+      // labels
+      $('lbl-disc').textContent = (c.r * 100).toFixed(2) + '%';
+      $('lbl-first').textContent = Math.round(c.first * 100) + '%';
+      const rt = $('ev-rule-txt'); if (rt) rt.textContent = Math.round(c.first * 100) + '% to Maquina first, the rest split ' + (N_INV === 5 ? 'five' : N_INV) + ' ways';
+      H.forEach(h => { const g = c.g[h.key] * 100, t = c.t[h.key] * 100, d = c.d[h.key];
+        const lg = $('lbl-g-' + h.key); if (lg) lg.textContent = (g >= 0 ? '+' : '') + g.toFixed(2);
+        const lt = $('lbl-t-' + h.key); if (lt) lt.textContent = Math.round(t) + '%';
+        const ld = $('lbl-d-' + h.key); if (ld) ld.textContent = Math.round(d) + ' mo'; });
+      // KPIs
+      $('ev-base').textContent = mxn(r.base); $('ev-base-usd').textContent = usd(r.base) + ' · model as uploaded';
+      $('ev-scen').textContent = mxn(r.scen); $('ev-scen-usd').textContent = usd(r.scen) + ' · with slider settings';
+      const dEl = $('ev-delta'); dEl.textContent = sgn(r.delta) + mxn(Math.abs(r.delta)); dEl.className = 'kpi-value ' + (r.delta > 0 ? 'pos' : (r.delta < 0 ? 'neg' : ''));
+      $('ev-delta-sub').textContent = (r.base ? sgn(r.delta) + (Math.abs(r.delta) / r.base * 100).toFixed(1) + '% vs baseline' : '—') + (r.delta < 0 ? ' · floored, no dilution' : '');
+      const mq = r.inv[0]; $('ev-own').textContent = (mq.own * 100).toFixed(1) + '%';
+      $('ev-mq').textContent = mxn(mq.value) + ' · ' + usd(mq.value);
+      // investor table
+      $('own-tbody').innerHTML = r.inv.map((x, i) => '<tr><td style="text-align:left;' + (i === 0 ? 'font-weight:700;color:var(--mq-ink-2);' : '') + '">' + x.name + '</td>' +
+        '<td style="font-weight:700;">' + (x.own * 100).toFixed(2) + '%</td><td>' + mxn(x.stake) + '</td><td class="' + (x.upside > 0 ? 'pos' : '') + '">' + (x.upside > 0 ? '+' + mxn(x.upside) : '—') + '</td>' +
+        '<td>' + mxn(x.value) + '</td><td>' + usd(x.value) + '</td></tr>').join('') +
+        '<tr style="font-weight:700;"><td style="text-align:left;">Total</td><td>100.00%</td><td>' + mxn(r.inv.reduce((a, x) => a + x.stake, 0)) + '</td><td>' + (r.delta > 0 ? '+' + mxn(r.delta) : '—') + '</td><td>' + mxn(r.scen) + '</td><td>' + usd(r.scen) + '</td></tr>';
+      // highway table
+      $('hw-tbody').innerHTML = r.rows.map(x => '<tr><td style="text-align:left;"><span class="legend-left"><span class="legend-dot" style="background:' + x.h.color + ';"></span>' + x.h.name + '</span></td>' +
+        '<td style="text-align:left;">' + x.h.company + '</td><td>' + (x.h.in_development ? x.h.open_month : 'operating') + '</td><td>' + mxn(x.base) + '</td><td>' + mxn(x.scen) + '</td>' +
+        '<td class="' + (x.delta > 0.5e6 ? 'pos' : (x.delta < -0.5e6 ? 'neg' : '')) + '">' + (Math.abs(x.delta) < 0.5e6 ? '—' : sgn(x.delta) + mxn(Math.abs(x.delta))) + '</td>' +
+        '<td>' + (x.base ? (Math.abs(x.delta) < 0.5e6 ? '—' : sgn(x.delta) + (Math.abs(x.delta) / x.base * 100).toFixed(1) + '%') : '—') + '</td></tr>').join('') +
+        '<tr style="font-weight:700;"><td style="text-align:left;">Enterprise value</td><td></td><td></td><td>' + mxn(r.base) + '</td><td>' + mxn(r.scen) + '</td><td class="' + (r.delta > 0 ? 'pos' : (r.delta < 0 ? 'neg' : '')) + '">' + (Math.abs(r.delta) < 0.5e6 ? '—' : sgn(r.delta) + mxn(Math.abs(r.delta))) + '</td><td>' + (r.base ? sgn(r.delta) + (Math.abs(r.delta) / r.base * 100).toFixed(1) + '%' : '—') + '</td></tr>';
+      // chart
+      if (ownChart){ ownChart.data.datasets[0].data = r.inv.map(x => x.stake / 1e9); ownChart.data.datasets[1].data = r.inv.map(x => x.upside / 1e9); ownChart.$ev = r.inv; ownChart.update('none'); }
     }
-
-    const hurdleLbl = (c, k) => 'Hurdle ' + (k+1) + ' · ' + Math.round(c.sh[k]*100) + '%';
-
-    const ROADLBL = { ventura: 'Ventura', pitahaya: 'La Pitahaya' };
-    function renderTollTable(r, c){
-      const tb = $('comp-toll-tbody'); if (!tb) return;
-      const peso = x => '$' + x.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
-      const rows = [];
-      for (let i = 0; i < COMP.years.length; i++){
-        for (const key of ['ventura','pitahaya']){
-          const t = r.per[key] && r.per[key].tollY[i];
-          if (!t) continue;
-          const gp = t.gap === null ? null : t.gap * 100;
-          const gcol = gp === null ? 'var(--mq-subtle)' : gp > 0 ? '#1F9D6B' : '#D2452F';
-          const hl = t.hurdle === 0
-            ? '<span class="subtle">below baseline — no promote</span>'
-            : 'Hurdle ' + t.hurdle + ' · ' + Math.round(c.sh[t.hurdle-1]*100) + '%';
-          rows.push('<tr>' +
-            '<td style="text-align:left;">' + (COMP.labels ? COMP.labels[i] : COMP.years[i]) + '</td>' +
-            '<td style="text-align:left;">' + ROADLBL[key] + '</td>' +
-            '<td>' + t.pas.toFixed(2) + '</td>' +
-            '<td style="font-weight:600;">' + peso(t.model) + '</td>' +
-            '<td>' + peso(t.base) + '</td>' +
-            '<td style="color:' + gcol + ';font-weight:600;">' + (gp === null ? '—' : (gp>0?'+':'') + gp.toFixed(0) + '%') + '</td>' +
-            '<td style="text-align:left;">' + hl + '</td>' +
-            '<td style="color:var(--mq-accent);font-weight:600;">' + (t.prom > 0.005 ? peso(t.prom) : '—') + '</td></tr>');
-        }
-      }
-      tb.innerHTML = rows.join('') ||
-        '<tr><td colspan="8" style="text-align:left;" class="subtle">No highways selected.</td></tr>';
-    }
-
-    function buildCompChart(){
-      const ctx = $('compChart'); if (!ctx) return null;
-      const c = cfg(), r = calc(c);
-      const common = { responsive:true, maintainAspectRatio:false, interaction:{mode:'index',intersect:false},
-        plugins:{ legend:{ display:true, position:'bottom', labels:{ color:MQ.muted(), boxWidth:10, font:{size:11} } },
-          tooltip:{ callbacks:{ label:cc=>cc.dataset.label+': $'+Math.round(cc.parsed.y).toLocaleString()+' mdp' } } } };
-      let datasets, scales;
-      if (viewMode === 'hurdle'){
-        datasets = [0,1,2,3].map(k => ({
-          type:'bar', label:hurdleLbl(c, k), data:r.bands[k], stack:'share',
-          backgroundColor:MQ.hexA(MQ.palette(k), 0.75), borderWidth:0, yAxisID:'y' }));
-        // Per-highway lines — each road is measured against ITS OWN baseline
-        // (there is no netting between roads), so aggregate lines would mislead.
-        datasets.push({ type:'line', label:'Ventura — ingresos modelo', data:r.per.ventura.modelY, borderColor:MQ.palette(1), borderWidth:2.2, pointRadius:0, tension:0.3, spanGaps:false, yAxisID:'y2' });
-        datasets.push({ type:'line', label:'Ventura — base TdC', data:r.per.ventura.baseY, borderColor:MQ.hexA(MQ.palette(1), 0.55), borderDash:[6,4], borderWidth:1.6, pointRadius:0, tension:0.3, spanGaps:false, yAxisID:'y2' });
-        datasets.push({ type:'line', label:'Pitahaya — ingresos modelo', data:r.per.pitahaya.modelY, borderColor:MQ.palette(2), borderWidth:2.2, pointRadius:0, tension:0.3, spanGaps:false, yAxisID:'y2' });
-        datasets.push({ type:'line', label:'Pitahaya — base TdC', data:r.per.pitahaya.baseY, borderColor:MQ.hexA(MQ.palette(2), 0.55), borderDash:[6,4], borderWidth:1.6, pointRadius:0, tension:0.3, spanGaps:false, yAxisID:'y2' });
-        scales = {
-          x:{ stacked:true, grid:{display:false}, ticks:{ color:MQ.muted(), maxTicksLimit:14 } },
-          y:{ stacked:true, position:'left', grid:{color:MQ.grid()}, title:{display:true,text:'Promote (mdp)',color:MQ.muted(),font:{size:10}}, ticks:{ color:MQ.muted(), callback:v=>'$'+(v/1000).toFixed(1)+'k' } },
-          y2:{ position:'right', grid:{display:false}, title:{display:true,text:'Ingresos (mdp)',color:MQ.muted(),font:{size:10}}, ticks:{ color:MQ.muted(), callback:v=>'$'+(v/1000).toFixed(0)+'k' } } };
-      } else {
-        datasets = [
-          { type:'bar', label:'Ventura — retained', data:r.per.ventura.retainedY, stack:'total',
-            backgroundColor:MQ.hexA(MQ.palette(1), 0.38), borderWidth:0, yAxisID:'y' },
-          { type:'bar', label:'Pitahaya — retained', data:r.per.pitahaya.retainedY, stack:'total',
-            backgroundColor:MQ.hexA(MQ.palette(2), 0.38), borderWidth:0, yAxisID:'y' },
-          { type:'bar', label:'Ventura — promote', data:r.per.ventura.shareY, stack:'total',
-            backgroundColor:MQ.hexA(MQ.palette(1), 0.95), borderWidth:0, yAxisID:'y' },
-          { type:'bar', label:'Pitahaya — promote', data:r.per.pitahaya.shareY, stack:'total',
-            backgroundColor:MQ.hexA(MQ.palette(2), 0.95), borderWidth:0, yAxisID:'y' },
-          { type:'line', label:'Base Título de Concesión', data:r.baseT, borderColor:MQ.muted(), borderDash:[6,4], borderWidth:1.8, pointRadius:0, tension:0.3, yAxisID:'y' }];
-        scales = {
-          x:{ stacked:true, grid:{display:false}, ticks:{ color:MQ.muted(), maxTicksLimit:14 } },
-          y:{ stacked:true, position:'left', grid:{color:MQ.grid()}, title:{display:true,text:'Distribuciones totales (mdp)',color:MQ.muted(),font:{size:10}}, ticks:{ color:MQ.muted(), callback:v=>'$'+(v/1000).toFixed(0)+'k' } } };
-      }
-      compChart = new Chart(ctx, { data:{ labels:(COMP.labels || Y), datasets }, options:{ ...common, scales } });
-      recompute();
-      return compChart;
-    }
-
-    window.compView = function(mode){
-      if (mode === viewMode) return;
-      viewMode = mode;
-      const bh = $('comp-view-hurdle'), bs = $('comp-view-stack');
-      bh.className = 'btn btn-sm ' + (mode === 'hurdle' ? 'btn-primary' : 'btn-ghost');
-      bs.className = 'btn btn-sm ' + (mode === 'stack' ? 'btn-primary' : 'btn-ghost');
-      $('comp-chart-sub').textContent = mode === 'hurdle'
-        ? "Bars: Maquina's promote by hurdle (mdp, nominal). Lines: each highway vs its own indexed título baseline, right axis — a road only pays when it clears its own line (no netting between roads)."
-        : "Stacked per highway: retained cashflow (light) with Maquina's promote on top (solid) = total project distributions (mdp, nominal). Dashed: concession-title baseline.";
-      try { if (compChart) compChart.destroy(); } catch(e) {}
-      buildCompChart();
-    };
-
-    window.compPreset = function(name){
-      const set = (id, v) => { $(id).value = v; };
-      set('comp-lvl-v', 100); set('comp-lvl-p', 100); set('comp-growth-v', 0); set('comp-growth-p', 0); set('comp-infl', 0);
-      set('comp-disc', 9); set('comp-tax', 30);
-      set('comp-th1', 30); set('comp-th2', 50); set('comp-th3', 75);
-      set('comp-sh1', 5); set('comp-sh2', 40); set('comp-sh3', 60); set('comp-sh4', 75);
-      $('comp-road-v').checked = true; $('comp-road-p').checked = true;
-      if (name === 'cons'){ set('comp-lvl-v', 90); set('comp-lvl-p', 90); set('comp-growth-v', -1); set('comp-growth-p', -1); }
-      if (name === 'opt'){ set('comp-lvl-v', 110); set('comp-lvl-p', 110); set('comp-growth-v', 1); set('comp-growth-p', 1); }
+    window.evReset = function(){
+      const set = (id, v) => { const el = $(id); if (el) el.value = v; };
+      set('ev-disc', DEF_DISC); set('ev-first', DEF_FIRST);
+      H.forEach(h => { set('ev-g-' + h.key, 0); set('ev-t-' + h.key, 100); set('ev-d-' + h.key, 0); });
       recompute();
     };
-
-    SLIDERS.forEach(s => $('comp-' + s).addEventListener('input', recompute));
-    $('comp-road-v').addEventListener('change', recompute);
-    $('comp-road-p').addEventListener('change', recompute);
-    if ($('compChart')) MQ.register(buildCompChart);
-    if ($('investorChart')) MQ.register(buildInvestorChart);
-
-    // ── Static v1-vs-v2 comparison chart (independent of the sliders) ──
-    const CMP = COMP.compare;
-    function buildCompareChart(){
-      const ctx = document.getElementById('compareChart'); if (!ctx) return null;
-      const hurdleLine = (pct, label) => ({
-        type:'line', label:label, data:CMP.axis.map(() => pct),
-        borderColor:MQ.hexA(MQ.muted(), 0.55), borderDash:[2,4], borderWidth:1,
-        pointRadius:0, fill:false });
-      return new Chart(ctx, { data:{ labels:CMP.axis, datasets:[
-          { type:'line', label:'v1 · Ventura', data:CMP.chart.v1_v, borderColor:MQ.palette(1), borderDash:[7,4], borderWidth:2, pointRadius:0, tension:0.3, spanGaps:true },
-          { type:'line', label:'v1 · Pitahaya', data:CMP.chart.v1_p, borderColor:MQ.palette(2), borderDash:[7,4], borderWidth:2, pointRadius:0, tension:0.3, spanGaps:true },
-          { type:'line', label:'v2 · Ventura', data:CMP.chart.v2_v, borderColor:MQ.palette(1), borderWidth:2.6, pointRadius:0, tension:0.3, spanGaps:true },
-          { type:'line', label:'v2 · Pitahaya', data:CMP.chart.v2_p, borderColor:MQ.palette(2), borderWidth:2.6, pointRadius:0, tension:0.3, spanGaps:true },
-          hurdleLine(130, 'Hurdle 1 ends (130%)'),
-          hurdleLine(150, 'Hurdle 2 ends (150%)'),
-          hurdleLine(175, 'Hurdle 3 ends (175%)')
-        ]},
-        options:{ responsive:true, maintainAspectRatio:false, interaction:{mode:'index',intersect:false},
-          scales:{ x:{ grid:{display:false}, ticks:{ color:MQ.muted(), maxTicksLimit:14 } },
-            y:{ grid:{color:MQ.grid()}, title:{display:true,text:'Model revenue as % of título baseline',color:MQ.muted(),font:{size:10}}, ticks:{ color:MQ.muted(), callback:v=>v+'%' } } },
-          plugins:{ legend:{ display:true, position:'bottom', labels:{ color:MQ.muted(), boxWidth:10, font:{size:10}, filter:it => !it.text.startsWith('Hurdle') } },
-            tooltip:{ filter:it => !it.dataset.label.startsWith('Hurdle'),
-              callbacks:{ label:cc => cc.dataset.label + ': ' + (cc.parsed.y === null ? '—' : cc.parsed.y.toFixed(0) + '% of título') } } } } });
-    }
-    if (document.getElementById('compareChart')) MQ.register(buildCompareChart);
+    if ($('ownChart')) MQ.register(buildOwnChart);
+    ['ev-disc', 'ev-first'].concat(H.flatMap(h => ['ev-g-' + h.key, 'ev-t-' + h.key, 'ev-d-' + h.key]))
+      .forEach(id => { const el = $(id); if (el) el.addEventListener('input', recompute); });
+    recompute();
+    window.__evRecompute = recompute;
   })();
   {% endif %}
 
