@@ -152,7 +152,7 @@
       <div class="grid grid-2 mb-24" style="align-items:stretch;">
         <div class="card" style="padding:0;overflow:hidden;min-height:400px;display:flex;flex-direction:column;">
           <div class="card-head" style="padding:16px 18px 10px;margin:0;"><div><div class="card-title">Highway Map</div>
-            <div class="card-sub">Routes from the KMZ alignments; dashed = en obra. Click a route for details. Colours match the table and the chart.</div></div></div>
+            <div class="card-sub">Routes from the KMZ alignments; dashed = under construction. Click a route for details. Colours match the table and the chart.</div></div></div>
           <div id="hwMap" style="flex:1;min-height:330px;background:var(--mq-surface-2);"></div>
         </div>
         <div class="card">
@@ -160,13 +160,13 @@
             <div class="card-sub">{{ polaris.highways|length }} concessions · META and IPC.</div></div></div>
           <div class="table-scroll" style="max-height:none;border:none;">
           <table class="data-table">
-            <thead><tr><th style="text-align:left;">Highway</th><th>Length (km)</th><th style="text-align:left;">Company</th><th>Opens</th></tr></thead>
+            <thead><tr><th style="text-align:left;">Highway</th><th>Length (km)</th><th style="text-align:left;">Company</th><th>Status</th></tr></thead>
             <tbody>
             {% for h in polaris.highways %}
-              <tr><td style="text-align:left;"><span class="legend-left"><span class="legend-dot" style="background:{{ h.color }};"></span>{{ h.name }}{% if h.in_development %}<span class="badge" style="margin-left:6px;font-size:10px;">en obra</span>{% endif %}</span>{% if h.key == 'conexion_rio_verde' %}<span class="subtle" style="display:block;font-size:10.5px;margin-left:18px;">tolled section of Oriente · La Pila → San Nicolás de los Jassos</span>{% endif %}</td>
+              <tr><td style="text-align:left;"><span class="legend-left"><span class="legend-dot" style="background:{{ h.color }};"></span>{{ h.name }}{% if h.in_development %}<span class="badge" style="margin-left:6px;font-size:10px;">Under Construction</span>{% endif %}</span>{% if h.key == 'conexion_rio_verde' %}<span class="subtle" style="display:block;font-size:10.5px;margin-left:18px;">tolled section of Oriente · La Pila → San Nicolás de los Jassos</span>{% endif %}</td>
                   <td>{{ ('%.1f'|format(h.length_km)) if h.length_km is not none else '—' }}</td>
                   <td style="text-align:left;"><span class="badge {{ 'accent' if h.company == 'IPC' }}">{{ h.company }}</span></td>
-                  <td>{{ h.open_month if h.in_development else 'operating' }}</td></tr>
+                  <td>{% if h.in_development %}Under Construction<span class="subtle" style="display:block;font-size:10.5px;">opens {{ h.open_month }}</span>{% else %}Operating{% endif %}</td></tr>
             {% endfor %}
             </tbody>
           </table>
@@ -769,7 +769,7 @@
         <div class="card-sub">NPV per highway at the current discount rate — baseline vs scenario. Highways sum to their company's enterprise value; the two companies sum to the rollup.</div></div></div>
       <div class="table-scroll" style="max-height:none;border:none;">
         <table class="data-table">
-          <thead><tr><th style="text-align:left;">Highway</th><th style="text-align:left;">Company</th><th>Opens</th><th>Baseline NPV</th><th>Scenario NPV</th><th>Δ</th><th>Δ %</th></tr></thead>
+          <thead><tr><th style="text-align:left;">Highway</th><th style="text-align:left;">Company</th><th>Status</th><th>Baseline NPV</th><th>Scenario NPV</th><th>Δ</th><th>Δ %</th></tr></thead>
           <tbody id="hw-tbody"></tbody>
         </table>
       </div>
@@ -790,11 +790,11 @@
       {% for h in polaris.highways %}
       <div style="padding:10px 0;border-bottom:1px solid var(--mq-line);">
         <div class="row between wrap" style="gap:8px;align-items:baseline;margin-bottom:6px;">
-          <span class="legend-left" style="font-weight:700;color:var(--mq-ink-2);font-size:13px;"><span class="legend-dot" style="background:{{ h.color }};"></span>{{ h.name }} <span class="badge {{ 'accent' if h.company == 'IPC' }}" style="margin-left:6px;">{{ h.company }}</span>{% if h.in_development %}<span class="badge" style="margin-left:6px;font-size:10px;">en obra</span>{% endif %}</span>
+          <span class="legend-left" style="font-weight:700;color:var(--mq-ink-2);font-size:13px;"><span class="legend-dot" style="background:{{ h.color }};"></span>{{ h.name }} <span class="badge {{ 'accent' if h.company == 'IPC' }}" style="margin-left:6px;">{{ h.company }}</span>{% if h.in_development %}<span class="badge" style="margin-left:6px;font-size:10px;">Under Construction</span>{% endif %}</span>
           <span class="subtle" style="font-size:11px;">
             {% if h.tpda and h.tpda.Total %}TPDA {{ '{:,.0f}'.format(h.tpda.Total) }}{% if h.tpda_src == 'model@open' %} at opening{% endif %}{% endif %}
             {% if h.avg_tarifa_sin_iva %} · avg tarifa ${{ '%.0f'|format(h.avg_tarifa_sin_iva) }} sin IVA{% endif %}
-            {% if h.in_development %} · opens {{ h.open_month }}{% else %} · operating{% endif %}
+            {% if h.in_development %} · under construction, opens {{ h.open_month }}{% else %} · operating{% endif %}
             · lifetime {{ '%.1f'|format(h.lifetime / 1e9) }} bn</span>
         </div>
         <div style="display:grid;grid-template-columns:repeat({{ 3 if h.in_development else 2 }}, 1fr);gap:14px;">
@@ -1244,7 +1244,7 @@
       const map = L.map('hwMap', { scrollWheelZoom: false }).setView([22.15, -100.95], 8);
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 18,
         attribution: '&copy; OpenStreetMap contributors' }).addTo(map);
-      // Routes from the uploaded KMZs, in each highway's colour (dashed = en obra).
+      // Routes from the uploaded KMZs, in each highway's colour (dashed = under construction).
       const layers = [];
       P.highways.forEach(h => {
         if (!h.geojson) return;
@@ -1254,7 +1254,7 @@
         const gl = L.geoJSON(h.geojson, {
           style: { color: h.color, weight: overlay ? 3 : (h.in_development ? 4 : 5), opacity: 0.95, dashArray: h.in_development ? '8 6' : null },
           pointToLayer: (f, ll) => L.circleMarker(ll, { radius: 5, color: h.color, weight: 2, fillColor: '#fff', fillOpacity: 1 })
-        }).bindPopup('<b>' + h.name + '</b><br>' + h.company + (h.length_km ? ' \u00b7 ' + h.length_km + ' km' : '') + (h.in_development ? ' \u00b7 en obra, opens ' + h.open_month : '') + (overlay ? '<br><span style="color:#6b7280;">Tolled section of Oriente: La Pila (hwy 57) \u2192 San Nicol\u00e1s de los Jassos (hwy 70)</span>' : ''));
+        }).bindPopup('<b>' + h.name + '</b><br>' + h.company + (h.length_km ? ' \u00b7 ' + h.length_km + ' km' : '') + (h.in_development ? ' \u00b7 under construction, opens ' + h.open_month : '') + (overlay ? '<br><span style="color:#6b7280;">Tolled section of Oriente: La Pila (hwy 57) \u2192 San Nicol\u00e1s de los Jassos (hwy 70)</span>' : ''));
         gl.addTo(map); if (overlay) gl.bringToFront(); layers.push(gl);
       });
       if (layers.length) map.fitBounds(L.featureGroup(layers).getBounds().pad(0.12));
@@ -1451,7 +1451,7 @@
       COS.forEach(co => {
         const x = r.byCo[co];
         html += x.rows.map(y => '<tr><td style="text-align:left;"><span class="legend-left"><span class="legend-dot" style="background:' + y.h.color + ';"></span>' + y.h.name + '</span></td>' +
-          '<td style="text-align:left;">' + y.h.company + '</td><td>' + (y.h.in_development ? y.h.open_month + ' \u00b7 en obra' : 'operating') + '</td><td>' + mxn(y.base) + '</td><td>' + mxn(y.scen) + '</td>' +
+          '<td style="text-align:left;">' + y.h.company + '</td><td>' + (y.h.in_development ? 'Under Construction \u00b7 opens ' + y.h.open_month : 'Operating') + '</td><td>' + mxn(y.base) + '</td><td>' + mxn(y.scen) + '</td>' +
           '<td class="' + dcls(y.delta) + '">' + dtxt(y.delta) + '</td><td>' + dpct(y.delta, y.base) + '</td></tr>').join('');
         html += '<tr style="font-weight:700;background:var(--mq-surface-2);"><td style="text-align:left;">' + co + ' enterprise value</td><td></td><td></td><td>' + mxn(x.base) + '</td><td>' + mxn(x.scen) + '</td>' +
           '<td class="' + dcls(x.delta) + '">' + dtxt(x.delta) + '</td><td>' + dpct(x.delta, x.base) + '</td></tr>';
