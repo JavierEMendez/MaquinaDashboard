@@ -754,7 +754,11 @@
 
     <div class="card mb-24">
       <div class="card-head"><div><div class="card-title">Enterprise Ownership by Investor</div>
-        <div class="card-sub">Each bar is one investor's capital value across both companies: their baseline stake in META and in IPC, plus their share of value created in each. Maquina holds a 20% stake in both and takes the first slice of any upside. The end label is rollup ownership.</div></div></div>
+        <div class="card-sub" id="own-sub">Each bar is one investor's capital value across both companies: their baseline stake in META and in IPC, plus their share of value created in each. Maquina holds a 20% stake in both and takes the first slice of any upside. The end label is rollup ownership.</div></div>
+        <div class="row" style="gap:6px;flex-shrink:0;">
+          <button class="btn btn-sm btn-primary" id="own-view-company" type="button" onclick="ownView('company')">By company</button>
+          <button class="btn btn-sm btn-ghost" id="own-view-highway" type="button" onclick="ownView('highway')">By highway</button>
+        </div></div>
       <div class="chart-wrap" style="height:280px;"><canvas id="ownChart"></canvas></div>
       <div class="table-scroll" style="max-height:none;border:none;margin-top:14px;">
         <table class="data-table">
@@ -1320,6 +1324,7 @@
     const dtxt = v => Math.abs(v) < 0.5e6 ? '\u2014' : sgn(v) + mxn(Math.abs(v));
     const dpct = (v, b) => (!b || Math.abs(v) < 0.5e6) ? '\u2014' : sgn(v) + (Math.abs(v) / b * 100).toFixed(1) + '%';
     let ownChart = null;
+    let ownView = 'company';   // 'company' | 'highway'
 
     function val(id, dflt){ const el = $(id); return el ? +el.value : dflt; }
     function cfg(){
@@ -1384,8 +1389,21 @@
       last.data.forEach((bar, i) => { const r = R[i]; if (r) ctx.fillText(pct(r.own) + ' \u00b7 ' + mxn(r.value), bar.x + 8, bar.y); });
       ctx.restore(); } };
 
+    // Each investor's value in a company, allocated to that company's highways in
+    // proportion to their scenario NPVs — so every highway column sums to the
+    // highway's own NPV and every bar still totals the investor's rollup value.
+    function hwValue(x, row, r){
+      const co = row.h.company, p = x.per[co], tot = r.byCo[co] ? r.byCo[co].scen : 0;
+      return (p && tot > 0) ? p.value * row.scen / tot : 0;
+    }
     function datasetsFor(r){
       const ds = [];
+      if (ownView === 'highway'){
+        r.rows.forEach(row => ds.push({ label: row.h.name + (row.h.company === 'IPC' ? ' (IPC)' : ''),
+          data: r.inv.map(x => hwValue(x, row, r) / 1e9),
+          backgroundColor: MQ.hexA(row.h.color, 0.9), borderWidth: 0, stack: 'v', labelColor: '#fff' }));
+        return ds;
+      }
       COS.forEach(co => ds.push({ label: co + ' stake', data: r.inv.map(x => x.per[co].stake / 1e9),
         backgroundColor: MQ.hexA(CO_COLOR[co], 0.42), borderWidth: 0, stack: 'v', labelColor: MQ.ink() }));
       COS.forEach(co => ds.push({ label: co + ' value created', data: r.inv.map(x => x.per[co].upside / 1e9),
@@ -1460,8 +1478,19 @@
         '<td class="' + dcls(r.delta) + '">' + dtxt(r.delta) + '</td><td>' + dpct(r.delta, r.base) + '</td></tr>';
       $('hw-tbody').innerHTML = html;
       // chart
-      if (ownChart){ const ds = datasetsFor(r); ds.forEach((d, i) => { if (ownChart.data.datasets[i]) ownChart.data.datasets[i].data = d.data; }); ownChart.$ev = r.inv; ownChart.update('none'); }
+      if (ownChart){ ownChart.data.datasets = datasetsFor(r); ownChart.$ev = r.inv; ownChart.update('none'); }
     }
+    window.ownView = function(mode){
+      ownView = mode === 'highway' ? 'highway' : 'company';
+      const bc = $('own-view-company'), bh = $('own-view-highway');
+      if (bc) bc.className = 'btn btn-sm ' + (ownView === 'company' ? 'btn-primary' : 'btn-ghost');
+      if (bh) bh.className = 'btn btn-sm ' + (ownView === 'highway' ? 'btn-primary' : 'btn-ghost');
+      const sub = $('own-sub');
+      if (sub) sub.textContent = ownView === 'highway'
+        ? "Each bar is one investor's capital value split by highway, in the map colours: their share of each highway's scenario NPV (a company's value is allocated to its highways in proportion to NPV). Every highway's segments add up to that highway's total value. The end label is rollup ownership."
+        : "Each bar is one investor's capital value across both companies: their baseline stake in META and in IPC, plus their share of value created in each. Maquina holds a 20% stake in both and takes the first slice of any upside. The end label is rollup ownership.";
+      if (ownChart){ ownChart.data.datasets = datasetsFor(calc(cfg())); ownChart.update(); }
+    };
     window.evReset = function(){
       const set = (id, v) => { const el = $(id); if (el) el.value = v; };
       set('ev-disc', DEF_DISC); set('ev-first', DEF_FIRST); set('ev-mg-META', DEF_MG); set('ev-mg-IPC', DEF_MG);
