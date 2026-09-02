@@ -166,7 +166,7 @@
       <div class="grid grid-2 mb-24" style="align-items:stretch;">
         <div class="card" style="padding:0;overflow:hidden;min-height:400px;display:flex;flex-direction:column;">
           <div class="card-head" style="padding:16px 18px 10px;margin:0;"><div><div class="card-title">Highway Map</div>
-            <div class="card-sub">Routes will be drawn from the KMZ files once received. Colours match the table and the chart.</div></div></div>
+            <div class="card-sub">Routes from the KMZ alignments; dashed = en obra. Click a route for details. Colours match the table and the chart.</div></div></div>
           <div id="hwMap" style="flex:1;min-height:330px;background:var(--mq-surface-2);"></div>
         </div>
         <div class="card">
@@ -199,7 +199,20 @@
               </div>
               {% endfor %}
               <button class="btn btn-primary btn-sm mt-8" type="submit">Save highways</button>
-            </form></details>
+            </form>
+            <div style="font-size:10px;letter-spacing:0.08em;text-transform:uppercase;color:var(--mq-subtle);font-weight:700;margin:16px 0 6px;">Routes (KMZ / KML)
+              <span style="text-transform:none;letter-spacing:0;font-weight:500;">&mdash; one file per highway; for a multi-road file, name the placemark to pick</span></div>
+            {% for h in polaris.highways %}
+            <form method="POST" action="{{ url_for('meta_highway_kmz', slug=c.slug, key=h.key) }}" enctype="multipart/form-data"
+                  style="display:grid;grid-template-columns:1.2fr 1.4fr 1fr auto;gap:8px;align-items:center;margin-bottom:6px;font-size:12px;">
+              <span class="legend-left"><span class="legend-dot" style="background:{{ h.color }};"></span>{{ h.name }}
+                <span class="subtle" style="font-size:10.5px;margin-left:4px;">{% if h.geojson %}loaded{% if h.geo_source %} &middot; {{ h.geo_source }}{% endif %}{% else %}pending{% endif %}</span></span>
+              <input class="input" type="file" name="kmz" accept=".kmz,.kml" required style="padding:5px;font-size:11.5px;">
+              <input class="input" name="placemark" placeholder="placemark (optional)" style="font-size:11.5px;">
+              <button class="btn btn-sm btn-ghost" type="submit">Load route</button>
+            </form>
+            {% endfor %}
+            </details>
           {% endif %}
         </div>
       </div>
@@ -724,8 +737,8 @@
       <div class="row between wrap" style="gap:12px;align-items:flex-start;">
         <div style="max-width:900px;">
           <div class="card-title" style="font-size:16px;">Enterprise Value Analysis — Meta &amp; IPC toll roads</div>
-          <div class="card-sub">Enterprise value is the NPV of each highway's Ingresos × its company's EBITDA margin
-            (META {{ '%.1f'|format((polaris.meta.margins.META or 1) * 100) }}% · IPC {{ '%.1f'|format((polaris.meta.margins.IPC or 1) * 100) }}%),
+          <div class="card-sub">Enterprise value is the NPV of each highway's Ingresos × an EBITDA margin per company
+            (inputs below, <strong id="ev-mg-txt">80% META · 80% IPC</strong>; the model's own cash flows imply META {{ '%.1f'|format((polaris.meta.margins.META or 1) * 100) }}% · IPC {{ '%.1f'|format((polaris.meta.margins.IPC or 1) * 100) }}%),
             discounted monthly from {{ polaris.meta.model_start }}. The baseline is the model exactly as uploaded. The sliders reprice each highway; the highways add up to the
             total, and any value created above the baseline is shared — <strong id="ev-rule-txt">20% to Maquina first, the rest split five ways</strong>.</div>
         </div>
@@ -770,10 +783,14 @@
     <div class="card mb-24">
       <div class="card-head"><div><div class="card-title">Scenario Controls</div>
         <div class="card-sub">Valuation inputs first, then one row per highway. Aforo and tarifa sliders scale that highway's model revenue; the delay slider pushes an in-development road's opening back, losing the tail past the concession end.</div></div></div>
-      <div style="{{ SR }}"><span><span style="{{ K }}">Discount rate</span><span class="subtle" style="display:block;font-size:11px;">model uses {{ '%.2f'|format(polaris.meta.discount_rate * 100) }}% ({{ polaris.meta.discount_rate_src }}); moves baseline and scenario together</span></span>
-        <input type="range" id="ev-disc" min="5" max="20" step="0.25" value="{{ polaris.meta.discount_rate * 100 }}" style="accent-color:var(--mq-accent);"><span style="{{ SV }}" id="lbl-disc">—</span></div>
+      <div style="{{ SR }}"><span><span style="{{ K }}">Discount rate</span><span class="subtle" style="display:block;font-size:11px;">base 12.5%; the model itself uses {{ '%.2f'|format(polaris.meta.discount_rate * 100) }}% ({{ polaris.meta.discount_rate_src }}); moves baseline and scenario together</span></span>
+        <input type="range" id="ev-disc" min="5" max="20" step="0.25" value="12.5" style="accent-color:var(--mq-accent);"><span style="{{ SV }}" id="lbl-disc">—</span></div>
       <div style="{{ SR }}"><span><span style="{{ K }}">Maquina's first share of value created</span><span class="subtle" style="display:block;font-size:11px;">taken off the top; the remainder is split equally among all five investors, Maquina included</span></span>
         <input type="range" id="ev-first" min="0" max="50" step="1" value="{{ polaris.maquina_first_pct }}" style="accent-color:var(--mq-accent);"><span style="{{ SV }}" id="lbl-first">—</span></div>
+      {% for co in ['META', 'IPC'] %}
+      <div style="{{ SR }}"><span><span style="{{ K }}">EBITDA margin &mdash; {{ co }}</span><span class="subtle" style="display:block;font-size:11px;">applied to {{ co }} highways' Ingresos; the model's cash flows imply {{ '%.1f'|format((polaris.meta.margins[co] or 1) * 100) }}%</span></span>
+        <input type="range" id="ev-mg-{{ co }}" min="50" max="100" step="0.5" value="80" style="accent-color:var(--mq-accent);"><span style="{{ SV }}" id="lbl-mg-{{ co }}">80.0%</span></div>
+      {% endfor %}
       <div class="divider"></div>
       {% for h in polaris.highways %}
       <div style="padding:10px 0;border-bottom:1px solid var(--mq-line);">
@@ -1232,12 +1249,30 @@
       const map = L.map('hwMap', { scrollWheelZoom: false }).setView([22.15, -100.95], 8);
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 18,
         attribution: '&copy; OpenStreetMap contributors' }).addTo(map);
+      // Routes from the uploaded KMZs, in each highway's colour (dashed = en obra).
+      const layers = [];
+      P.highways.forEach(h => {
+        if (!h.geojson) return;
+        const gl = L.geoJSON(h.geojson, {
+          style: { color: h.color, weight: h.in_development ? 4 : 5, opacity: 0.92, dashArray: h.in_development ? '8 6' : null },
+          pointToLayer: (f, ll) => L.circleMarker(ll, { radius: 5, color: h.color, weight: 2, fillColor: '#fff', fillOpacity: 1 })
+        }).bindPopup('<b>' + h.name + '</b><br>' + h.company + (h.length_km ? ' \u00b7 ' + h.length_km + ' km' : '') + (h.in_development ? ' \u00b7 en obra, opens ' + h.open_month : ''));
+        gl.addTo(map); layers.push(gl);
+      });
+      if (layers.length) map.fitBounds(L.featureGroup(layers).getBounds().pad(0.12));
+      const pending = P.highways.filter(h => !h.geojson).length;
       const legend = L.control({ position: 'bottomright' });
       legend.onAdd = function(){
         const d = L.DomUtil.create('div');
-        d.style.cssText = 'background:rgba(255,255,255,.94);padding:8px 10px;border-radius:8px;font:11.5px Inter,system-ui,sans-serif;color:#1b1f23;box-shadow:0 1px 4px rgba(0,0,0,.2);max-width:230px;';
-        d.innerHTML = '<div style="font-weight:700;margin-bottom:4px;">Highways · routes pending KMZ</div>' +
-          P.highways.map(h => '<div style="display:flex;align-items:center;gap:6px;line-height:1.7;"><span style="width:10px;height:10px;border-radius:50%;background:' + h.color + ';display:inline-block;"></span>' + h.name + ' <span style="color:#6b7280;">' + h.company + (h.in_development ? ' · en obra' : '') + '</span></div>').join('');
+        d.style.cssText = 'background:rgba(255,255,255,.94);padding:8px 10px;border-radius:8px;font:11.5px Inter,system-ui,sans-serif;color:#1b1f23;box-shadow:0 1px 4px rgba(0,0,0,.2);max-width:240px;';
+        let html = '<div style="font-weight:700;margin-bottom:4px;">Highways' + (pending ? ' \u00b7 ' + pending + ' route' + (pending > 1 ? 's' : '') + ' pending' : '') + '</div>';
+        P.highways.forEach(h => {
+          const sw = h.in_development ? 'width:12px;height:0;border-top:3px dashed ' + h.color : 'width:10px;height:10px;border-radius:50%;background:' + h.color;
+          html += '<div style="display:flex;align-items:center;gap:6px;line-height:1.7;' + (h.geojson ? '' : 'opacity:.55;') + '">' +
+                  '<span style="' + sw + ';display:inline-block;"></span>' + h.name +
+                  ' <span style="color:#6b7280;">' + h.company + (h.length_km ? ' \u00b7 ' + h.length_km + ' km' : '') + (h.geojson ? '' : ' \u00b7 route pending') + '</span></div>';
+        });
+        d.innerHTML = html;
         return d;
       };
       legend.addTo(map);
@@ -1273,7 +1308,8 @@
     const INVESTORS = P.investors || ['Maquina', 'Investor 2', 'Investor 3', 'Investor 4', 'Investor 5'];
     const N_INV = INVESTORS.length, BASE_SHARE = 1 / N_INV;
     const USD = P.rate || 17.3;
-    const DEF_DISC = (P.meta.discount_rate || 0.11) * 100, DEF_FIRST = P.maquina_first_pct || 20;
+    const DEF_DISC = 12.5, DEF_FIRST = P.maquina_first_pct || 20;   // base rate per Javier; model's own 11% shown as reference
+    const DEF_MG = 80;   // EBITDA margin input default, both companies
     const bn = v => (v / 1e9).toFixed(2) + ' bn';
     const mxn = v => Math.abs(v) >= 1e9 ? '$' + (v / 1e9).toFixed(2) + ' bn' : '$' + Math.round(v / 1e6).toLocaleString() + ' mdp';
     const usd = v => { const u = v / USD; return Math.abs(u) >= 1e9 ? '$' + (u / 1e9).toFixed(2) + ' bn' : '$' + Math.round(u / 1e6).toLocaleString() + 'M'; };
@@ -1282,7 +1318,8 @@
 
     function val(id, dflt){ const el = $(id); return el ? +el.value : dflt; }
     function cfg(){
-      const c = { r: val('ev-disc', DEF_DISC) / 100, first: val('ev-first', DEF_FIRST) / 100, g: {}, t: {}, d: {} };
+      const c = { r: val('ev-disc', DEF_DISC) / 100, first: val('ev-first', DEF_FIRST) / 100, g: {}, t: {}, d: {},
+                  mg: { META: val('ev-mg-META', DEF_MG) / 100, IPC: val('ev-mg-IPC', DEF_MG) / 100 } };
       H.forEach(h => { c.g[h.key] = val('ev-g-' + h.key, 0) / 100; c.t[h.key] = val('ev-t-' + h.key, 100) / 100; c.d[h.key] = val('ev-d-' + h.key, 0); });
       return c;
     }
@@ -1302,7 +1339,7 @@
       return v;
     }
     function calc(c){
-      const rows = H.map(h => { const mg = h.margin == null ? 1 : h.margin;
+      const rows = H.map(h => { const mg = (c.mg && c.mg[h.company] != null) ? c.mg[h.company] : (h.margin == null ? 1 : h.margin);
         const b = npv(h.monthly, mg, c.r), s = npv(scenarioSeries(h, c), mg, c.r);
         return { h, base: b, scen: s, delta: s - b }; });
       const base = rows.reduce((a, x) => a + x.base, 0), scen = rows.reduce((a, x) => a + x.scen, 0), delta = scen - base;
@@ -1351,6 +1388,8 @@
       // labels
       $('lbl-disc').textContent = (c.r * 100).toFixed(2) + '%';
       $('lbl-first').textContent = Math.round(c.first * 100) + '%';
+      ['META', 'IPC'].forEach(co => { const l = $('lbl-mg-' + co); if (l) l.textContent = (c.mg[co] * 100).toFixed(1) + '%'; });
+      const mt = $('ev-mg-txt'); if (mt) mt.textContent = (c.mg.META * 100).toFixed(0) + '% META · ' + (c.mg.IPC * 100).toFixed(0) + '% IPC';
       const rt = $('ev-rule-txt'); if (rt) rt.textContent = Math.round(c.first * 100) + '% to Maquina first, the rest split ' + (N_INV === 5 ? 'five' : N_INV) + ' ways';
       H.forEach(h => { const g = c.g[h.key] * 100, t = c.t[h.key] * 100, d = c.d[h.key];
         const lg = $('lbl-g-' + h.key); if (lg) lg.textContent = (g >= 0 ? '+' : '') + g.toFixed(2);
@@ -1379,12 +1418,12 @@
     }
     window.evReset = function(){
       const set = (id, v) => { const el = $(id); if (el) el.value = v; };
-      set('ev-disc', DEF_DISC); set('ev-first', DEF_FIRST);
+      set('ev-disc', DEF_DISC); set('ev-first', DEF_FIRST); set('ev-mg-META', DEF_MG); set('ev-mg-IPC', DEF_MG);
       H.forEach(h => { set('ev-g-' + h.key, 0); set('ev-t-' + h.key, 100); set('ev-d-' + h.key, 0); });
       recompute();
     };
     if ($('ownChart')) MQ.register(buildOwnChart);
-    ['ev-disc', 'ev-first'].concat(H.flatMap(h => ['ev-g-' + h.key, 'ev-t-' + h.key, 'ev-d-' + h.key]))
+    ['ev-disc', 'ev-first', 'ev-mg-META', 'ev-mg-IPC'].concat(H.flatMap(h => ['ev-g-' + h.key, 'ev-t-' + h.key, 'ev-d-' + h.key]))
       .forEach(id => { const el = $(id); if (el) el.addEventListener('input', recompute); });
     recompute();
     window.__evRecompute = recompute;

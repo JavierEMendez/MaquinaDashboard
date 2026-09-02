@@ -245,6 +245,10 @@ CREATE TABLE IF NOT EXISTS meta_highways (
     color TEXT,
     sort INT DEFAULT 0
 );
+-- Route geometry per highway (GeoJSON FeatureCollection from the KMZ) drawn
+-- on the Meta map; geo_source records the uploaded filename.
+ALTER TABLE meta_highways ADD COLUMN IF NOT EXISTS geojson TEXT;
+ALTER TABLE meta_highways ADD COLUMN IF NOT EXISTS geo_source TEXT;
 """
 
 
@@ -318,8 +322,8 @@ def latest_meta_model():
 
 def meta_highways() -> list:
     conn = get_db(); cur = conn.cursor()
-    cur.execute("SELECT key, model_name, display_name, company, length_km, color, sort "
-                "FROM meta_highways ORDER BY sort, key")
+    cur.execute("SELECT key, model_name, display_name, company, length_km, color, sort, "
+                "geojson, geo_source FROM meta_highways ORDER BY sort, key")
     rows = cur.fetchall()
     cur.close(); conn.close()
     return rows
@@ -341,4 +345,12 @@ def update_meta_highway(key: str, display_name, company, length_km, color) -> No
     conn = get_db(); cur = conn.cursor()
     cur.execute("UPDATE meta_highways SET display_name = %s, company = %s, length_km = %s, "
                 "color = %s WHERE key = %s", (display_name, company, length_km, color, key))
+    conn.commit(); cur.close(); conn.close()
+
+
+def update_meta_highway_geo(key: str, geojson: str, source: str, length_km) -> None:
+    """Store a highway's route; only seeds length_km when none is set yet."""
+    conn = get_db(); cur = conn.cursor()
+    cur.execute("UPDATE meta_highways SET geojson = %s, geo_source = %s, "
+                "length_km = COALESCE(length_km, %s) WHERE key = %s", (geojson, source, length_km, key))
     conn.commit(); cur.close(); conn.close()

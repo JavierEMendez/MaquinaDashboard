@@ -25,6 +25,7 @@ import db
 import seed_data
 import maquina_cf_parser
 import polaris_parser
+import kmz_parser
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "maquina-dev-secret-change-me")
@@ -779,6 +780,12 @@ def load_polaris():
         h["company"] = m.get("company") or h.get("company")
         h["length_km"] = m.get("length_km")
         h["color"] = m.get("color") or _HW_COLORS[i % len(_HW_COLORS)]
+        gj = m.get("geojson")
+        try:
+            h["geojson"] = json.loads(gj) if isinstance(gj, str) and gj else (gj or None)
+        except ValueError:
+            h["geojson"] = None
+        h["geo_source"] = m.get("geo_source")
     ua = snap.get("uploaded_at")
     data["src_filename"] = snap.get("filename")
     data["uploaded_at"] = ua.strftime("%Y-%m-%d %H:%M") if hasattr(ua, "strftime") else (str(ua)[:16] if ua else None)
@@ -1133,6 +1140,39 @@ def meta_highways_update(slug):
         db.update_meta_highway(key, name, comp, km, color)
         n += 1
     flash("Saved %d highway%s." % (n, "" if n == 1 else "s"), "ok")
+    return redirect(url_for("company", slug=slug))
+
+
+@app.route("/company/<slug>/highways/<key>/kmz", methods=["POST"])
+@login_required
+def meta_highway_kmz(slug, key):
+    """Admin-only — attach a KMZ/KML route to one highway. A multi-road file
+    can be filtered to one placemark via the optional `placemark` field."""
+    if not session.get("is_admin"):
+        abort(403)
+    c = _company_or_404(slug)
+    if c["slug"] != "meta" or not re.fullmatch(r"[a-z0-9_]{1,80}", key or ""):
+        abort(404)
+    f = request.files.get("kmz")
+    if not f or not f.filename:
+        flash("Choose a .kmz or .kml file first.", "error")
+        return redirect(url_for("company", slug=slug))
+    if not f.filename.lower().endswith((".kmz", ".kml")):
+        flash("That isn't a KMZ/KML file.", "error")
+        return redirect(url_for("company", slug=slug))
+    try:
+        geo = kmz_parser.build_highway_geo(f.read(), wanted=(request.form.get("placemark") or "").strip() or None)
+    except ValueError as e:
+        flash(str(e), "error")
+        return redirect(url_for("company", slug=slug))
+    except Exception as e:  # pragma: no cover
+        app.logger.warning("KMZ parse failed: %s", e)
+        flash("Could not read that KMZ.", "error")
+        return redirect(url_for("company", slug=slug))
+    db.update_meta_highway_geo(key, json.dumps(geo["geojson"]), f.filename, geo["length_km"])
+    flash("Route loaded for %s: %.1f km along the KMZ, %d points%s." % (
+        key, geo["length_km"], geo["n_points"],
+        (" (" + ", ".join(geo["names"]) + ")") if geo["names"] else ""), "ok")
     return redirect(url_for("company", slug=slug))
 
 
