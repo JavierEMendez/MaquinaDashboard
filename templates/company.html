@@ -1254,7 +1254,7 @@
         const gl = L.geoJSON(h.geojson, {
           style: { color: h.color, weight: overlay ? 3 : (h.in_development ? 4 : 5), opacity: 0.95, dashArray: h.in_development ? '8 6' : null },
           pointToLayer: (f, ll) => L.circleMarker(ll, { radius: 5, color: h.color, weight: 2, fillColor: '#fff', fillOpacity: 1 })
-        }).bindPopup('<b>' + h.name + '</b><br>' + h.company + (h.length_km ? ' \u00b7 ' + h.length_km + ' km' : '') + (h.in_development ? ' \u00b7 en obra, opens ' + h.open_month : '' + (overlay ? '<br><span style="color:#6b7280;">Tolled section of Oriente: La Pila (hwy 57) \u2192 San Nicol\u00e1s de los Jassos (hwy 70)</span>' : ''));
+        }).bindPopup('<b>' + h.name + '</b><br>' + h.company + (h.length_km ? ' \u00b7 ' + h.length_km + ' km' : '') + (h.in_development ? ' \u00b7 en obra, opens ' + h.open_month : '') + (overlay ? '<br><span style="color:#6b7280;">Tolled section of Oriente: La Pila (hwy 57) \u2192 San Nicol\u00e1s de los Jassos (hwy 70)</span>' : ''));
         gl.addTo(map); if (overlay) gl.bringToFront(); layers.push(gl);
       });
       if (layers.length) map.fitBounds(L.featureGroup(layers).getBounds().pad(0.12));
