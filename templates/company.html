@@ -786,9 +786,14 @@
         <input type="range" id="ev-disc" min="5" max="20" step="0.25" value="12.5" style="accent-color:var(--mq-accent);"><span style="{{ SV }}" id="lbl-disc">—</span></div>
       <div style="{{ SR }}"><span><span style="{{ K }}">Maquina's first share of value created</span><span class="subtle" style="display:block;font-size:11px;">taken off the top; the remainder is split equally among all five investors, Maquina included</span></span>
         <input type="range" id="ev-first" min="0" max="50" step="1" value="{{ polaris.maquina_first_pct }}" style="accent-color:var(--mq-accent);"><span style="{{ SV }}" id="lbl-first">—</span></div>
+      <div style="{{ SR }}"><span><span style="{{ K }}">EBITDA margin basis</span><span class="subtle" style="display:block;font-size:11px;">presets for both sliders &mdash; an assumed flat 80%, or the margins implied by the model's own cash flows; sliders stay adjustable</span></span>
+        <div class="row" style="gap:6px;grid-column:span 2;justify-content:flex-end;">
+          <button class="btn btn-sm btn-primary" id="ev-mgp-flat" type="button" onclick="evMargins('flat')">80% flat</button>
+          <button class="btn btn-sm btn-ghost" id="ev-mgp-model" type="button" onclick="evMargins('model')">Model &middot; {{ '%.1f'|format((polaris.meta.margins.META or 1) * 100) }}% / {{ '%.1f'|format((polaris.meta.margins.IPC or 1) * 100) }}%</button>
+        </div></div>
       {% for co in ['META', 'IPC'] %}
       <div style="{{ SR }}"><span><span style="{{ K }}">EBITDA margin &mdash; {{ co }}</span><span class="subtle" style="display:block;font-size:11px;">applied to {{ co }} highways' Ingresos; the model's cash flows imply {{ '%.1f'|format((polaris.meta.margins[co] or 1) * 100) }}%</span></span>
-        <input type="range" id="ev-mg-{{ co }}" min="50" max="100" step="0.5" value="80" style="accent-color:var(--mq-accent);"><span style="{{ SV }}" id="lbl-mg-{{ co }}">80.0%</span></div>
+        <input type="range" id="ev-mg-{{ co }}" min="50" max="100" step="0.1" value="80" style="accent-color:var(--mq-accent);"><span style="{{ SV }}" id="lbl-mg-{{ co }}">80.0%</span></div>
       {% endfor %}
       <div class="divider"></div>
       {% for h in polaris.highways %}
@@ -1316,6 +1321,8 @@
     const USD = P.rate || 17.3;
     const DEF_DISC = 12.5, DEF_FIRST = P.maquina_first_pct || 20;   // base rate per Javier; model's own 11% shown as reference
     const DEF_MG = 80;   // EBITDA margin input default, both companies
+    const MODEL_MG = { META: Math.round((((P.meta || {}).margins || {}).META || 0.8) * 1000) / 10,
+                       IPC:  Math.round((((P.meta || {}).margins || {}).IPC  || 0.8) * 1000) / 10 };   // model-implied, 0.1%
     const mxn = v => Math.abs(v) >= 1e9 ? '$' + (v / 1e9).toFixed(2) + ' bn' : '$' + Math.round(v / 1e6).toLocaleString() + ' mdp';
     const usd = v => { const u = v / USD; return Math.abs(u) >= 1e9 ? '$' + (u / 1e9).toFixed(2) + ' bn' : '$' + Math.round(u / 1e6).toLocaleString() + 'M'; };
     const sgn = v => (v >= 0 ? '+' : '\u2212');
@@ -1447,6 +1454,11 @@
       $('lbl-disc').textContent = (c.r * 100).toFixed(2) + '%';
       $('lbl-first').textContent = Math.round(c.first * 100) + '%';
       ['META', 'IPC'].forEach(co => { const l = $('lbl-mg-' + co); if (l) l.textContent = (c.mg[co] * 100).toFixed(1) + '%'; });
+      const isFlat = Math.abs(c.mg.META * 100 - DEF_MG) < 0.05 && Math.abs(c.mg.IPC * 100 - DEF_MG) < 0.05;
+      const isModel = Math.abs(c.mg.META * 100 - MODEL_MG.META) < 0.05 && Math.abs(c.mg.IPC * 100 - MODEL_MG.IPC) < 0.05;
+      const bf = $('ev-mgp-flat'), bm = $('ev-mgp-model');
+      if (bf) bf.className = 'btn btn-sm ' + (isFlat ? 'btn-primary' : 'btn-ghost');
+      if (bm) bm.className = 'btn btn-sm ' + (isModel ? 'btn-primary' : 'btn-ghost');
       const mt = $('ev-mg-txt'); if (mt) mt.textContent = (c.mg.META * 100).toFixed(0) + '% META \u00b7 ' + (c.mg.IPC * 100).toFixed(0) + '% IPC';
       const rt = $('ev-rule-txt'); if (rt) rt.textContent = Math.round(c.first * 100) + '% to Maquina first, the rest split ' + (N_INV === 5 ? 'five' : N_INV) + ' ways';
       H.forEach(h => { const g = c.g[h.key] * 100, t = c.t[h.key] * 100, d = c.d[h.key];
@@ -1490,6 +1502,12 @@
         ? "Each bar is one investor's capital value split by highway, in the map colours: their share of each highway's scenario NPV (a company's value is allocated to its highways in proportion to NPV). Every highway's segments add up to that highway's total value. The end label is rollup ownership."
         : "Each bar is one investor's capital value across both companies: their baseline stake in META and in IPC, plus their share of value created in each. Maquina holds a 20% stake in both and takes the first slice of any upside. The end label is rollup ownership.";
       if (ownChart){ ownChart.data.datasets = datasetsFor(calc(cfg())); ownChart.update(); }
+    };
+    window.evMargins = function(mode){
+      const set = (id, v) => { const el = $(id); if (el) el.value = v; };
+      if (mode === 'model'){ set('ev-mg-META', MODEL_MG.META); set('ev-mg-IPC', MODEL_MG.IPC); }
+      else { set('ev-mg-META', DEF_MG); set('ev-mg-IPC', DEF_MG); }
+      recompute();
     };
     window.evReset = function(){
       const set = (id, v) => { const el = $(id); if (el) el.value = v; };
