@@ -21,6 +21,13 @@ Rows are matched by label (accent- and case-insensitive), not by number, so a
 re-upload with modest row shifts still parses. Broken formula cells (#REF!,
 #DIV/0!) coerce to 0.0 rather than crashing the import.
 
+Aforo scenarios: 'Premisas' carries a dropdown (list on 'Listas') that selects
+which traffic study feeds the model; Excel caches only the selected one. We
+read every scenario's annual TPDA block from 'Estudios Aforo' and recompute
+monthly revenue per scenario exactly as the model does — TPDA(year) x
+tarifa(month) x dias(month), zero before opening — and refuse the scenario set
+if the saved scenario does not reproduce the cached Ingresos.
+
 The canonical monthly axis starts at the model start and ends at the last
 month in which ANY highway earns revenue — Dec-2050 in the Aug-2026 file,
 even though the IPC concession runs to Oct-2064. We deliberately do not
@@ -278,6 +285,74 @@ def _margin(ws) -> float | None:
     return round(E / R, 4) if R > 0 else None
 
 
+
+# ── aforo scenarios ──────────────────────────────────────────────────────────
+BASE_SCENARIO = "Escenario de PIB"     # agreed base case (Javier, Sep-2026)
+
+
+def _scenario_names(wb) -> list:
+    """The dropdown's source list on 'Listas' (col C under 'Escenario de Aforo')."""
+    try:
+        ws = _sheet(wb, "Listas")
+    except ValueError:
+        return []
+    for row in ws.iter_rows(min_row=1, max_row=min(ws.max_row, 60)):
+        for c in row:
+            if _norm(c.value).startswith("escenario de aforo"):
+                out = []
+                for r in range(c.row + 1, c.row + 30):
+                    v = ws.cell(row=r, column=c.column).value
+                    if v is None or not str(v).strip():
+                        break
+                    out.append(str(v).strip())
+                return out
+    return []
+
+
+def _days_row(ws, hdr: dict):
+    cols = list(hdr)[:12]
+    for r in range(1, 8):
+        vals = [ws.cell(row=r, column=c).value for c in cols]
+        if vals and all(isinstance(v, (int, float)) and 27 <= v <= 31 for v in vals):
+            return r
+    return None
+
+
+def _aforo_scenarios(ws, names: list):
+    """'Estudios Aforo': rows 4-63 hold the SELECTED scenario; below, one block
+    per scenario headed by (index, name). Returns (active_name, {name: {hw_key:
+    {cls: {year: tpda}}}}) with annual TPDA per highway and vehicle class."""
+    years = {c.column: int(c.value) for c in ws[1]
+             if isinstance(c.value, (int, float)) and 2000 < c.value < 2200}
+    if len(years) < 10:
+        return None, {}
+    active = ws.cell(row=4, column=3).value
+    active = str(active).strip() if active else None
+    wanted = {_norm(n): n for n in names}
+    scen, cur, hw = {}, None, None
+    for r in range(5, ws.max_row + 1):
+        a = ws.cell(row=r, column=1).value
+        b = ws.cell(row=r, column=2).value
+        nb = _norm(b)
+        is_hdr = (isinstance(a, (int, float)) and not isinstance(a, bool) and float(a).is_integer()
+                  and 1 <= a <= 20 and nb in wanted)
+        if is_hdr:
+            cur = wanted[nb]
+            scen[cur] = {}
+            hw = None
+            continue
+        if cur is None or not nb:
+            continue
+        if nb in _CLASS_BY_NORM:
+            if hw:
+                scen[cur].setdefault(hw, {})[_CLASS_BY_NORM[nb]] = {
+                    y: _num(ws.cell(row=r, column=c).value) for c, y in years.items()}
+        elif nb == "total":
+            continue
+        else:
+            hw = slug(b)
+    return active, scen
+
 # ── main ─────────────────────────────────────────────────────────────────────
 def parse_polaris(file_bytes: bytes, filename: str = "") -> dict:
     wb = openpyxl.load_workbook(io.BytesIO(file_bytes), data_only=True, read_only=False)
@@ -399,6 +474,67 @@ def parse_polaris(file_bytes: bytes, filename: str = "") -> dict:
                 avg_tarifa_sin_iva=avg_tarifa,
             ))
 
+    # ── aforo scenarios: recompute revenue per scenario from annual TPDA ──
+    scenarios = {"names": [], "active": None, "base_case": None, "series": {}, "lifetime": {}, "error": None}
+    try:
+        names = _scenario_names(wb)
+        active, scen = _aforo_scenarios(_sheet(wb, "Estudios Aforo"), names)
+        if not scen:
+            raise ValueError("no scenario blocks found on 'Estudios Aforo'")
+        order = [n for n in names if n in scen] or list(scen)
+        base = BASE_SCENARIO if BASE_SCENARIO in scen else (active if active in scen else order[0])
+        # per highway: tarifa per class per month + days, cached once
+        hw_ctx = {}
+        for co, ws in sheets:
+            hdr = hdrs[co]
+            dr = _days_row(ws, hdr)
+            if dr is None:
+                raise ValueError("'%s': no dias row" % ws.title)
+            col_by_ym = {ym: c for c, ym in hdr.items()}
+            days = [_num(ws.cell(row=dr, column=col_by_ym[m]).value) if m in col_by_ym else 0.0 for m in months]
+            for h in highways:
+                if h["company"] != co:
+                    continue
+                trows = None
+                for k2, v2 in tarf[co].items():
+                    if slug(k2) == h["key"]:
+                        trows = v2
+                if not trows:
+                    raise ValueError("no tarifa rows for %s" % h["model_name"])
+                tarifa = {cls: [_num(ws.cell(row=r, column=col_by_ym[m]).value) if m in col_by_ym else 0.0 for m in months]
+                          for cls, r in trows.items()}
+                hw_ctx[h["key"]] = (tarifa, days, h["open_idx"])
+        for nm in order:
+            ser, life = {}, {}
+            for h in highways:
+                key = h["key"]
+                tarifa, days, oi = hw_ctx[key]
+                tp = scen[nm].get(key) or {}
+                out = []
+                for i, m in enumerate(months):
+                    if oi is None or i < oi:
+                        out.append(0)
+                        continue
+                    y = int(m[:4])
+                    v = 0.0
+                    for cls, tseries in tarifa.items():
+                        v += (tp.get(cls, {}).get(y, 0.0)) * tseries[i] * days[i]
+                    out.append(int(round(v)))
+                ser[key] = out
+                life[key] = round(float(sum(out)), 2)
+            scenarios["series"][nm] = ser
+            scenarios["lifetime"][nm] = life
+        # the saved scenario must reproduce the cached Ingresos (per highway, 0.05%)
+        if active in scenarios["series"]:
+            for h in highways:
+                rec = scenarios["lifetime"][active][h["key"]]
+                if h["lifetime"] and abs(rec - h["lifetime"]) > 0.0005 * h["lifetime"]:
+                    raise ValueError("recomputed %s revenue for '%s' (%.2f bn) does not match the model (%.2f bn)"
+                                     % (h["model_name"], active, rec / 1e9, h["lifetime"] / 1e9))
+        scenarios.update(names=order, active=active, base_case=base)
+    except ValueError as e:
+        scenarios = {"names": [], "active": None, "base_case": None, "series": {}, "lifetime": {}, "error": str(e)}
+
     # Cross-check against the sheets' own lifetime totals (col C of the header block)
     checks = {}
     for co, ws in sheets:
@@ -438,4 +574,5 @@ def parse_polaris(file_bytes: bytes, filename: str = "") -> dict:
         "highways": highways,
         "totals": {"lifetime": round(sum(h["lifetime"] for h in highways), 2),
                    "by_company": parsed_tot, "by_year": by_year_total},
+        "scenarios": scenarios,
     }

@@ -203,8 +203,17 @@
         </div>
       </div>
       <div class="card mb-24">
-        <div class="card-head"><div><div class="card-title">Baseline Ingresos by Highway</div>
-          <div class="card-sub">Model toll revenue per highway, {{ polaris.years[0] }}–{{ polaris.years[-1] }}, nominal mdp sin IVA. Lifetime {{ '%.1f'|format(polaris.totals.lifetime / 1e9) }} bn MXN.{% if polaris.meta.concession_end and polaris.meta.concession_end.IPC %} The IPC concession runs to {{ polaris.meta.concession_end.IPC }}; the model's revenue stops at {{ polaris.meta.horizon_end }} and is not extrapolated.{% endif %}</div></div></div>
+        <div class="card-head"><div><div class="card-title">Ingresos by Highway</div>
+          <div class="card-sub">Model toll revenue per highway, {{ polaris.years[0] }}–{{ polaris.years[-1] }}, nominal mdp sin IVA.{% if polaris.scenarios and polaris.scenarios.series %} Aforo scenario per the model's Premisas dropdown; base case <strong>{{ polaris.scenarios.base_case }}</strong>.{% else %} Lifetime {{ '%.1f'|format(polaris.totals.lifetime / 1e9) }} bn MXN.{% endif %}{% if polaris.meta.concession_end and polaris.meta.concession_end.IPC %} The IPC concession runs to {{ polaris.meta.concession_end.IPC }}; the model's revenue stops at {{ polaris.meta.horizon_end }} and is not extrapolated.{% endif %}</div></div></div>
+        {% if polaris.scenarios and polaris.scenarios.series %}
+        <div class="row wrap" style="gap:6px;margin-bottom:10px;align-items:center;">
+          <span class="subtle" style="font-size:11px;letter-spacing:0.1em;text-transform:uppercase;font-weight:700;margin-right:4px;">Aforo scenario</span>
+          {% for sn in polaris.scenarios.names %}
+          <button class="btn btn-sm {{ 'btn-primary' if sn == polaris.scenarios.base_case else 'btn-ghost' }}" type="button" data-hwscen="{{ sn }}" onclick="hwScenario(this.dataset.hwscen)">{{ sn }}{% if sn == polaris.scenarios.base_case %} · base{% endif %}</button>
+          {% endfor %}
+          <span class="subtle tnum" id="hw-scen-life" style="font-size:12px;margin-left:auto;"></span>
+        </div>
+        {% endif %}
         <div class="chart-wrap" style="height:340px;"><canvas id="hwRevChart"></canvas></div>
       </div>
       {% elif not is_admin %}
@@ -745,6 +754,7 @@
         <button class="btn btn-sm btn-ghost" type="button" onclick="evReset()">Reset to model</button>
       </div>
       <div id="ev-summary" style="margin-top:16px;"></div>
+      <p class="subtle" id="ev-scen-note" style="font-size:12px;margin-top:10px;"></p>
       <p class="subtle" style="font-size:11.5px;line-height:1.6;margin-top:14px;">
         Nominal MXN, sin IVA. USD at {{ '%.2f'|format(polaris.rate) }} MXN.
         {% if polaris.meta.concession_end and polaris.meta.concession_end.IPC %}The IPC concession runs to {{ polaris.meta.concession_end.IPC }} but the model's revenue ends {{ polaris.meta.horizon_end }}; nothing is extrapolated past the model.{% endif %}
@@ -782,6 +792,16 @@
     <div class="card mb-24">
       <div class="card-head"><div><div class="card-title">Scenario Controls</div>
         <div class="card-sub">Valuation inputs first, then one row per highway. Aforo and tarifa sliders scale that highway's model revenue; the delay slider pushes an in-development road's opening back, losing the tail past the concession end.</div></div></div>
+      {% if polaris.scenarios and polaris.scenarios.series %}
+      <div style="{{ SR }}"><span><span style="{{ K }}">Aforo scenario</span><span class="subtle" style="display:block;font-size:11px;">the model's traffic studies (Premisas dropdown); base case <strong>{{ polaris.scenarios.base_case }}</strong> is the baseline — any other study is a scenario whose value delta is shared</span></span>
+        <div class="row wrap" style="gap:6px;grid-column:span 2;justify-content:flex-end;">
+          {% for sn in polaris.scenarios.names %}
+          <button class="btn btn-sm {{ 'btn-primary' if sn == polaris.scenarios.base_case else 'btn-ghost' }}" type="button" data-evscen="{{ sn }}" onclick="evScenario(this.dataset.evscen)">{{ sn }}</button>
+          {% endfor %}
+        </div></div>
+      {% elif polaris.scenarios and polaris.scenarios.error %}
+      <p class="subtle" style="font-size:11.5px;">Aforo scenarios unavailable for this upload: {{ polaris.scenarios.error }}</p>
+      {% endif %}
       <div style="{{ SR }}"><span><span style="{{ K }}">Discount rate</span><span class="subtle" style="display:block;font-size:11px;">base 12.5%; the model itself uses {{ '%.2f'|format(polaris.meta.discount_rate * 100) }}% ({{ polaris.meta.discount_rate_src }}); moves baseline and scenario together</span></span>
         <input type="range" id="ev-disc" min="5" max="20" step="0.25" value="12.5" style="accent-color:var(--mq-accent);"><span style="{{ SV }}" id="lbl-disc">—</span></div>
       <div style="{{ SR }}"><span><span style="{{ K }}">Maquina's first share of value created</span><span class="subtle" style="display:block;font-size:11px;">taken off the top; the remainder is split equally among all five investors, Maquina included</span></span>
@@ -1246,7 +1266,7 @@
   {% if c.slug == 'meta' and polaris %}
   // ── Meta: Modelo Polaris dashboard (map + revenue baseline) ─────────
   (function(){
-    const P = {{ polaris | tojson }};
+    const P = window.__POLARIS = {{ polaris | tojson }};
     const $ = id => document.getElementById(id);
     // Map — base layer only until the KMZ routes arrive.
     if (window.L && $('hwMap')){
@@ -1286,12 +1306,34 @@
       document.querySelectorAll('[data-tab]').forEach(b => b.addEventListener('click', () => setTimeout(() => map.invalidateSize(), 60)));
     }
     // Baseline revenue — stacked by highway, colours shared with table/map.
+    const SC = (P.scenarios && P.scenarios.series && P.scenarios.names.length) ? P.scenarios : null;
+    let hwScen = SC ? SC.base_case : null;
+    let hwRevChart = null;
+    // annual revenue per highway for a scenario (falls back to the model's cached series)
+    function annualFor(h, sn){
+      const ser = (SC && sn && SC.series[sn] && SC.series[sn][h.key]) || null;
+      if (!ser) return P.years.map(y => (h.annual[String(y)] || 0) / 1e6);
+      const out = {}; P.months.forEach((m, i) => { const y = m.slice(0, 4); out[y] = (out[y] || 0) + ser[i]; });
+      return P.years.map(y => (out[String(y)] || 0) / 1e6);
+    }
+    function hwLife(sn){
+      const ser = SC && SC.series[sn]; if (!ser) return P.totals.lifetime;
+      return Object.values(ser).reduce((a, arr) => a + arr.reduce((x, y) => x + y, 0), 0);
+    }
+    window.hwScenario = function(sn){
+      if (!SC || !SC.series[sn]) return;
+      hwScen = sn;
+      document.querySelectorAll('[data-hwscen]').forEach(b => { b.className = 'btn btn-sm ' + (b.dataset.hwscen === sn ? 'btn-primary' : 'btn-ghost'); });
+      const l = $('hw-scen-life'); if (l) l.textContent = 'Lifetime $' + (hwLife(sn) / 1e9).toFixed(1) + ' bn MXN' + (sn === SC.base_case ? '' : ' \u00b7 base case $' + (hwLife(SC.base_case) / 1e9).toFixed(1) + ' bn');
+      if (hwRevChart){ hwRevChart.data.datasets.forEach((d, i) => { d.data = annualFor(P.highways[i], sn); }); hwRevChart.update(); }
+    };
     function buildHwRevChart(){
       const ctx = $('hwRevChart'); if (!ctx) return null;
       const years = P.years.map(String);
-      return new Chart(ctx, { type: 'bar',
+      const l = $('hw-scen-life'); if (l && SC) l.textContent = 'Lifetime $' + (hwLife(hwScen) / 1e9).toFixed(1) + ' bn MXN';
+      hwRevChart = new Chart(ctx, { type: 'bar',
         data: { labels: years, datasets: P.highways.map(h => ({ label: h.name, stack: 'rev',
-          data: years.map(y => (h.annual[y] || 0) / 1e6), backgroundColor: MQ.hexA(h.color, 0.88), borderWidth: 0 })) },
+          data: annualFor(h, hwScen), backgroundColor: MQ.hexA(h.color, 0.88), borderWidth: 0 })) },
         options: { responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
           scales: { x: { stacked: true, grid: { display: false }, ticks: { color: MQ.muted(), maxRotation: 0, autoSkip: true } },
                     y: { stacked: true, grid: { color: MQ.grid() }, ticks: { color: MQ.muted(), callback: v => '$' + (v / 1000).toFixed(1) + 'bn' },
@@ -1299,6 +1341,7 @@
           plugins: { legend: { position: 'bottom', labels: { color: MQ.muted(), boxWidth: 10, font: { size: 11 } } },
             tooltip: { callbacks: { label: c => c.dataset.label + ': $' + Math.round(c.parsed.y).toLocaleString() + ' mdp',
               footer: items => 'Total: $' + Math.round(items.reduce((a, i) => a + i.parsed.y, 0)).toLocaleString() + ' mdp' } } } } });
+      return hwRevChart;
     }
     if ($('hwRevChart')) MQ.register(buildHwRevChart);
   })();
@@ -1311,7 +1354,7 @@
   // equally among all five investors. Downside is floored per company. The
   // rollup sums the two — no netting across companies.
   (function(){
-    const P = {{ polaris | tojson }};
+    const P = window.__POLARIS || {{ polaris | tojson }};
     const $ = id => document.getElementById(id);
     const H = P.highways, M = P.months.length;
     const COS = ['META', 'IPC'].filter(co => H.some(h => h.company === co));
@@ -1332,10 +1375,16 @@
     const dpct = (v, b) => (!b || Math.abs(v) < 0.5e6) ? '\u2014' : sgn(v) + (Math.abs(v) / b * 100).toFixed(1) + '%';
     let ownChart = null;
     let ownView = 'company';   // 'company' | 'highway'
+    const SCN = (P.scenarios && P.scenarios.series && P.scenarios.names.length) ? P.scenarios : null;
+    const BASE_SCEN = SCN ? SCN.base_case : null;
+    let aforoScen = BASE_SCEN;
+    // Revenue series: the base case study is the baseline; the selected study feeds the scenario.
+    const seriesFor = (h, sn) => (SCN && sn && SCN.series[sn] && SCN.series[sn][h.key]) || h.monthly;
+    const baseSeries = h => seriesFor(h, BASE_SCEN);
 
     function val(id, dflt){ const el = $(id); return el ? +el.value : dflt; }
     function cfg(){
-      const c = { r: val('ev-disc', DEF_DISC) / 100, first: val('ev-first', DEF_FIRST) / 100, g: {}, t: {}, d: {},
+      const c = { r: val('ev-disc', DEF_DISC) / 100, first: val('ev-first', DEF_FIRST) / 100, g: {}, t: {}, d: {}, scen: aforoScen,
                   mg: { META: val('ev-mg-META', DEF_MG) / 100, IPC: val('ev-mg-IPC', DEF_MG) / 100 } };
       H.forEach(h => { c.g[h.key] = val('ev-g-' + h.key, 0) / 100; c.t[h.key] = val('ev-t-' + h.key, 100) / 100; c.d[h.key] = val('ev-d-' + h.key, 0); });
       return c;
@@ -1343,10 +1392,11 @@
     function scenarioSeries(h, c){
       const g = c.g[h.key] || 0, t = c.t[h.key] || 1, N = Math.round(c.d[h.key] || 0);
       const open = h.open_idx == null ? 0 : h.open_idx;
+      const src = seriesFor(h, c.scen);                          // selected aforo study
       const out = new Array(M).fill(0);
       for (let m = 0; m < M; m++){
         const s = m - N; if (s < open) continue;               // not yet open (after delay)
-        out[m] = h.monthly[s] * t * Math.pow(1 + g, (s - open) / 12);
+        out[m] = src[s] * t * Math.pow(1 + g, (s - open) / 12);
       }
       return out;                                              // months pushed past M are lost
     }
@@ -1368,7 +1418,7 @@
     function calc(c){
       const rows = H.map(h => {
         const mg = (c.mg && c.mg[h.company] != null) ? c.mg[h.company] : (h.margin == null ? 1 : h.margin);
-        const b = npv(h.monthly, mg, c.r), s = npv(scenarioSeries(h, c), mg, c.r);
+        const b = npv(baseSeries(h), mg, c.r), s = npv(scenarioSeries(h, c), mg, c.r);
         return { h, base: b, scen: s, delta: s - b }; });
       const byCo = {};
       COS.forEach(co => {
@@ -1461,6 +1511,8 @@
       if (bm) bm.className = 'btn btn-sm ' + (isModel ? 'btn-primary' : 'btn-ghost');
       const mt = $('ev-mg-txt'); if (mt) mt.textContent = (c.mg.META * 100).toFixed(0) + '% META \u00b7 ' + (c.mg.IPC * 100).toFixed(0) + '% IPC';
       const rt = $('ev-rule-txt'); if (rt) rt.textContent = Math.round(c.first * 100) + '% to Maquina first, the rest split ' + (N_INV === 5 ? 'five' : N_INV) + ' ways';
+      document.querySelectorAll('[data-evscen]').forEach(b => { b.className = 'btn btn-sm ' + (b.dataset.evscen === aforoScen ? 'btn-primary' : 'btn-ghost'); });
+      const sn = $('ev-scen-note'); if (sn) sn.textContent = SCN ? ('Aforo scenario: ' + aforoScen + (aforoScen === BASE_SCEN ? ' (base case)' : ' \u2014 valued against the base case ' + BASE_SCEN + '; the difference is value created or destroyed') ) : '';
       H.forEach(h => { const g = c.g[h.key] * 100, t = c.t[h.key] * 100, d = c.d[h.key];
         const lg = $('lbl-g-' + h.key); if (lg) lg.textContent = (g >= 0 ? '+' : '') + g.toFixed(2);
         const lt = $('lbl-t-' + h.key); if (lt) lt.textContent = Math.round(t) + '%';
@@ -1503,6 +1555,11 @@
         : "Each bar is one investor's capital value across both companies: their baseline stake in META and in IPC, plus their share of value created in each. Maquina holds a 20% stake in both and takes the first slice of any upside. The end label is rollup ownership.";
       if (ownChart){ ownChart.data.datasets = datasetsFor(calc(cfg())); ownChart.update(); }
     };
+    window.evScenario = function(sn){
+      if (!SCN || !SCN.series[sn]) return;
+      aforoScen = sn;
+      recompute();
+    };
     window.evMargins = function(mode){
       const set = (id, v) => { const el = $(id); if (el) el.value = v; };
       if (mode === 'model'){ set('ev-mg-META', MODEL_MG.META); set('ev-mg-IPC', MODEL_MG.IPC); }
@@ -1511,7 +1568,7 @@
     };
     window.evReset = function(){
       const set = (id, v) => { const el = $(id); if (el) el.value = v; };
-      set('ev-disc', DEF_DISC); set('ev-first', DEF_FIRST); set('ev-mg-META', DEF_MG); set('ev-mg-IPC', DEF_MG);
+      set('ev-disc', DEF_DISC); set('ev-first', DEF_FIRST); set('ev-mg-META', DEF_MG); set('ev-mg-IPC', DEF_MG); aforoScen = BASE_SCEN;
       H.forEach(h => { set('ev-g-' + h.key, 0); set('ev-t-' + h.key, 100); set('ev-d-' + h.key, 0); });
       recompute();
     };
