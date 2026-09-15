@@ -249,6 +249,19 @@ CREATE TABLE IF NOT EXISTS meta_highways (
 -- on the Meta map; geo_source records the uploaded filename.
 ALTER TABLE meta_highways ADD COLUMN IF NOT EXISTS geojson TEXT;
 ALTER TABLE meta_highways ADD COLUMN IF NOT EXISTS geo_source TEXT;
+
+-- RANMAN debt with cost: one row per "corte" (weekly/biweekly Cuadro de
+-- Riesgos snapshot). record = the per-corte summary (same shape as the
+-- tablero's serie.json); creditos = credit-level detail when available.
+-- Amounts in thousands of MXN. Latest file for a fecha wins.
+CREATE TABLE IF NOT EXISTS ranman_debt_cortes (
+    fecha DATE PRIMARY KEY,
+    archivo TEXT,
+    record JSONB NOT NULL,
+    creditos JSONB,
+    uploaded_by TEXT,
+    uploaded_at TIMESTAMP DEFAULT NOW()
+);
 """
 
 
@@ -354,3 +367,33 @@ def update_meta_highway_geo(key: str, geojson: str, source: str, length_km) -> N
     cur.execute("UPDATE meta_highways SET geojson = %s, geo_source = %s, "
                 "length_km = COALESCE(length_km, %s) WHERE key = %s", (geojson, source, length_km, key))
     conn.commit(); cur.close(); conn.close()
+
+
+# ── Ranman / Cuadro de Riesgos ───────────────────────────────────────────────
+def save_ranman_corte(fecha: str, archivo: str, record_json: str, creditos_json, uploaded_by: str) -> None:
+    """Upsert one corte; never blank out stored credit detail with NULL."""
+    conn = get_db(); cur = conn.cursor()
+    cur.execute("INSERT INTO ranman_debt_cortes (fecha, archivo, record, creditos, uploaded_by) "
+                "VALUES (%s, %s, %s, %s, %s) ON CONFLICT (fecha) DO UPDATE SET "
+                "archivo = EXCLUDED.archivo, record = EXCLUDED.record, "
+                "creditos = COALESCE(EXCLUDED.creditos, ranman_debt_cortes.creditos), "
+                "uploaded_by = EXCLUDED.uploaded_by, uploaded_at = NOW()",
+                (fecha, archivo, record_json, creditos_json, uploaded_by))
+    conn.commit(); cur.close(); conn.close()
+
+
+def ranman_cortes() -> list:
+    conn = get_db(); cur = conn.cursor()
+    cur.execute("SELECT fecha, archivo, record FROM ranman_debt_cortes ORDER BY fecha")
+    rows = cur.fetchall()
+    cur.close(); conn.close()
+    return rows
+
+
+def ranman_latest_corte():
+    conn = get_db(); cur = conn.cursor()
+    cur.execute("SELECT fecha, archivo, record, creditos, uploaded_at FROM ranman_debt_cortes "
+                "ORDER BY fecha DESC LIMIT 1")
+    row = cur.fetchone()
+    cur.close(); conn.close()
+    return row

@@ -26,6 +26,7 @@ import seed_data
 import maquina_cf_parser
 import polaris_parser
 import kmz_parser
+import ranman_deuda_parser
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "maquina-dev-secret-change-me")
@@ -738,6 +739,92 @@ def _exit_calc(series, entry_year, target_hold_years, exit_value_usd):
                 moic=(dist + ev) / invested, dpi=dist / invested, irr=annual_irr(cfs))
 
 
+# ─── RANMAN · Deuda con costo (Cuadro de Riesgos) ────────────────────
+def _jl(v):
+    if isinstance(v, str):
+        try:
+            return json.loads(v)
+        except ValueError:
+            return None
+    return v
+
+
+def load_ranman_debt():
+    """History + latest corte of RANMAN's debt with cost, or None when nothing
+    has been loaded. Amounts stay in thousands of MXN; the template shows mdp."""
+    try:
+        rows = db.ranman_cortes()
+        last = db.ranman_latest_corte()
+    except Exception as e:
+        app.logger.warning("ranman debt load failed: %s", e)
+        return None
+    if not rows or not last:
+        return None
+    serie = []
+    for r in rows:
+        rec = _jl(r["record"]) or {}
+        cat = rec.get("cat") or {}
+        npd = rec.get("np") or {}
+        serie.append(dict(
+            fecha=str(r["fecha"])[:10], total=rec.get("total") or 0.0,
+            puentes=cat.get("Puentes", 0.0), no_puentes=cat.get("No-Puentes", 0.0),
+            amort=npd.get("Amortizable", 0.0), revolv=npd.get("Revolvente", 0.0),
+            vence12=rec.get("vence12") or 0.0, sobretasa=rec.get("sobretasaPond"),
+            por_ejercer=rec.get("porEjercer") or 0.0, n=rec.get("n") or 0))
+    latest = _jl(last["record"]) or {}
+    creditos = _jl(last["creditos"]) or []
+    first, cur = serie[0], serie[-1]
+    # insights, mirroring the tablero's README reading of the book
+    d0 = datetime.date.fromisoformat(first["fecha"]); d1 = datetime.date.fromisoformat(cur["fecha"])
+    months = (d1.year - d0.year) * 12 + (d1.month - d0.month)
+    peak = max(serie, key=lambda x: x["no_puentes"])
+    lineas = latest.get("linea") or {}
+    authorized = 0.0; redisp = 0.0
+    for ln, saldo in lineas.items():
+        m = re.search(r"(\d+(?:\.\d+)?)\s*mdp", ln)
+        auth = float(m.group(1)) * 1000 if m else saldo          # unknown size -> treat as fully drawn
+        authorized += auth
+        if ln in ranman_deuda_parser.REVOLVING_AUTHORIZED_MDP:
+            redisp += max(0.0, ranman_deuda_parser.REVOLVING_AUTHORIZED_MDP[ln] * 1000 - saldo)
+    insights = dict(
+        months=months, growth_pct=(cur["total"] / first["total"] - 1) if first["total"] else None,
+        puentes_share_first=(first["puentes"] / first["total"]) if first["total"] else None,
+        puentes_share_last=(cur["puentes"] / cur["total"]) if cur["total"] else None,
+        np_change=cur["no_puentes"] - first["no_puentes"],
+        np_peak=peak["no_puentes"], np_peak_fecha=peak["fecha"],
+        np_from_peak=cur["no_puentes"] - peak["no_puentes"],
+        revolv_from_peak=cur["revolv"] - peak["revolv"], amort_from_peak=cur["amort"] - peak["amort"],
+        vence12_pct=(cur["vence12"] / cur["total"]) if cur["total"] else None,
+        np_authorized=authorized, np_redisponible=redisp,
+    )
+    # credit rows grouped for the table: Puentes first, then No-Puentes; by bank, biggest first
+    creditos = sorted(creditos, key=lambda c: (c.get("cat") != "Puentes", c.get("banco") or "", -(c.get("saldo") or 0)))
+    corte12 = d1 + datetime.timedelta(days=365)
+    for c in creditos:
+        v = c.get("vence")
+        c["due12"] = bool(v) and datetime.date.fromisoformat(v) <= corte12
+    ua = last.get("uploaded_at")
+    return dict(
+        as_of=cur["fecha"], archivo=last.get("archivo"), n_cortes=len(serie), first=first["fecha"],
+        uploaded_at=(ua.strftime("%Y-%m-%d %H:%M") if hasattr(ua, "strftime") else (str(ua)[:16] if ua else None)),
+        latest=latest, creditos=creditos, serie=serie, insights=insights,
+        banks=sorted((latest.get("banco") or {}).items(), key=lambda kv: -kv[1]),
+        desarrollos=sorted((latest.get("desarrollo") or {}).items(), key=lambda kv: -kv[1]),
+        lineas=sorted(lineas.items(), key=lambda kv: -kv[1]),
+        gaps=[(serie[i]["fecha"], serie[i + 1]["fecha"]) for i in range(len(serie) - 1)
+              if (datetime.date.fromisoformat(serie[i + 1]["fecha"]) - datetime.date.fromisoformat(serie[i]["fecha"])).days > 45],
+    )
+
+
+@app.template_filter("mdp")
+def _mdp_filter(v, dec=1):
+    """Thousands of MXN -> millions (mdp) with thousands separators."""
+    try:
+        return ("{:,.%df}" % dec).format(float(v) / 1000.0)
+    except (TypeError, ValueError):
+        return "—"
+
+
 # ─── META · Modelo Polaris (toll roads) ────────────────────────────
 # Valoran's model is uploaded by an admin on the Meta company page and parsed
 # by polaris_parser into a JSON snapshot (db.meta_model_uploads). Display
@@ -1173,6 +1260,83 @@ def meta_highway_kmz(slug, key):
     flash("Route loaded for %s: %.1f km along the KMZ, %d points%s." % (
         key, geo["length_km"], geo["n_points"],
         (" (" + ", ".join(geo["names"]) + ")") if geo["names"] else ""), "ok")
+    return redirect(url_for("company", slug=slug))
+
+
+@app.route("/company/<slug>/deuda/upload", methods=["POST"])
+@login_required
+def ranman_debt_upload(slug):
+    """Admin-only — one or more 'Cuadro de riesgos Ranman <dd mmm aa>.xlsm'
+    cortes. Each is parsed with the tablero's rules, reconciled against the
+    Total it declares, and upserted by its date (latest file for a date wins)."""
+    if not session.get("is_admin"):
+        abort(403)
+    c = _company_or_404(slug)
+    if c["slug"] != "ranman":
+        abort(404)
+    files = [f for f in request.files.getlist("files") if f and f.filename]
+    if not files:
+        flash("Choose one or more Cuadro de riesgos .xlsm files first.", "error")
+        return redirect(url_for("company", slug=slug))
+    ok, problems = 0, []
+    for f in files:
+        name = f.filename
+        if not name.lower().endswith((".xlsm", ".xlsx")):
+            problems.append("%s: not an Excel workbook" % name); continue
+        try:
+            fecha, creds, declarado = ranman_deuda_parser.parse_corte(f.read(), name)
+        except ValueError as e:
+            problems.append(str(e)); continue
+        except Exception as e:  # pragma: no cover
+            app.logger.warning("Ranman corte parse failed: %s", e)
+            problems.append("%s: could not read the workbook" % name); continue
+        if not fecha:
+            problems.append("%s: could not read the date from the file name (expected '... 31 ago 26.xlsm')" % name); continue
+        bad = ranman_deuda_parser.reconcile(creds, declarado)
+        if bad:
+            problems.append("%s: %s — not imported" % (name, bad)); continue
+        rec = ranman_deuda_parser.serie_record(fecha, name, creds)
+        db.save_ranman_corte(fecha, name, json.dumps(rec, ensure_ascii=False),
+                             json.dumps(creds, ensure_ascii=False), session.get("username") or "admin")
+        ok += 1
+    if ok:
+        flash("Imported %d corte%s." % (ok, "" if ok == 1 else "s"), "ok")
+    for p in problems[:6]:
+        flash(p, "error")
+    return redirect(url_for("company", slug=slug))
+
+
+@app.route("/company/<slug>/deuda/import", methods=["POST"])
+@login_required
+def ranman_debt_import(slug):
+    """Admin-only — bulk-seed the history from the tablero's serie.json, plus
+    the credit-level detail from corte_actual.json when provided."""
+    if not session.get("is_admin"):
+        abort(403)
+    c = _company_or_404(slug)
+    if c["slug"] != "ranman":
+        abort(404)
+    fs = request.files.get("serie")
+    if not fs or not fs.filename:
+        flash("Choose the serie.json file first.", "error")
+        return redirect(url_for("company", slug=slug))
+    try:
+        serie = ranman_deuda_parser.parse_serie_json(fs.read())
+        actual = None
+        fa = request.files.get("corte_actual")
+        if fa and fa.filename:
+            actual = ranman_deuda_parser.parse_corte_actual_json(fa.read())
+    except (ValueError, UnicodeDecodeError) as e:
+        flash("Import failed: %s" % e, "error")
+        return redirect(url_for("company", slug=slug))
+    n = 0
+    for r in serie:
+        creds = actual["creditos"] if (actual and actual.get("asOf") == r["fecha"]) else None
+        db.save_ranman_corte(r["fecha"], r.get("archivo"), json.dumps(r, ensure_ascii=False),
+                             json.dumps(creds, ensure_ascii=False) if creds is not None else None,
+                             session.get("username") or "admin")
+        n += 1
+    flash("Imported %d cortes from serie.json%s." % (n, " with credit detail for %s" % actual["asOf"] if actual else ""), "ok")
     return redirect(url_for("company", slug=slug))
 
 
@@ -1873,6 +2037,9 @@ def company(slug):
     polaris = None    # Modelo Polaris toll-road model — Meta only
     if c["slug"] == "meta":
         polaris = load_polaris()
+    ranman_debt = None  # Cuadro de Riesgos (deuda con costo) — Ranman only
+    if c["slug"] == "ranman":
+        ranman_debt = load_ranman_debt()
     if c["slug"] == "ember":
         ember_loans = fetch_ember_loans()
         ember_returns = fetch_ember_returns()
@@ -1995,7 +2162,7 @@ def company(slug):
         ember_live=ember_live, ember_asof=ember_asof, ember_loans=ember_loans,
         ember_returns=ember_returns, summary=summary, fin=fin, leverage=leverage,
         valuation=valuation, cap=cap, hold=hold, exitr=exitr, fre_basis=fre_basis,
-        verticals=verticals, sales=sales, ember_budget=ember_budget, polaris=polaris,
+        verticals=verticals, sales=sales, ember_budget=ember_budget, polaris=polaris, ranman_debt=ranman_debt,
     )
 
 

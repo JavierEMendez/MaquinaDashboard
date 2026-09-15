@@ -661,7 +661,113 @@
     </div>
     {% endif %}
 
-    {% if leverage is not none or (fin and fin.total_debt) %}
+    {# ───────── RANMAN · Deuda con costo (Cuadro de Riesgos) ───────── #}
+    {% if c.slug == 'ranman' %}
+    {% set rd = ranman_debt %}
+    {% if rd %}
+    {% set L = rd.latest %}{% set I = rd.insights %}
+    <div class="card mb-24">
+      <div class="row wrap between" style="gap:8px;align-items:center;margin-bottom:14px;">
+        <div><div class="card-title">Deuda con costo — Cuadro de Riesgos</div>
+          <div class="card-sub">RANMAN's debt book as of <strong>{{ rd.as_of }}</strong> · {{ L.n }} credits · {{ rd.banks|length }} banks · {{ rd.n_cortes }} cortes since {{ rd.first }}. Puentes are secured by each project's land and repaid from its home sales; No-Puentes are corporate lines with no source of repayment of their own. Amounts in mdp (millions of MXN).</div></div>
+        <span class="badge good">● {{ rd.archivo }}</span>
+      </div>
+      <div class="grid grid-3 mb-24">
+        <div class="kpi"><div class="kpi-top"><span class="kpi-label">Saldo deudor</span></div><div class="kpi-value">${{ L.total | mdp }} <span style="font-size:12px;font-weight:500;color:var(--mq-subtle);">mdp</span></div><div class="kpi-foot"><span class="kpi-sub">{{ L.n }} credits · {% if I.growth_pct is not none %}{{ '%+.1f'|format(I.growth_pct * 100) }}% over {{ I.months }} months{% endif %}</span></div></div>
+        <div class="kpi"><div class="kpi-top"><span class="kpi-label">Puentes</span></div><div class="kpi-value pos">${{ L.cat.get('Puentes', 0) | mdp }}</div><div class="kpi-foot"><span class="kpi-sub">{{ '%.1f'|format(I.puentes_share_last * 100) }}% of book{% if I.puentes_share_first is not none %} · was {{ '%.1f'|format(I.puentes_share_first * 100) }}% at {{ rd.first[:7] }}{% endif %}</span></div></div>
+        <div class="kpi"><div class="kpi-top"><span class="kpi-label">No-Puentes</span></div><div class="kpi-value {{ 'neg' if I.np_from_peak > -1 else '' }}">${{ L.cat.get('No-Puentes', 0) | mdp }}</div><div class="kpi-foot"><span class="kpi-sub">peak ${{ I.np_peak | mdp }} on {{ I.np_peak_fecha }} · {{ '%+.1f'|format(I.np_from_peak / 1000) }} since</span></div></div>
+        <div class="kpi"><div class="kpi-top"><span class="kpi-label">Matures within 12 months</span></div><div class="kpi-value">${{ L.vence12 | mdp }}</div><div class="kpi-foot"><span class="kpi-sub">{{ '%.1f'|format(I.vence12_pct * 100) }}% of book · by {{ rd.as_of[:4]|int + 1 }}-{{ rd.as_of[5:7] }}</span></div></div>
+        <div class="kpi"><div class="kpi-top"><span class="kpi-label">Weighted spread (sobretasa)</span></div><div class="kpi-value">{{ ('%.2f'|format(L.sobretasaPond * 100) ~ '%') if L.sobretasaPond else '—' }}</div><div class="kpi-foot"><span class="kpi-sub">over TIIE, saldo-weighted</span></div></div>
+        <div class="kpi"><div class="kpi-top"><span class="kpi-label">Undrawn (por ejercer)</span></div><div class="kpi-value">${{ L.porEjercer | mdp }}</div><div class="kpi-foot"><span class="kpi-sub">mostly bridge-loan availability</span></div></div>
+      </div>
+
+      <div class="grid grid-2" style="gap:14px;align-items:start;">
+        <div class="card" style="padding:14px 16px;">
+          <div style="font-size:10px;letter-spacing:0.13em;text-transform:uppercase;color:var(--mq-subtle);font-weight:700;margin-bottom:8px;">No-Puentes structure</div>
+          <div class="row between" style="font-size:12.5px;padding:5px 0;border-bottom:1px solid var(--mq-line);"><span class="subtle">Amortizable (3 BBVA simples — repaid principal cannot be redrawn)</span><span class="tnum" style="font-weight:600;">${{ L.np.Amortizable | mdp }}</span></div>
+          <div class="row between" style="font-size:12.5px;padding:5px 0;border-bottom:1px solid var(--mq-line);"><span class="subtle">Revolving (CCC, Línea 48, BanBajío — can be redrawn)</span><span class="tnum" style="font-weight:600;">${{ L.np.Revolvente | mdp }}</span></div>
+          <div class="row between" style="font-size:12.5px;padding:5px 0;border-bottom:1px solid var(--mq-line);"><span class="subtle">Authorised No-Puentes capacity</span><span class="tnum" style="font-weight:600;">${{ I.np_authorized | mdp }}</span></div>
+          <div class="row between" style="font-size:12.5px;padding:5px 0;"><span class="subtle">Of which still redrawable</span><span class="tnum" style="font-weight:700;color:var(--mq-accent);">${{ I.np_redisponible | mdp }}</span></div>
+          <p class="subtle" style="font-size:11.5px;line-height:1.55;margin-top:10px;">Of the ${{ (-I.np_from_peak) | mdp }} mdp the No-Puentes block has come down from its {{ I.np_peak_fecha }} peak, <strong>${{ (-I.revolv_from_peak) | mdp }} is revolving</strong> and can be redrawn; only ${{ (-I.amort_from_peak) | mdp }} is real amortisation.</p>
+        </div>
+        <div class="card" style="padding:14px 16px;">
+          <div style="font-size:10px;letter-spacing:0.13em;text-transform:uppercase;color:var(--mq-subtle);font-weight:700;margin-bottom:8px;">By bank &amp; by line</div>
+          {% for b, v in rd.banks %}
+          <div class="row between" style="font-size:12.5px;padding:4px 0;border-bottom:1px solid var(--mq-line);"><span>{{ b }}</span><span class="row" style="gap:12px;"><span class="subtle tnum">{{ '%.1f'|format(v / L.total * 100) }}%</span><span class="tnum" style="font-weight:600;min-width:64px;text-align:right;">${{ v | mdp }}</span></span></div>
+          {% endfor %}
+          <div style="height:8px;"></div>
+          {% for ln, v in rd.lineas %}
+          <div class="row between" style="font-size:12px;padding:3px 0;"><span class="subtle">{{ ln }}</span><span class="tnum">${{ v | mdp }}</span></div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+
+    <div class="grid grid-2 mb-24" style="align-items:start;">
+      <div class="card">
+        <div class="card-head"><div><div class="card-title">Debt over time</div>
+          <div class="card-sub">Saldo deudor by category, {{ rd.first }} → {{ rd.as_of }} ({{ rd.n_cortes }} cortes; the x-axis is real time, so the {{ rd.gaps|length }} gap{{ '' if rd.gaps|length == 1 else 's' }} in reporting show as longer stretches).</div></div></div>
+        <div class="chart-wrap" style="height:300px;"><canvas id="rdTotalChart"></canvas></div>
+      </div>
+      <div class="card">
+        <div class="card-head"><div><div class="card-title">No-Puentes: amortisable vs revolving</div>
+          <div class="card-sub">A fall in the revolving lines looks the same on the chart but is not retired debt. Peak ${{ I.np_peak | mdp }} mdp on {{ I.np_peak_fecha }}.</div></div></div>
+        <div class="chart-wrap" style="height:300px;"><canvas id="rdNpChart"></canvas></div>
+      </div>
+    </div>
+
+    {% if rd.creditos %}
+    <div class="card mb-24">
+      <div class="card-head"><div><div class="card-title">Credit by credit — {{ rd.as_of }}</div>
+        <div class="card-sub">Rows maturing within 12 months are flagged. Puentes first, then No-Puentes; banks ordered by balance.</div></div></div>
+      <div class="table-scroll" style="max-height:560px;">
+        <table class="data-table">
+          <thead><tr><th style="text-align:left;">Bank</th><th style="text-align:left;">Credit</th><th style="text-align:left;">Line</th><th style="text-align:left;">Project</th><th>Saldo (mdp)</th><th>Undrawn</th><th>Maturity</th><th>Spread</th><th>Progress</th></tr></thead>
+          <tbody>
+          {% set ns = namespace(cat=None) %}
+          {% for k in rd.creditos %}
+            {% if k.cat != ns.cat %}{% set ns.cat = k.cat %}
+            <tr style="background:var(--mq-surface-2);font-weight:700;"><td colspan="4" style="text-align:left;">{{ k.cat }}</td><td>${{ L.cat.get(k.cat, 0) | mdp }}</td><td colspan="4"></td></tr>
+            {% endif %}
+            <tr{% if not k.saldo %} style="opacity:.5;"{% endif %}>
+              <td style="text-align:left;">{{ k.banco }}</td><td style="text-align:left;">{{ k.credito }}</td><td style="text-align:left;">{{ k.linea }}</td><td style="text-align:left;">{{ k.desarrollo }}</td>
+              <td class="tnum">${{ k.saldo | mdp }}</td><td class="tnum">{{ ('$' ~ (k.porEjercer | mdp)) if k.porEjercer else '—' }}</td>
+              <td class="tnum {{ 'neg' if k.due12 and k.saldo else '' }}">{{ k.vence or '—' }}{% if k.due12 and k.saldo %} <span class="badge bad" style="font-size:9px;">≤12m</span>{% endif %}</td>
+              <td class="tnum">{{ ('%.2f'|format(k.sobretasa * 100) ~ '%') if k.sobretasa else '—' }}</td>
+              <td class="tnum">{{ ('%.0f'|format(k.avance * 100) ~ '%') if k.avance is not none else '—' }}</td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% endif %}
+    {% endif %}
+
+    {% if is_admin %}
+    <div class="card mb-24">
+      <div class="row between wrap" style="gap:12px;align-items:flex-start;">
+        <div style="max-width:520px;">
+          <div class="card-title">Cuadro de Riesgos — data</div>
+          <div class="card-sub">{% if rd %}Latest corte <strong>{{ rd.as_of }}</strong> ({{ rd.archivo }}), {{ rd.n_cortes }} cortes loaded{% if rd.uploaded_at %}, last upload {{ rd.uploaded_at }}{% endif %}.{% else %}No debt data yet.{% endif %} Upload new <code>Cuadro de riesgos Ranman &lt;dd mmm aa&gt;.xlsm</code> cortes as they arrive (several at once is fine); each is reconciled against the Total it declares. To seed or refresh the full history, import the tablero's <code>serie.json</code> (+ <code>corte_actual.json</code> for credit detail).</div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:8px;min-width:300px;">
+          <form method="POST" action="{{ url_for('ranman_debt_upload', slug=c.slug) }}" enctype="multipart/form-data" class="row" style="gap:8px;align-items:center;">
+            <input class="input" type="file" name="files" accept=".xlsm,.xlsx" multiple required style="padding:7px;font-size:12px;max-width:260px;">
+            <button class="btn btn-primary btn-sm" type="submit">Upload cortes</button>
+          </form>
+          <form method="POST" action="{{ url_for('ranman_debt_import', slug=c.slug) }}" enctype="multipart/form-data" class="row wrap" style="gap:8px;align-items:center;">
+            <input class="input" type="file" name="serie" accept=".json" required title="serie.json" style="padding:7px;font-size:12px;max-width:150px;">
+            <input class="input" type="file" name="corte_actual" accept=".json" title="corte_actual.json (optional)" style="padding:7px;font-size:12px;max-width:150px;">
+            <button class="btn btn-sm btn-ghost" type="submit">Import serie.json</button>
+          </form>
+        </div>
+      </div>
+    </div>
+    {% endif %}
+    {% endif %}
+
+    {% if not ranman_debt and (leverage is not none or (fin and fin.total_debt)) %}
     <div class="card mb-24">
       <div class="card-title mb-16">Leverage &amp; Debt</div>
       <div class="grid grid-3">
@@ -1260,6 +1366,39 @@
             tooltip:{ callbacks:{ label:c => c.dataset.label + ': $' + Math.abs(c.parsed.y).toLocaleString(undefined,{maximumFractionDigits:0}) } } } } });
     }
     if (document.getElementById('budgetChart')) MQ.register(budgetChart);
+  })();
+  {% endif %}
+
+  {% if c.slug == 'ranman' and ranman_debt %}
+  // ── Ranman: debt history charts (real-time x axis in days since first corte) ──
+  (function(){
+    const S = {{ ranman_debt.serie | tojson }};
+    const $ = id => document.getElementById(id);
+    if (!S.length) return;
+    const t0 = new Date(S[0].fecha + 'T00:00:00Z').getTime();
+    const day = d => Math.round((new Date(d + 'T00:00:00Z').getTime() - t0) / 86400000);
+    const pts = key => S.map(r => ({ x: day(r.fecha), y: (r[key] || 0) / 1000, d: r.fecha }));
+    const MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const lab = v => { const d = new Date(t0 + v * 86400000); return MON[d.getUTCMonth()] + " '" + String(d.getUTCFullYear()).slice(2); };
+    const xScale = () => ({ type: 'linear', min: 0, max: day(S[S.length - 1].fecha), grid: { color: MQ.grid() },
+      ticks: { color: MQ.muted(), stepSize: 91, callback: v => lab(v), maxRotation: 0, autoSkip: true } });
+    const tip = { callbacks: { title: items => items[0].raw.d, label: c => c.dataset.label + ': $' + c.parsed.y.toFixed(1) + ' mdp' } };
+    function build(id, datasets, stacked){
+      const ctx = $(id); if (!ctx) return null;
+      return new Chart(ctx, { type: 'line', data: { datasets },
+        options: { responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, parsing: false,
+          elements: { point: { radius: 2, hitRadius: 6 }, line: { tension: 0.15, borderWidth: 2 } },
+          scales: { x: xScale(), y: { stacked: stacked, grid: { color: MQ.grid() }, ticks: { color: MQ.muted(), callback: v => '$' + v.toFixed(0) },
+                    title: { display: true, text: 'mdp', color: MQ.muted(), font: { size: 10 } } } },
+          plugins: { legend: { position: 'bottom', labels: { color: MQ.muted(), boxWidth: 10, font: { size: 11 } } }, tooltip: tip } } });
+    }
+    MQ.register(() => build('rdTotalChart', [
+      { label: 'Puentes', data: pts('puentes'), borderColor: MQ.palette(2), backgroundColor: MQ.hexA(MQ.palette(2), 0.35), fill: true },
+      { label: 'No-Puentes', data: pts('no_puentes'), borderColor: MQ.palette(0), backgroundColor: MQ.hexA(MQ.palette(0), 0.35), fill: true } ], true));
+    MQ.register(() => build('rdNpChart', [
+      { label: 'Amortisable (simples)', data: pts('amort'), borderColor: MQ.palette(1), backgroundColor: MQ.hexA(MQ.palette(1), 0.15), fill: false },
+      { label: 'Revolving lines', data: pts('revolv'), borderColor: MQ.palette(4), backgroundColor: MQ.hexA(MQ.palette(4), 0.15), fill: false },
+      { label: 'Matures ≤ 12 months', data: pts('vence12'), borderColor: MQ.muted(), borderDash: [5, 4], fill: false } ], false));
   })();
   {% endif %}
 
