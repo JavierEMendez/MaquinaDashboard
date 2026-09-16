@@ -46,6 +46,11 @@
 .rf .evtl{fill:var(--ink-3);font-family:var(--cond);font-size:9.5px;letter-spacing:.06em;text-transform:uppercase}
 .rf .evt.hot{stroke:var(--crit)} .rf .evtl.hot{fill:var(--crit)}
 .rf .lineP{fill:none;stroke-width:2;stroke-linejoin:round}
+.rf .ytdl{stroke:var(--ink);stroke-width:2;stroke-dasharray:4 3;stroke-linecap:round;opacity:.8}
+.rf .basem{stroke:var(--ink);stroke-width:2;stroke-linecap:round;opacity:.82}
+.rf .swp{display:inline-block;width:14px;height:0;flex:none;align-self:center;border-top:2px dashed var(--ink)}
+.rf .swl{display:inline-block;width:14px;height:0;flex:none;align-self:center;border-top:2px solid var(--ink)}
+.rf .ejet{fill:var(--ink-3);font-family:var(--cond);font-size:10px;font-weight:600;letter-spacing:.09em;text-transform:uppercase;text-anchor:middle}
 .rf .rf-bar{cursor:pointer} .rf .rf-bar:hover{filter:brightness(1.12)}
 .rf .warnbox{display:flex;gap:10px;align-items:flex-start;margin-bottom:16px;padding:13px 15px;border:1px solid color-mix(in srgb,var(--crit) 32%,transparent);background:color-mix(in srgb,var(--crit) 8%,transparent);border-radius:8px;font-size:13px;color:var(--ink-2);line-height:1.5}
 .rf .tablewrap{overflow-x:auto;border:1px solid var(--line);border-radius:8px}
@@ -186,21 +191,22 @@
   <div class="tab-panel" data-panel="rf-plp">
     <div class="rf-kpis" id="rf-plpKpis"></div>
     <div class="rf-grid">
-      <section class="rf-panel">
-        <h3>Ventas y firmas por año</h3>
-        <p class="rf-note">Barras: ventas totales en mdp. Línea punteada: firmas del año, eje derecho.</p>
-        <div class="rf-legend" id="rf-lgReal"></div>
+      <section class="rf-panel rf-col6">
+        <h3>Ventas por año</h3>
+        <p class="rf-note" id="rf-nVentas">Ventas totales, renglón 7.</p>
         <div class="chart" id="rf-chVentasA"></div>
       </section>
       <section class="rf-panel rf-col6">
-        <h3>UAIR por año</h3>
-        <p class="rf-note">Utilidad antes de impuestos, renglón 39.</p>
-        <div class="chart" id="rf-chUairA"></div>
+        <h3>Firmas y apartados por año</h3>
+        <p class="rf-note" id="rf-nFirmas">Unidades, renglones 4 y 5.</p>
+        <div class="rf-legend" id="rf-lgVFA"></div>
+        <div class="chart" id="rf-chFirmasA"></div>
       </section>
-      <section class="rf-panel rf-col6">
-        <h3>Saldo final de efectivo por año</h3>
-        <p class="rf-note">Renglón 82, al cierre de cada año.</p>
-        <div class="chart" id="rf-chEfeA"></div>
+      <section class="rf-panel">
+        <h3>UAIR por año</h3>
+        <p class="rf-note" id="rf-nUair">Utilidad antes de impuestos, renglón 39.</p>
+        <div class="chart" id="rf-chUairA"></div>
+        <div class="rf-legend" id="rf-lgReal" style="margin:13px 0 0"></div>
       </section>
       <section class="rf-panel">
         <h3>Estado de resultados y flujo</h3>
@@ -302,11 +308,61 @@ function areaMensual(host, meses, series, opts){
   hit.addEventListener('mouseleave',()=>{cx.style.opacity=0; hideTip();});
 }
 
-/* ---------- yearly bars, zero axis, optional line on the right axis ---------- */
+/* ---------- tooltip rows shared by the yearly charts: real vs plan ---------- */
+function filasPlan(filas, fmt, u, v, real, base, ytd, e, corte){
+  if (e==='curso' && real!=null){ filas.push(['Real a '+(corte||'la fecha de corte'), fmt(real)+u]); filas.push(['Falta del año', fmt(v-real)+u]); }
+  else filas.push(['Periodo', e==='real'?'real':e==='curso'?'en curso':'proyección']);
+  if (base!=null){ filas.push(['Objetivo del año', fmt(base)+u]); filas.push(['Variación', (v-base>=0?'+':'')+fmt(v-base)+u]); }
+  if (ytd!=null && real!=null){ filas.push(['Plan a '+(corte||'la fecha'), fmt(ytd)+u]); filas.push(['Real contra plan', (real-ytd>=0?'+':'')+fmt(real-ytd)+u]); }
+  return filas;
+}
+const marcas = (x1, x2, ytd, base, Y) => (ytd!=null ? `<line class="ytdl" x1="${x1.toFixed(1)}" y1="${Y(ytd).toFixed(1)}" x2="${x2.toFixed(1)}" y2="${Y(ytd).toFixed(1)}"/>` : '')
+  + (base!=null ? `<line class="basem" x1="${x1.toFixed(1)}" y1="${Y(base).toFixed(1)}" x2="${x2.toFixed(1)}" y2="${Y(base).toFixed(1)}"/>` : '');
+
+/* ---------- grouped yearly bars (two series), real vs forecast, plan marks ---------- */
+function escalaBonita(v, div){ const bruto = v/div; const p = Math.pow(10, Math.floor(Math.log10(bruto||1)));
+  const m = [1,1.5,2,2.5,3,4,5,7.5,10].find(x=>x*p>=bruto) || 10; return m*p*div; }
+function barrasGrupo(host, anios, series, opts){
+  const est = opts.est || (()=> 'real');
+  const hayDer = series.some(s=>s.eje==='der');
+  const W = opts.w||1000, H = opts.h||280, ML = 62, MR = hayDer?62:20, MT = 16, MB = 34, DIV = 4; const iw = W-ML-MR, ih = H-MT-MB;
+  const tope = eje => Math.max(1, ...series.filter(s=>s.eje===eje).flatMap(s=>s.vals.concat(s.base||[], s.ytd||[]).filter(v=>v!=null)));
+  const hi = {izq: escalaBonita(tope('izq')*1.06, DIV), der: escalaBonita(tope('der')*1.06, DIV)};
+  const Y = (v,eje) => MT+ih - v/hi[eje]*ih;
+  let grid='', ylab='';
+  for (let k=0; k<=DIV; k++){ const y = (MT+ih - ih*k/DIV).toFixed(1);
+    grid += `<line class="${k?'gl':'zl'}" x1="${ML}" y1="${y}" x2="${W-MR}" y2="${y}"/>`;
+    ylab += `<text class="axl y" x="${ML-8}" y="${(+y+3.5).toFixed(1)}">${f0(hi.izq*k/DIV)}</text>` + (hayDer ? `<text class="axl" text-anchor="start" x="${W-MR+8}" y="${(+y+3.5).toFixed(1)}">${f0(hi.der*k/DIV)}</text>` : ''); }
+  const bw = iw/anios.length, gw = Math.min(bw*0.74, 74), an = gw/series.length; const x0 = i => ML + bw*i + (bw-gw)/2;
+  let bars='', xlab='';
+  anios.forEach((a,i)=>{
+    xlab += `<text class="axl x" x="${(ML+bw*i+bw/2).toFixed(1)}" y="${H-11}">${String(a).slice(2)}</text>`;
+    series.forEach((se,k)=>{ const v = se.vals[i]; if (v==null) return;
+      const e = est(a), col = cvar(se.color); const ytd = (se.ytd && se.ytd[i]!=null) ? se.ytd[i] : null;
+      const w = Math.max(2, an-2), x = x0(i) + an*k + 1;
+      // the current year is split: the real part below, the rest of the year above
+      const real = (e==='curso' && se.real && se.real[i]!=null) ? se.real[i] : null;
+      const tramos = real==null ? [[0, v, e]] : [[0, real, 'real'], [real, v, 'proy']];
+      tramos.forEach(([de,a2,cl])=>{ if (a2-de <= 0) return; const y1 = Y(a2,se.eje), y0 = Y(de,se.eje);
+        bars += `<rect class="rf-bar" data-i="${i}" data-s="${k}" x="${x.toFixed(1)}" y="${y1.toFixed(1)}" width="${w.toFixed(1)}" height="${Math.max(1,y0-y1).toFixed(1)}" rx="1.5" fill="${col}" opacity="${cl==='real'?1:0.44}" stroke="${cl==='real'?'none':col}" stroke-width="${cl==='real'?0:1}" stroke-dasharray="${cl==='real'?'0':'2.5 2'}"/>`; });
+      bars += marcas(x-1.5, x+w+1.5, ytd, (se.base && se.base[i]!=null) ? se.base[i] : null, vv=>Y(vv,se.eje));
+    });
+  });
+  const rot = (txt,x,y,ang) => `<text class="ejet" transform="rotate(${ang} ${x} ${y})" x="${x}" y="${y}">${esc(txt)}</text>`;
+  const titulos = rot(opts.tituloIzq||'', 13, MT+ih/2, -90) + (hayDer ? rot(opts.tituloDer||'', W-13, MT+ih/2, 90) : '');
+  host.innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(opts.aria||'')}">${grid}${bars}${ylab}${xlab}${titulos}</svg>`;
+  host.querySelectorAll('.rf-bar').forEach(b=>{ const i=+b.dataset.i, se=series[+b.dataset.s], e=est(anios[i]); const fmt = se.fmt||fx, u = se.u||'';
+    const filas = filasPlan([[se.name, fmt(se.vals[i])+u]], fmt, u, se.vals[i], (se.real && se.real[i]!=null) ? se.real[i] : null,
+      (se.base && se.base[i]!=null) ? se.base[i] : null, (se.ytd && se.ytd[i]!=null) ? se.ytd[i] : null, e, opts.corte);
+    bind(b, String(anios[i]), filas); });
+}
+
+/* ---------- yearly bars, zero axis, current year split real/forecast, plan marks ---------- */
 function barrasAnio(host, anios, vals, opts){
   const est = opts.est || (()=> 'real');
   const W = opts.w||1000, H = opts.h||230, ML = 48, MR = opts.linea?52:14, MT = 14, MB = 30; const iw = W-ML-MR, ih = H-MT-MB;
-  const v = vals.filter(x=>x!=null); let hi = Math.max(0,...v), lo = Math.min(0,...v);
+  const v = vals.filter(x=>x!=null).concat((opts.base||[]).filter(x=>x!=null)).concat((opts.ytd||[]).filter(x=>x!=null));
+  let hi = Math.max(0,...v), lo = Math.min(0,...v);
   const r = (hi-lo)||1; hi += r*0.12; if(lo<0) lo -= r*0.08;
   const Y = x => MT+ih-(x-lo)/(hi-lo)*ih;
   const paso = [2,5,10,25,50,100,250,500,1000,2000,4000].find(p=>(hi-lo)/p<=6) || 4000;
@@ -314,8 +370,14 @@ function barrasAnio(host, anios, vals, opts){
   const bw = iw/anios.length, an = Math.min(bw*0.6, 44), cx = i => ML+bw*i+bw/2;
   let bars='', xlab='';
   anios.forEach((a,i)=>{ const x = vals[i]; xlab += `<text class="axl x" x="${cx(i).toFixed(1)}" y="${H-9}">${String(a).slice(2)}</text>`;
-    if(x==null) return; const y0=Y(0), y1=Y(x), e=est(a); const col = cvar(x<0 ? (opts.neg||opts.color) : opts.color);
-    bars += `<rect class="rf-bar" data-i="${i}" x="${(cx(i)-an/2).toFixed(1)}" y="${Math.min(y0,y1).toFixed(1)}" width="${an.toFixed(1)}" height="${Math.max(1.5,Math.abs(y1-y0)).toFixed(1)}" rx="1.5" fill="${col}" opacity="${e==='real'?1:(e==='curso'?.74:.44)}" stroke="${e==='real'?'none':col}" stroke-width="${e==='real'?0:1}" stroke-dasharray="${e==='proy'?'2.5 2':'0'}"/>`; });
+    if(x==null) return; const e=est(a); const col = cvar(x<0 ? (opts.neg||opts.color) : opts.color);
+    // in the current year the bar is split: the real part below, what is left of the year above
+    const real = (e==='curso' && opts.real && opts.real[i]!=null) ? opts.real[i] : null;
+    const tramos = real==null ? [[0, x, e]] : [[0, real, 'real'], [real, x, 'proy']];
+    tramos.forEach(([de,a2,cl])=>{ const yA=Y(de), yB=Y(a2); if (Math.abs(yA-yB) < 0.4 && de!==0) return;
+      bars += `<rect class="rf-bar" data-i="${i}" x="${(cx(i)-an/2).toFixed(1)}" y="${Math.min(yA,yB).toFixed(1)}" width="${an.toFixed(1)}" height="${Math.max(1.5,Math.abs(yB-yA)).toFixed(1)}" rx="1.5" fill="${col}" opacity="${cl==='real'?1:(cl==='curso'?.74:.44)}" stroke="${cl==='real'?'none':col}" stroke-width="${cl==='real'?0:1}" stroke-dasharray="${cl==='real'?'0':'2.5 2'}"/>`; });
+    bars += marcas(cx(i)-an/2-1.5, cx(i)+an/2+1.5, (opts.ytd && opts.ytd[i]!=null) ? opts.ytd[i] : null, (opts.base && opts.base[i]!=null) ? opts.base[i] : null, Y);
+  });
   let ln='';
   if(opts.linea){ const lv = opts.linea.vals.filter(x=>x!=null); const bruto = Math.max(...lv)*1.15 || 1;
     const escl = Math.pow(10, Math.floor(Math.log10(bruto))-1)*2.5; const lhi = Math.ceil(bruto/escl)*escl; const LY = x => MT+ih-x/lhi*ih;
@@ -323,10 +385,13 @@ function barrasAnio(host, anios, vals, opts){
     ln = `<path class="lineP" d="M${pts.map(q=>q[0].toFixed(1)+' '+q[1].toFixed(1)).join('L')}" stroke="${cvar(opts.linea.color)}" stroke-dasharray="3 3"/>` +
       pts.map(q=>`<circle cx="${q[0].toFixed(1)}" cy="${q[1].toFixed(1)}" r="2.6" fill="${cvar(opts.linea.color)}"/>`).join('') +
       [0,0.5,1].map(f=>`<text class="axl" text-anchor="start" x="${W-MR+8}" y="${(LY(lhi*f)+3.5).toFixed(1)}">${f0(lhi*f)}</text>`).join(''); }
-  host.innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(opts.aria||'')}">${grid}${bars}${ln}${ylab}${xlab}</svg>`;
-  host.querySelectorAll('.rf-bar').forEach(b=>{ const i=+b.dataset.i; const filas=[[opts.serie||'Valor', (opts.fmt||fx)(vals[i])+(opts.u||'')]];
+  const tIzq = opts.tituloIzq ? `<text class="ejet" transform="rotate(-90 13 ${MT+ih/2})" x="13" y="${MT+ih/2}">${esc(opts.tituloIzq)}</text>` : '';
+  host.innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(opts.aria||'')}">${grid}${bars}${ln}${ylab}${xlab}${tIzq}</svg>`;
+  host.querySelectorAll('.rf-bar').forEach(b=>{ const i=+b.dataset.i; const fmt=opts.fmt||fx, u=opts.u||''; const filas=[[opts.serie||'Valor', fmt(vals[i])+u]];
     if(opts.linea) filas.push([opts.linea.name, f0(opts.linea.vals[i])]);
-    filas.push(['Periodo', est(anios[i])==='real'?'real':est(anios[i])==='curso'?'en curso':'proyección']); bind(b, String(anios[i]), filas); });
+    filasPlan(filas, fmt, u, vals[i], (opts.real && opts.real[i]!=null) ? opts.real[i] : null, (opts.base && opts.base[i]!=null) ? opts.base[i] : null,
+      (opts.ytd && opts.ytd[i]!=null) ? opts.ytd[i] : null, est(anios[i]), opts.corte);
+    bind(b, String(anios[i]), filas); });
 }
 
 /* ==================== FLUJO: ORIGEN Y APLICACIÓN ==================== */
@@ -531,13 +596,34 @@ function pintarEstado(){
   pon(recall('plp-vista')==='mensual' ? 'mensual' : 'anual');
 })();
 
-/* ---- yearly charts ---- */
+/* ---- yearly charts: real vs forecast, against the plan the year started with ---- */
 const fila = r => EP.filas.find(f=>f.r===r);
+// real part of the current year: the months up to the corte, summed
+const iAct = MS.map((m,i)=>i).filter(i=>+MS[i].slice(0,4)===ANIO_ACT && MS[i]<=CORTE);
+const realDe = r => { const f=fila(r); return f ? AN.map(a => a===ANIO_ACT ? iAct.reduce((x,i)=>x+(f.m[i]||0),0) : null) : null; };
+// the plan the year started with, from the first PLP workbook of that year; only the
+// current year carries it — closed years had no target left to chase and later years
+// would be forecast against forecast, not performance
+const B = (EP.base && EP.base.filas) ? EP.base : null;
+const baseDe = r => B && B.filas[r] ? AN.map(a=>{ const k=B.anios.indexOf(a); return (k<0 || a!==ANIO_ACT) ? null : B.filas[r][k]; }) : null;
+const ytdDe  = r => B && B.ytd && B.ytd[r]!=null ? AN.map(a => a===ANIO_ACT ? B.ytd[r] : null) : null;
+const baseLab = B ? 'Plan ' + (()=>{ const [y,m,d]=B.fecha.split('-'); return `${+d} ${MES[+m-1]} ${y.slice(2)}`; })() : '';
+if (B) {
+  const MESL = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+  const nota = ` Sobre la barra de ${ANIO_ACT}, la raya sólida es el objetivo del año y la punteada, lo que ese mismo plan traía para enero–${MESL[+CORTE.slice(5,7)-1]}.`;
+  ['nVentas','nFirmas','nUair'].forEach(id => { $(id).textContent += nota; });
+}
 function pintarPlp(){
-  $('lgReal').innerHTML = `<span><i class="rf-sw" style="background:var(--s1)"></i>real (${AN[0]}–${ANIO_ACT-1})</span><span><i class="rf-sw" style="background:var(--s1);opacity:.74"></i>${ANIO_ACT} en curso</span><span><i class="rf-sw" style="background:var(--s1);opacity:.44;outline:1px dashed var(--s1);outline-offset:-1px"></i>proyección</span>`;
-  if (fila(7)) barrasAnio($('chVentasA'), AN, fila(7).a, {h:250, color:'--s1', serie:'Ventas', u:' mdp', est:estAnio, linea: fila(5) ? {vals:fila(5).a, color:'--s2', name:'Firmas'} : null, aria:'Ventas y firmas por año'});
-  if (fila(39)) barrasAnio($('chUairA'), AN, fila(39).a, {w:560, h:230, color:'--s3', neg:'--s8', serie:'UAIR', u:' mdp', est:estAnio, aria:'UAIR por año'});
-  if (fila(82)) barrasAnio($('chEfeA'), AN, fila(82).a, {w:560, h:230, color:'--s1', neg:'--s8', serie:'Saldo final', u:' mdp', est:estAnio, aria:'Saldo final de efectivo por año'});
+  $('lgVFA').innerHTML = `<span><i class="rf-sw" style="background:var(--s2)"></i>Firmas</span><span><i class="rf-sw" style="background:var(--s7)"></i>Apartados</span>`;
+  $('lgReal').innerHTML = `<span><i class="rf-sw" style="background:var(--ink-3)"></i>real: ${AN[0]}–${ANIO_ACT-1} completos y la parte baja de ${ANIO_ACT}, hasta ${lbl(CORTE)}</span>`
+    + `<span><i class="rf-sw" style="background:var(--ink-3);opacity:.44;outline:1px dashed var(--ink-3);outline-offset:-1px"></i>proyección</span>`
+    + (B ? `<span><i class="swl"></i>objetivo del año</span><span><i class="swp"></i>plan a ${lbl(CORTE)}</span><span style="color:var(--ink-3)">del plan de arranque · ${esc(B.archivo)}</span>` : '');
+  if (fila(7)) barrasAnio($('chVentasA'), AN, fila(7).a, {w:560, h:260, color:'--s1', serie:'Ventas', u:' mdp', est:estAnio, real:realDe(7), base:baseDe('7'), ytd:ytdDe('7'), baseLab, corte:lbl(CORTE), tituloIzq:'mdp', aria:'Ventas por año contra el plan de arranque'});
+  if (fila(5) && fila(4)) barrasGrupo($('chFirmasA'), AN, [
+    {name:'Firmas',    color:'--s2', eje:'izq', fmt:f0, vals:fila(5).a, real:realDe(5), base:baseDe('5'), ytd:ytdDe('5')},
+    {name:'Apartados', color:'--s7', eje:'izq', fmt:f0, vals:fila(4).a, real:realDe(4), base:baseDe('4'), ytd:ytdDe('4')},
+  ], {w:560, h:260, est:estAnio, corte:lbl(CORTE), baseLab, tituloIzq:'unidades', aria:'Firmas y apartados por año contra el plan de arranque'});
+  if (fila(39)) barrasAnio($('chUairA'), AN, fila(39).a, {h:250, color:'--s3', neg:'--s8', serie:'UAIR', u:' mdp', est:estAnio, real:realDe(39), base:baseDe('39'), ytd:ytdDe('39'), baseLab, corte:lbl(CORTE), tituloIzq:'mdp', aria:'UAIR por año contra el plan de arranque'});
 }
 pintarPlp();
 

@@ -822,6 +822,32 @@ def _vrm_flujos():
         return []
 
 
+def _ranman_plp_base(year):
+    """The year's opening plan (oldest PLP workbook of that year), as stored by
+    the upload route in app_settings; None when never loaded."""
+    try:
+        raw = db.get_setting("ranman_plp_base_%s" % year)
+        base = json.loads(raw) if raw else None
+        return base if isinstance(base, dict) and base.get("filas") else None
+    except Exception:
+        return None
+
+
+def _ranman_plp_base_candidate(raw_bytes, name, as_of, problems):
+    """Keep the OLDEST uploaded PLP workbook of each year as that year's opening
+    plan (the script's primer_corte_del_anio): replace only with an older file."""
+    year = as_of[:4]
+    cur = _ranman_plp_base(year)
+    if cur and cur.get("fecha") and cur["fecha"] <= as_of:
+        return
+    try:
+        base = ranman_flujo_parser.parse_base_workbook(raw_bytes, name)
+    except Exception as e:
+        problems.append("%s: could not read it as the year's opening plan (%s)" % (name, e))
+        return
+    db.set_setting("ranman_plp_base_%s" % year, json.dumps(base))
+
+
 def load_ranman_flujo():
     """RANMAN's Flujo y PLP — the latest corte's flujo_plp.json document, as
     Valoran's tablero renders it. None when nothing has been loaded."""
@@ -836,6 +862,10 @@ def load_ranman_flujo():
     if not (isinstance(data, dict) and data.get("flujo") and data.get("plp")):
         return None
     as_of = str(row["as_of"])[:10]
+    if not data["plp"].get("base"):          # the year's opening plan, if it was loaded after this corte
+        base = _ranman_plp_base(as_of[:4])
+        if base:
+            data["plp"]["base"] = ranman_flujo_parser.base_para_corte(base, as_of)
     MESES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"]
     d = datetime.date.fromisoformat(as_of)
     ua = row.get("uploaded_at")
@@ -1424,7 +1454,7 @@ def ranman_flujo_upload(slug):
     if not files:
         flash("Choose a Flujo y PLP .xlsx or flujo_plp.json first.", "error")
         return redirect(url_for("company", slug=slug))
-    ok, problems = 0, []
+    ok, problems, workbooks = 0, [], []
     for f in files:
         name = f.filename
         low = name.lower()
@@ -1432,11 +1462,16 @@ def ranman_flujo_upload(slug):
             if low.endswith(".json"):
                 datos = ranman_flujo_parser.parse_json(f.read())
             elif low.endswith(".xlsx"):
-                datos, valid, lines = ranman_flujo_parser.parse_workbook(f.read(), name)
+                raw = f.read()
+                datos, valid, lines = ranman_flujo_parser.parse_workbook(raw, name)
                 if not valid:
                     problems.append("%s: HAY DIFERENCIAS — the recomputed totals don't match the file's own; not imported. %s"
                                     % (name, " · ".join(l for l in lines if "dif" in l)[:600]))
                     continue
+                # the year's oldest workbook is its opening plan; attach plans once every file is seen
+                _ranman_plp_base_candidate(raw, name, datos["asOf"], problems)
+                workbooks.append((datos, name))
+                continue
             else:
                 problems.append("%s: expected a .xlsx workbook or flujo_plp.json" % name); continue
         except (ValueError, UnicodeDecodeError, KeyError) as e:
@@ -1444,6 +1479,13 @@ def ranman_flujo_upload(slug):
         except Exception as e:  # pragma: no cover
             app.logger.warning("Ranman flujo parse failed: %s", e)
             problems.append("%s: could not read the file" % name); continue
+        db.save_ranman_flujo(datos["asOf"], datos.get("archivo") or name, json.dumps(datos, ensure_ascii=False),
+                             session.get("username") or "admin")
+        ok += 1
+    for datos, name in workbooks:
+        base = _ranman_plp_base(datos["asOf"][:4])
+        if base:
+            datos["plp"]["base"] = ranman_flujo_parser.base_para_corte(base, datos["asOf"])
         db.save_ranman_flujo(datos["asOf"], datos.get("archivo") or name, json.dumps(datos, ensure_ascii=False),
                              session.get("username") or "admin")
         ok += 1

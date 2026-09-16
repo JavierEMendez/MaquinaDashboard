@@ -221,6 +221,61 @@ def valida(fl: dict, plp: dict):
     return bool(ok), out
 
 
+# ── the year's opening plan (script: lee_base / primer_corte_del_anio) ──────
+BASE_FILAS = {4: 'apartados', 5: 'firmas', 7: 'ventas', 39: 'uair'}
+
+
+def parse_base_workbook(file_bytes: bytes, filename: str) -> dict:
+    """The plan the year started with = the OLDEST PLP workbook of the year, read
+    the way the script's lee_base does: rows 4/5/7/39 of the PLP sheet per year
+    (yearly block found by the integer years in row 3) plus every month of the
+    monthly block (dates in row 3, cut at the first date regression), so the
+    year-to-date can be rebuilt for any later corte. Ventas and UAIR ÷1000 → mdp."""
+    fecha = fecha_de_nombre(filename)
+    if not fecha:
+        raise ValueError("%s: could not read the date from the file name (expected '... dd-mm-aa.xlsx')" % filename)
+    wb = openpyxl.load_workbook(io.BytesIO(file_bytes), data_only=True, read_only=True)
+    try:
+        if 'PLP' not in wb.sheetnames:
+            raise ValueError("%s has no 'PLP' sheet" % filename)
+        filas = list(wb['PLP'].iter_rows(min_row=1, max_row=max(BASE_FILAS) + 1, max_col=340, values_only=True))
+    finally:
+        wb.close()
+    cab = filas[2]
+    cols = [j for j, v in enumerate(cab) if isinstance(v, int) and not isinstance(v, bool) and 2020 < v < 2050]
+    if not cols:
+        raise ValueError("%s: PLP row 3 has no yearly block" % filename)
+    num = lambda v: v if isinstance(v, (int, float)) else None
+    fechas = [(j, v) for j, v in enumerate(cab) if isinstance(v, dt.datetime)]
+    for k in range(1, len(fechas)):
+        if fechas[k][1] < fechas[k - 1][1]:
+            fechas = fechas[:k]
+            break
+    out = {'archivo': filename, 'fecha': fecha, 'anios': [cab[j] for j in cols], 'filas': {}, 'mensual': {}}
+    for r in BASE_FILAS:
+        fila = filas[r - 1]
+        esc = 1000.0 if r in (7, 39) else 1.0           # ventas and UAIR come in thousands
+        out['filas'][str(r)] = [None if num(fila[j]) is None else round(num(fila[j]) / esc, 2) for j in cols]
+        out['mensual'][str(r)] = {v.strftime('%Y-%m'): (num(fila[j]) or 0) / esc for j, v in fechas}
+    return out
+
+
+def base_para_corte(base: dict, as_of: str):
+    """The plan as the script embeds it for one corte: yearly totals plus, for the
+    corte's year, the January→corte-month accumulation (`ytd`) — comparable with
+    what has really been sold and signed to date."""
+    if not base:
+        return None
+    anio, hasta = as_of[:4], as_of[:7]
+    out = {'archivo': base.get('archivo'), 'fecha': base.get('fecha'), 'anios': base.get('anios') or [],
+           'filas': base.get('filas') or {}, 'ytd': {}, 'hasta': hasta}
+    for r, meses in (base.get('mensual') or {}).items():
+        sel = [v for m, v in meses.items() if m[:4] == anio and m <= hasta]
+        if sel:
+            out['ytd'][r] = round(sum(sel), 2)
+    return out
+
+
 # ── entry points ────────────────────────────────────────────────────────────
 def parse_workbook(file_bytes: bytes, filename: str):
     """One «Flujo y PLP DRA - MAQUINA - dd-mm-aa.xlsx» -> (datos, ok, lines).

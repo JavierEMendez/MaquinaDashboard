@@ -64,7 +64,7 @@
     <button class="tab" data-tab="ev">Enterprise Value Analysis</button>
     {% else %}
     <button class="tab" data-tab="commercial">Commercial</button>
-    <button class="tab" data-tab="operations">Operations</button>
+    <button class="tab" data-tab="operations">{{ 'Cashflow & PLP' if c.slug == 'ranman' else 'Operations' }}</button>
     <button class="tab" data-tab="finance">Finance</button>
     {% if cap %}<button class="tab" data-tab="projects">Projects</button>{% endif %}
     <button class="tab" data-tab="strategy">Strategy</button>
@@ -453,7 +453,7 @@
       <div class="row between wrap" style="gap:12px;align-items:flex-start;">
         <div style="max-width:560px;">
           <div class="card-title">Flujo y PLP — data</div>
-          <div class="card-sub">{% if rf %}Corte <strong>{{ rf.as_of }}</strong> ({{ rf.archivo }}){% if rf.uploaded_at %}, uploaded {{ rf.uploaded_at }}{% endif %}.{% else %}No Flujo y PLP data yet.{% endif %} Upload the monthly <code>Flujo y PLP DRA - MAQUINA - &lt;dd-mm-aa&gt;.xlsx</code> — it is read with the tablero script's rules and validated against the file's own totals — or the <code>flujo_plp.json</code> that script writes. The latest corte is shown.</div>
+          <div class="card-sub">{% if rf %}Corte <strong>{{ rf.as_of }}</strong> ({{ rf.archivo }}){% if rf.uploaded_at %}, uploaded {{ rf.uploaded_at }}{% endif %}.{% else %}No Flujo y PLP data yet.{% endif %} Upload the monthly <code>Flujo y PLP DRA - MAQUINA - &lt;dd-mm-aa&gt;.xlsx</code> — it is read with the tablero script's rules and validated against the file's own totals — or the <code>flujo_plp.json</code> that script writes. The latest corte is shown. The oldest workbook uploaded for a year is kept as that year's opening plan (its targets are drawn over the PLP charts), so upload January's file once alongside the current corte.</div>
         </div>
         <form method="POST" action="{{ url_for('ranman_flujo_upload', slug=c.slug) }}" enctype="multipart/form-data" class="row" style="gap:8px;align-items:center;">
           <input class="input" type="file" name="files" accept=".xlsx,.json" multiple required style="padding:7px;font-size:12px;max-width:260px;">
