@@ -444,6 +444,25 @@
     {{ category_panel('Commercial') }}
   </div>
   <div class="tab-panel" data-panel="operations">
+    {% if c.slug == 'ranman' %}
+    {# ── Flujo y PLP — Valoran's tablero (origen y aplicación · deuda corporativa · PLP) ── #}
+    {% set rf = ranman_flujo %}
+    {% if rf %}{% include '_partials/_ranman_flujo_plp.html' %}{% endif %}
+    {% if is_admin %}
+    <div class="card mb-24">
+      <div class="row between wrap" style="gap:12px;align-items:flex-start;">
+        <div style="max-width:560px;">
+          <div class="card-title">Flujo y PLP — data</div>
+          <div class="card-sub">{% if rf %}Corte <strong>{{ rf.as_of }}</strong> ({{ rf.archivo }}){% if rf.uploaded_at %}, uploaded {{ rf.uploaded_at }}{% endif %}.{% else %}No Flujo y PLP data yet.{% endif %} Upload the monthly <code>Flujo y PLP DRA - MAQUINA - &lt;dd-mm-aa&gt;.xlsx</code> — it is read with the tablero script's rules and validated against the file's own totals — or the <code>flujo_plp.json</code> that script writes. The latest corte is shown.</div>
+        </div>
+        <form method="POST" action="{{ url_for('ranman_flujo_upload', slug=c.slug) }}" enctype="multipart/form-data" class="row" style="gap:8px;align-items:center;">
+          <input class="input" type="file" name="files" accept=".xlsx,.json" multiple required style="padding:7px;font-size:12px;max-width:260px;">
+          <button class="btn btn-primary btn-sm" type="submit">Upload</button>
+        </form>
+      </div>
+    </div>
+    {% endif %}
+    {% endif %}
     {% if ember_live %}<div class="row wrap" style="gap:8px;margin-bottom:14px;align-items:center;"><span class="badge good">● Live from Ember</span><span class="subtle" style="font-size:12px;">Operating revenues{% if ember_asof %} · as of {{ ember_asof }}{% endif %}</span></div>{% endif %}
 
     {# ── Operating Budget (firm P&L) — Ember-only, ported from EmberApps /budget ── #}
@@ -672,7 +691,7 @@
       <div class="row between wrap" style="gap:12px;align-items:flex-start;">
         <div style="max-width:520px;">
           <div class="card-title">Cuadro de Riesgos — data</div>
-          <div class="card-sub">{% if rd %}Latest corte <strong>{{ rd.as_of }}</strong> ({{ rd.archivo }}), {{ rd.n_cortes }} cortes loaded{% if rd.uploaded_at %}, last upload {{ rd.uploaded_at }}{% endif %}.{% else %}No debt data yet.{% endif %} Upload new <code>Cuadro de riesgos Ranman &lt;dd mmm aa&gt;.xlsm</code> cortes as they arrive (several at once is fine); each is reconciled against the Total it declares. To seed or refresh the full history, import the tablero's <code>serie.json</code> (+ <code>corte_actual.json</code> for credit detail).</div>
+          <div class="card-sub">{% if rd %}Latest corte <strong>{{ rd.as_of }}</strong> ({{ rd.archivo }}), {{ rd.n_cortes }} cortes loaded{% if rd.uploaded_at %}, last upload {{ rd.uploaded_at }}{% endif %}. {% if rd.vrm_n %}VRM credit: {{ rd.vrm_n }} movements loaded.{% else %}VRM credit not loaded — import <code>Credito VRM.xlsx</code> below so new cortes include it.{% endif %}{% else %}No debt data yet.{% endif %} Upload new <code>Cuadro de riesgos Ranman &lt;dd mmm aa&gt;.xlsm</code> cortes as they arrive (several at once is fine); each is reconciled against the Total it declares, then the VRM shareholder credit is added. To seed or refresh the full history, import the tablero's <code>serie.json</code> (+ <code>corte_actual.json</code> for credit detail), the exported tablero <code>.html</code>, and/or <code>Credito VRM.xlsx</code>.</div>
         </div>
         <div style="display:flex;flex-direction:column;gap:8px;min-width:300px;">
           <form method="POST" action="{{ url_for('ranman_debt_upload', slug=c.slug) }}" enctype="multipart/form-data" class="row" style="gap:8px;align-items:center;">
@@ -680,9 +699,11 @@
             <button class="btn btn-primary btn-sm" type="submit">Upload cortes</button>
           </form>
           <form method="POST" action="{{ url_for('ranman_debt_import', slug=c.slug) }}" enctype="multipart/form-data" class="row wrap" style="gap:8px;align-items:center;">
-            <input class="input" type="file" name="serie" accept=".json" required title="serie.json" style="padding:7px;font-size:12px;max-width:150px;">
-            <input class="input" type="file" name="corte_actual" accept=".json" title="corte_actual.json (optional)" style="padding:7px;font-size:12px;max-width:150px;">
-            <button class="btn btn-sm btn-ghost" type="submit">Import serie.json</button>
+            <input class="input" type="file" name="serie" accept=".json" title="serie.json" style="padding:7px;font-size:12px;max-width:150px;">
+            <input class="input" type="file" name="corte_actual" accept=".json" title="corte_actual.json" style="padding:7px;font-size:12px;max-width:150px;">
+            <input class="input" type="file" name="tablero" accept=".html,.htm" title="Exported tablero (Cuadro de Riesgo RANMAN.html)" style="padding:7px;font-size:12px;max-width:150px;">
+            <input class="input" type="file" name="vrm" accept=".xlsx" title="Credito VRM.xlsx — movements of the shareholder credit" style="padding:7px;font-size:12px;max-width:150px;">
+            <button class="btn btn-sm btn-ghost" type="submit">Import history / VRM</button>
           </form>
         </div>
       </div>

@@ -1,0 +1,567 @@
+{# RANMAN · Flujo y PLP — port of Valoran's tablero (Sep-2026): origen y
+   aplicación with the file's on/off flags as a live scenario, the corporate
+   debt run-off, and the PLP (income statement + cash flow) yearly / monthly.
+   Data = `rf.data`, the flujo_plp.json document written by the tablero's
+   script (or by ranman_flujo_parser from the workbook). Same KPIs, tables and
+   sort as the tablero; Maquina's tokens; ids/classes namespaced rf-. #}
+<style>
+.rf{ --s1:#2a78d6; --s2:#eb6834; --s3:#1baf7a; --s4:#eda100; --s5:#e87ba4; --s6:#008300; --s7:#4a3aa7; --s8:#e34948;
+     --crit:#c0362c; --warn:#a9700a; --ok:#1f7a52;
+     --bg:var(--mq-bg-2); --surface:var(--mq-surface); --surface-2:var(--mq-surface-2); --surface-3:var(--mq-surface-2);
+     --line:var(--mq-line); --line-strong:var(--mq-line-2); --ink:var(--mq-ink-2); --ink-2:var(--mq-muted); --ink-3:var(--mq-subtle);
+     --accent:var(--mq-accent); --cond:var(--font-display); --mono:var(--font-num); --sans:var(--font-sans); font-size:14px; }
+:root[data-theme="dark"] .rf{ --s1:#3987e5; --s2:#d95926; --s3:#199e70; --s4:#c98500; --s5:#d55181; --s7:#9085e9; --s8:#e66767; --crit:#e66767; --warn:#c98500; --ok:#35a877; }
+.rf .rf-num{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.rf .rf-hdr{display:flex;flex-wrap:wrap;gap:10px 28px;align-items:flex-end;justify-content:space-between;margin-bottom:14px}
+.rf .rf-eyebrow{font-family:var(--cond);font-size:11px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3);margin:0 0 4px}
+.rf h2.rf-title{font-family:var(--cond);font-weight:700;font-size:26px;letter-spacing:-.012em;margin:0;line-height:1.08;color:var(--ink)}
+.rf .rf-meta{display:flex;flex-wrap:wrap;gap:8px 10px;align-items:center}
+.rf .rf-pill{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--line-strong);border-radius:999px;padding:5px 12px;font-size:12px;color:var(--ink-2);background:var(--surface-2)}
+.rf .rf-pill b{color:var(--ink);font-weight:600} .rf .rf-dot{width:7px;height:7px;border-radius:50%;background:var(--ok);flex:none}
+.rf .rf-ghost{font:inherit;font-size:12px;color:var(--ink-2);cursor:pointer;border:1px solid var(--line-strong);background:var(--surface-2);border-radius:999px;padding:5px 12px}
+.rf .rf-ghost:hover{color:var(--ink);border-color:var(--ink-3)}
+.rf .rf-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(176px,1fr));gap:1px;background:var(--line);border:1px solid var(--line);border-radius:10px;overflow:hidden;margin-bottom:16px}
+.rf .rf-kpi{background:var(--surface);padding:16px 18px 15px;position:relative}
+.rf .rf-kpi::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:transparent}
+.rf .rf-kpi.good::before{background:var(--ok)} .rf .rf-kpi.bad::before{background:var(--crit)} .rf .rf-kpi.blue::before{background:var(--s1)} .rf .rf-kpi.orange::before{background:var(--s2)}
+.rf .rf-kpi .rf-lab{font-family:var(--cond);font-size:10.5px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);display:block;margin-bottom:7px}
+.rf .rf-kpi .rf-val{font-family:var(--mono);font-size:25px;font-weight:500;letter-spacing:-.025em;line-height:1.05;white-space:nowrap;color:var(--ink)}
+.rf .rf-kpi .rf-val small{font-size:13px;font-weight:400;color:var(--ink-2);margin-left:3px}
+.rf .rf-kpi .rf-sub{font-size:11.5px;color:var(--ink-2);margin-top:6px;line-height:1.4}
+.rf .rf-kpi.bad .rf-val{color:var(--crit)}
+.rf .rf-grid{display:grid;gap:16px;grid-template-columns:repeat(12,1fr);align-items:start}
+.rf .rf-panel{grid-column:span 12;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:18px 18px 20px;min-width:0}
+@media(min-width:900px){.rf .rf-col7{grid-column:span 7}.rf .rf-col5{grid-column:span 5}.rf .rf-col6{grid-column:span 6}}
+.rf .rf-panel h3{font-family:var(--cond);font-size:15px;font-weight:600;margin:0 0 3px;color:var(--ink)}
+.rf .rf-note{font-size:11.5px;color:var(--ink-3);margin:0 0 15px;line-height:1.45}
+.rf .rf-legend{display:flex;flex-wrap:wrap;gap:6px 16px;margin:0 0 13px;font-size:11.5px;color:var(--ink-2)}
+.rf .rf-legend span{display:inline-flex;align-items:center;gap:6px}
+.rf .rf-sw{width:11px;height:11px;border-radius:2px;flex:none;display:inline-block}
+.rf .chart{position:relative;width:100%} .rf .chart svg{display:block;width:100%;height:auto;overflow:visible}
+.rf .gl{stroke:var(--line);stroke-width:1} .rf .zl{stroke:var(--ink-3);stroke-width:1.2}
+.rf .axl{fill:var(--ink-3);font-family:var(--mono);font-size:9.5px} .rf .axl.y{text-anchor:end} .rf .axl.x{text-anchor:middle}
+.rf .cross{stroke:var(--ink-3);stroke-width:1;stroke-dasharray:3 3;opacity:0} .rf .hit{fill:transparent;cursor:crosshair}
+.rf .mk{fill:var(--surface);stroke-width:2;opacity:0}
+.rf .evt{stroke:var(--ink-3);stroke-width:1;stroke-dasharray:2 3}
+.rf .evtl{fill:var(--ink-3);font-family:var(--cond);font-size:9.5px;letter-spacing:.06em;text-transform:uppercase}
+.rf .evt.hot{stroke:var(--crit)} .rf .evtl.hot{fill:var(--crit)}
+.rf .lineP{fill:none;stroke-width:2;stroke-linejoin:round}
+.rf .rf-bar{cursor:pointer} .rf .rf-bar:hover{filter:brightness(1.12)}
+.rf .warnbox{display:flex;gap:10px;align-items:flex-start;margin-bottom:16px;padding:13px 15px;border:1px solid color-mix(in srgb,var(--crit) 32%,transparent);background:color-mix(in srgb,var(--crit) 8%,transparent);border-radius:8px;font-size:13px;color:var(--ink-2);line-height:1.5}
+.rf .tablewrap{overflow-x:auto;border:1px solid var(--line);border-radius:8px}
+.rf table.dt{border-collapse:collapse;width:100%;min-width:760px;font-size:12.5px}
+.rf .dt th,.rf .dt td{padding:7px 11px;text-align:right;border-bottom:1px solid var(--line);white-space:nowrap;font-family:var(--mono);font-variant-numeric:tabular-nums;background:transparent}
+.rf .dt th:first-child,.rf .dt td:first-child{text-align:left;font-family:var(--sans)}
+.rf .dt thead th{position:sticky;top:0;background:var(--surface-3);z-index:1;font-family:var(--cond);font-size:10.5px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-2)}
+.rf .dt tbody tr:hover{background:var(--surface-2)} .rf .dt tbody tr:last-child td{border-bottom:none}
+.rf .dt .neg{color:var(--crit)} .rf .dt .zero{color:var(--ink-3)}
+.rf .dt td.est{text-align:left;font-family:var(--sans)}
+.rf .dt thead th .sub2{display:block;font-family:var(--mono);font-size:9.5px;font-weight:400;letter-spacing:0;text-transform:none;color:var(--ink-3);margin-top:2px}
+.rf .dt td.sub{padding-left:36px}
+.rf .dt tr.grp{cursor:pointer} .rf .dt tr.grp td{background:var(--surface-2);font-weight:600;border-top:1px solid var(--line-strong)}
+.rf .dt tr.grp:hover td{background:var(--surface-3)} .rf .dt tr.grp:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.rf .dt tr.grp .chev{display:inline-block;width:11px;font-size:9px;color:var(--ink-3);transform:rotate(-90deg);transition:transform .15s}
+.rf .dt tr.grp[aria-expanded="true"] .chev{transform:rotate(0)}
+.rf .dt tr.grp .rf-sw{margin:0 7px 0 2px;vertical-align:-1px}
+.rf .dt tr[data-off="1"] td{opacity:.55}
+.rf .dt tfoot td{background:var(--surface-3);font-weight:600;border-top:1px solid var(--line-strong);padding:7px 11px;text-align:right;font-family:var(--mono)}
+.rf .dt tfoot td:first-child{text-align:left;font-family:var(--sans)}
+.rf .esctog{display:flex;align-items:center;gap:9px;width:100%;background:none;border:0;padding:0;margin:0 0 3px;font:inherit;color:inherit;cursor:pointer;text-align:left}
+.rf .esctog h3{margin:0} .rf .esctog .chev{color:var(--ink-3);font-size:10px;flex:none;transition:transform .15s;display:inline-block;line-height:1}
+.rf .esctog[aria-expanded="false"] .chev{transform:rotate(-90deg)} .rf .esctog .escnote{margin-left:auto;text-align:right}
+.rf .esctog:hover h3,.rf .esctog:hover .chev{color:var(--accent)}
+.rf .escbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:14px}
+.rf .escnote{font-size:11.5px;color:var(--ink-3)} .rf .escnote.alt{color:var(--warn)}
+.rf .esc{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));align-items:start}
+.rf .escg{border:1px solid var(--line);border-radius:8px;padding:11px 12px 9px;background:var(--surface-2);min-width:0}
+.rf .escg h4{font-family:var(--cond);font-size:12px;font-weight:600;margin:0 0 8px;display:flex;align-items:center;gap:7px;letter-spacing:.02em;color:var(--ink)}
+.rf .escg h4 .gt{margin-left:auto;font-family:var(--mono);font-size:11.5px;color:var(--ink-2);font-weight:400;flex:none}
+.rf .chk{display:flex;align-items:center;gap:8px;padding:3px 3px;font-size:12px;cursor:pointer;border-radius:4px;color:var(--ink)}
+.rf .chk:hover{background:var(--surface-3)}
+.rf .chk .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rf .chk .amt{font-family:var(--mono);font-size:11px;color:var(--ink-2);flex:none}
+.rf .chk input{accent-color:var(--accent);margin:0;flex:none}
+.rf .chk.nada{color:var(--ink-3);cursor:default} .rf .chk.nada:hover{background:transparent}
+.rf .segc{display:inline-flex;border:1px solid var(--line-strong);border-radius:999px;overflow:hidden}
+.rf .segb{font:inherit;font-family:var(--cond);font-size:12px;font-weight:600;cursor:pointer;border:0;padding:5px 15px;background:var(--surface-2);color:var(--ink-3)}
+.rf .segb+.segb{border-left:1px solid var(--line-strong)} .rf .segb[aria-pressed="true"]{background:var(--accent);color:#fff}
+#rf-tblEstado{min-width:620px;font-size:12px} #rf-tblEstado.mens{min-width:1180px}
+#rf-tblEstado td,#rf-tblEstado th{padding:5px 8px}
+#rf-tblEstado td:first-child,#rf-tblEstado th:first-child{white-space:normal;min-width:180px;max-width:250px}
+#rf-tblEstado tr.vac td{height:9px;padding:0;border-bottom:none;background:var(--surface)}
+#rf-tblEstado tr.grp2{cursor:pointer} #rf-tblEstado tr.grp2:hover td{background:var(--surface-3)}
+#rf-tblEstado tr.grp2:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+#rf-tblEstado tr.grp2 .chev{display:inline-block;width:11px;font-size:9px;color:var(--ink-3);transform:rotate(-90deg);transition:transform .15s;margin-right:3px}
+#rf-tblEstado tr.grp2[aria-expanded="true"] .chev{transform:rotate(0)}
+#rf-tblEstado tr.hijo td:first-child{padding-left:30px;color:var(--ink-2);font-size:11.5px} #rf-tblEstado tr.hijo td{color:var(--ink-2)}
+#rf-tblEstado tr.clave td{font-weight:600;background:var(--surface-2)}
+#rf-tblEstado thead tr.anio th{font-size:9.5px;color:var(--ink-3);padding-top:0;border-bottom:1px solid var(--line-strong);background:var(--surface-3)}
+#rf-tblEstado.mens thead tr:first-child th{border-bottom:none}
+#rf-tblEstado .ysep{border-left:1px solid var(--line-strong)} #rf-tblEstado .tras{border-left:1.5px dashed var(--ink-3)}
+#rf-tblEstado tr.sec td{background:var(--surface-3);font-family:var(--cond);font-size:10.5px;font-weight:600;letter-spacing:.11em;text-transform:uppercase;color:var(--ink-2);padding:7px 10px;border-top:2px solid var(--line-strong);border-bottom:1px solid var(--line-strong)}
+#rf-tblEstado td.real{background:color-mix(in srgb,var(--s1) 7%,var(--surface))} #rf-tblEstado td.curso{background:color-mix(in srgb,var(--s1) 3%,var(--surface))}
+#rf-tblEstado tr.clave td.real{background:color-mix(in srgb,var(--s1) 9%,var(--surface-2))} #rf-tblEstado tr.clave td.curso{background:color-mix(in srgb,var(--s1) 4%,var(--surface-2))}
+#rf-tblEstado thead th.real{border-bottom:2px solid var(--s1);color:var(--ink)} #rf-tblEstado thead th.curso{border-bottom:2px dashed var(--s1)}
+.rf .dt.freeze th:first-child,.rf .dt.freeze td:first-child{position:sticky;left:0;z-index:2;background:var(--surface);box-shadow:1px 0 0 var(--line)}
+.rf .dt.freeze thead th:first-child{z-index:3;background:var(--surface-3)}
+.rf .dt.freeze tr.clave td:first-child{background:var(--surface-2)} .rf .dt.freeze tr.sec td:first-child{background:var(--surface-3)}
+.rf .dt.freeze tr.grp2:hover td:first-child{background:var(--surface-3)}
+#rf-tip{position:fixed;z-index:50;pointer-events:none;opacity:0;transition:opacity .1s;background:var(--mq-surface);border:1px solid var(--mq-line-2);border-radius:7px;padding:9px 11px;box-shadow:0 4px 14px rgba(0,0,0,.14);font-size:12px;max-width:270px;color:var(--mq-ink-2)}
+#rf-tip .tt{font-weight:600;margin-bottom:4px;font-size:12.5px} #rf-tip .tr{display:flex;justify-content:space-between;gap:18px;color:var(--mq-muted)} #rf-tip .tr b{color:var(--mq-ink-2);font-family:var(--font-num);font-weight:500}
+</style>
+
+<div class="rf card mb-24" id="rf" data-tabgroup>
+  <div class="rf-hdr">
+    <div><p class="rf-eyebrow">Maquina Holdings · Ranman · DRA</p><h2 class="rf-title">Flujo y PLP</h2></div>
+    <div class="rf-meta">
+      <span class="rf-pill"><span class="rf-dot"></span>Corte al <b>{{ rf.as_of_label }}</b></span>
+      <span class="rf-pill">Cifras en <b>mdp</b></span>
+      <span class="rf-pill" title="{{ rf.archivo }}">{{ rf.n_lineas }} líneas · <b>{{ rf.n_meses }} meses</b></span>
+    </div>
+  </div>
+  <div class="tabs" style="margin-bottom:16px;">
+    <button class="tab active" data-tab="rf-flujo" type="button">Flujo · origen y aplicación</button>
+    <button class="tab" data-tab="rf-deuda" type="button">Deuda corporativa</button>
+    <button class="tab" data-tab="rf-plp" type="button">PLP</button>
+  </div>
+
+  <div class="tab-panel active" data-panel="rf-flujo">
+    <div class="rf-kpis" id="rf-flKpis"></div>
+    <div class="rf-grid">
+      <section class="rf-panel">
+        <button class="esctog" type="button" id="rf-escTog" aria-expanded="false" aria-controls="rf-escBody">
+          <span class="chev" aria-hidden="true">&#9660;</span><h3>Escenario</h3><span class="escnote" id="rf-escEstado"></span>
+        </button>
+        <div id="rf-escBody" hidden>
+          <p class="rf-note" id="rf-escNote">Cada casilla es una línea del modelo. Apagarla o prenderla recalcula los totales, igual que la columna de banderas del archivo.</p>
+          <div class="escbar">
+            <button class="rf-ghost" type="button" id="rf-escReset">Volver al archivo</button>
+            <button class="rf-ghost" type="button" id="rf-escTodo">Prender todo</button>
+            <button class="rf-ghost" type="button" id="rf-escNada">Apagar todo</button>
+          </div>
+          <div class="esc" id="rf-escenario"></div>
+        </div>
+      </section>
+      <section class="rf-panel">
+        <h3>Flujo Ranman acumulado</h3>
+        <p class="rf-note">Origen menos aplicación, acumulado desde el corte. Es el renglón 60 del archivo.</p>
+        <div class="chart" id="rf-chFlujo"></div>
+      </section>
+      <section class="rf-panel rf-col6">
+        <h3>Aplicación por categoría</h3>
+        <p class="rf-note">Acumulado. En qué se va el dinero: operación, deuda y proyectos no operativos, e inversión.</p>
+        <div class="rf-legend"><span><i class="rf-sw" style="background:var(--s2)"></i>Operativos</span><span><i class="rf-sw" style="background:var(--s8)"></i>Deuda y proyectos no operativos</span><span><i class="rf-sw" style="background:var(--s4)"></i>Inversión</span></div>
+        <div class="chart" id="rf-chAplic"></div>
+      </section>
+      <section class="rf-panel rf-col6">
+        <h3>Origen por línea</h3>
+        <p class="rf-note">Acumulado. De dónde sale el dinero.</p>
+        <div class="rf-legend" id="rf-lgOrigen"></div>
+        <div class="chart" id="rf-chOrigen"></div>
+      </section>
+      <section class="rf-panel">
+        <h3>Detalle por línea</h3>
+        <p class="rf-note">Acumulado desde el corte a 3, 6, 12 y 18 meses, bajo el escenario seleccionado. Agrupado igual que la aplicación; clic en un grupo para abrir sus líneas.</p>
+        <div class="tablewrap"><table class="dt" id="rf-tblLineas"></table></div>
+      </section>
+    </div>
+  </div>
+
+  <div class="tab-panel" data-panel="rf-deuda">
+    <div class="rf-kpis" id="rf-deKpis"></div>
+    <div class="rf-grid">
+      <section class="rf-panel">
+        <h3>Saldo de deuda corporativa por línea</h3>
+        <p class="rf-note" id="rf-deNote"></p>
+        <div class="rf-legend" id="rf-lgDeuda"></div>
+        <div class="chart" id="rf-chDeuda"></div>
+      </section>
+      <section class="rf-panel">
+        <h3>Saldo corporativo al cierre de cada año</h3>
+        <div class="tablewrap"><table class="dt" id="rf-tblDeuda"></table></div>
+      </section>
+    </div>
+  </div>
+
+  <div class="tab-panel" data-panel="rf-plp">
+    <div class="rf-kpis" id="rf-plpKpis"></div>
+    <div class="rf-grid">
+      <section class="rf-panel">
+        <h3>Ventas y firmas por año</h3>
+        <p class="rf-note">Barras: ventas totales en mdp. Línea punteada: firmas del año, eje derecho.</p>
+        <div class="rf-legend" id="rf-lgReal"></div>
+        <div class="chart" id="rf-chVentasA"></div>
+      </section>
+      <section class="rf-panel rf-col6">
+        <h3>UAIR por año</h3>
+        <p class="rf-note">Utilidad antes de impuestos, renglón 39.</p>
+        <div class="chart" id="rf-chUairA"></div>
+      </section>
+      <section class="rf-panel rf-col6">
+        <h3>Saldo final de efectivo por año</h3>
+        <p class="rf-note">Renglón 82, al cierre de cada año.</p>
+        <div class="chart" id="rf-chEfeA"></div>
+      </section>
+      <section class="rf-panel">
+        <h3>Estado de resultados y flujo</h3>
+        <p class="rf-note">Renglones 4 a 82 de la hoja PLP, con los mismos grupos del archivo: clic en un renglón con triángulo para abrir su detalle. Cifras en mdp, salvo apartados, firmas y márgenes.</p>
+        <div class="escbar">
+          <div class="segc" role="group" aria-label="Periodicidad">
+            <button class="segb" type="button" id="rf-vAnual" aria-pressed="true">Anual</button>
+            <button class="segb" type="button" id="rf-vMensual" aria-pressed="false">Mensual</button>
+          </div>
+          <button class="rf-ghost" type="button" id="rf-plpSig" hidden></button>
+          <button class="rf-ghost" type="button" id="rf-plpTodo">Abrir todos los grupos</button>
+          <span class="escnote" id="rf-plpNota"></span>
+        </div>
+        <div class="tablewrap"><table class="dt freeze" id="rf-tblEstado"></table></div>
+      </section>
+    </div>
+  </div>
+</div>
+<div id="rf-tip" role="status" aria-live="polite"></div>
+
+<script>
+(function(){
+const DATOS = {{ rf.data | tojson }};
+if (!DATOS || !DATOS.flujo || !DATOS.plp) return;
+const RF = document.getElementById('rf');
+const $ = id => document.getElementById('rf-' + id);
+const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[ch]));
+const cvar = n => getComputedStyle(RF).getPropertyValue(n).trim();
+const fx = v => (v==null?'—':v.toLocaleString('es-MX',{minimumFractionDigits:1,maximumFractionDigits:1}));
+const f0 = v => (v==null?'—':(Math.round(v)+0).toLocaleString('es-MX'));
+const MES = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+const lbl = s => { const [y,m]=s.split('-'); return MES[+m-1]+'-'+y.slice(2); };
+const lblL = s => { const [y,m]=s.split('-'); return MES[+m-1]+' '+y; };
+const tms = s => Date.parse(s+'-01T00:00:00');
+const PAL = ['--s1','--s2','--s3','--s4','--s5','--s6','--s7','--s8'];
+const store = (k,v) => { try{ localStorage.setItem('rf-'+k, v); }catch(e){} };
+const recall = k => { try{ return localStorage.getItem('rf-'+k); }catch(e){ return null; } };
+
+/* ---------- tooltip ---------- */
+const tip=document.getElementById('rf-tip');
+function showTip(e,t,rows){ tip.innerHTML=`<div class="tt">${esc(t)}</div>`+rows.map(r=>`<div class="tr"><span>${esc(r[0])}</span><b>${esc(r[1])}</b></div>`).join(''); tip.style.opacity=1; moveTip(e); }
+function moveTip(e){ const r=tip.getBoundingClientRect(); let x=e.clientX+14,y=e.clientY+14;
+  if(x+r.width>innerWidth-8) x=e.clientX-r.width-14; if(y+r.height>innerHeight-8) y=e.clientY-r.height-14;
+  tip.style.left=Math.max(8,x)+'px'; tip.style.top=Math.max(8,y)+'px'; }
+const hideTip=()=>tip.style.opacity=0;
+function bind(el,t,rows){ el.addEventListener('mouseenter',e=>showTip(e,t,rows)); el.addEventListener('mousemove',moveTip); el.addEventListener('mouseleave',hideTip); }
+function ejeAnios(meses,X,y){ const vistos=new Map(); meses.forEach(m=>{const a=m.slice(0,4); if(!vistos.has(a)) vistos.set(a,X(m));});
+  const c=[...vistos.entries()]; const out=[]; let ult=Infinity;
+  for(let i=c.length-1;i>=0;i--){ const [a,px]=c[i]; if(ult-px>=42){ out.push(`<text class="axl x" x="${px.toFixed(1)}" y="${y}">${a}</text>`); ult=px; } }
+  return out.join(''); }
+function bandaY(lo,hi,Y,W,ML,MR,paso){ let g='',l=''; const ini=Math.ceil(lo/paso)*paso;
+  for(let v=ini; v<=hi+1e-9; v+=paso){ const esCero=Math.abs(v)<1e-9;
+    g+=`<line class="${esCero?'zl':'gl'}" x1="${ML}" y1="${Y(v).toFixed(1)}" x2="${W-MR}" y2="${Y(v).toFixed(1)}"/>`;
+    l+=`<text class="axl y" x="${ML-7}" y="${(Y(v)+3.5).toFixed(1)}">${f0(v)}</text>`; }
+  return [g,l]; }
+
+/* ---------- monthly line with a zero axis ---------- */
+function lineaMensual(host, meses, vals, opts){
+  const W=1000,H=opts.h||260,ML=52,MR=12,MT=14,MB=26, iw=W-ML-MR, ih=H-MT-MB;
+  const t0=tms(meses[0]), t1=tms(meses[meses.length-1]); const X=m=>ML+(tms(m)-t0)/((t1-t0)||1)*iw;
+  const v=vals.filter(x=>x!=null); let lo=Math.min(0,...v), hi=Math.max(0,...v);
+  const pad=((hi-lo)||1)*0.08; lo-=pad; hi+=pad; const Y=x=>MT+ih-(x-lo)/(hi-lo)*ih;
+  const paso=(hi-lo)>400?100:((hi-lo)>150?50:25); const [grid,ylab]=bandaY(lo,hi,Y,W,ML,MR,paso);
+  const pts=meses.map((m,i)=>vals[i]==null?null:[X(m),Y(vals[i])]).filter(Boolean);
+  if(!pts.length){ host.innerHTML=''; return; }
+  const dPath='M'+pts.map(p=>p[0].toFixed(1)+' '+p[1].toFixed(1)).join('L');
+  const area=dPath+`L${pts[pts.length-1][0].toFixed(1)} ${Y(0).toFixed(1)}L${pts[0][0].toFixed(1)} ${Y(0).toFixed(1)}Z`;
+  let evts=''; (opts.eventos||[]).forEach(e=>{ const x=X(e.m);
+    evts+=`<line class="evt ${e.hot?'hot':''}" x1="${x.toFixed(1)}" y1="${MT}" x2="${x.toFixed(1)}" y2="${MT+ih}"/><text class="evtl ${e.hot?'hot':''}" x="${(x+4).toFixed(1)}" y="${MT+11}">${esc(e.t)}</text>`; });
+  host.innerHTML=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(opts.aria||'')}">${grid}
+    <path d="${area}" fill="${cvar(opts.color||'--s1')}" opacity=".16"/><path class="lineP" d="${dPath}" stroke="${cvar(opts.color||'--s1')}"/>
+    ${evts}${ylab}${ejeAnios(meses,X,H-8)}<line class="cross" x1="0" y1="${MT}" x2="0" y2="${MT+ih}"/><circle class="mk" r="4" stroke="${cvar(opts.color||'--s1')}"/><rect class="hit" x="${ML}" y="${MT}" width="${iw}" height="${ih}"/></svg>`;
+  const svg=host.querySelector('svg'), hit=host.querySelector('.hit'), cx=host.querySelector('.cross'), mk=host.querySelector('.mk');
+  hit.addEventListener('mousemove',e=>{ const r=svg.getBoundingClientRect(), px=(e.clientX-r.left)/r.width*W; let bi=0,bd=Infinity;
+    meses.forEach((m,i)=>{ if(vals[i]==null) return; const d=Math.abs(X(m)-px); if(d<bd){bd=d;bi=i;} });
+    cx.setAttribute('x1',X(meses[bi])); cx.setAttribute('x2',X(meses[bi])); cx.style.opacity=.7; mk.setAttribute('cx',X(meses[bi])); mk.setAttribute('cy',Y(vals[bi])); mk.style.opacity=1;
+    showTip(e,lbl(meses[bi]),[[opts.serie||'Valor', fx(vals[bi])+' mdp']].concat(opts.extra?opts.extra(bi):[])); });
+  hit.addEventListener('mouseleave',()=>{cx.style.opacity=0; mk.style.opacity=0; hideTip();});
+}
+
+/* ---------- monthly stacked area ---------- */
+function areaMensual(host, meses, series, opts){
+  const W=opts.w||1000,H=opts.h||250,ML=52,MR=12,MT=14,MB=26, iw=W-ML-MR, ih=H-MT-MB;
+  const t0=tms(meses[0]), t1=tms(meses[meses.length-1]); const X=m=>ML+(tms(m)-t0)/((t1-t0)||1)*iw;
+  const tot=meses.map((_,i)=>series.reduce((a,s)=>a+(s.vals[i]||0),0));
+  const hi=(Math.max(...tot)*1.06)||1, lo=0; const Y=v=>MT+ih-(v-lo)/(hi-lo)*ih;
+  const paso=hi>400?100:(hi>150?50:25); const [grid,ylab]=bandaY(lo,hi,Y,W,ML,MR,paso);
+  let paths='', acc=meses.map(()=>0);
+  series.forEach(s=>{ const top=[],bot=[];
+    meses.forEach((m,i)=>{ bot.push([X(m),Y(acc[i])]); acc[i]+=(s.vals[i]||0); top.push([X(m),Y(acc[i])]); });
+    paths+=`<path d="M${top.map(p=>p[0].toFixed(1)+' '+p[1].toFixed(1)).join('L')}L${bot.reverse().map(p=>p[0].toFixed(1)+' '+p[1].toFixed(1)).join('L')}Z" fill="${cvar(s.color)}" opacity=".9"/>`; });
+  host.innerHTML=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(opts.aria||'')}">${grid}${paths}${ylab}${ejeAnios(meses,X,H-8)}<line class="cross" x1="0" y1="${MT}" x2="0" y2="${MT+ih}"/><rect class="hit" x="${ML}" y="${MT}" width="${iw}" height="${ih}"/></svg>`;
+  const svg=host.querySelector('svg'),hit=host.querySelector('.hit'),cx=host.querySelector('.cross');
+  hit.addEventListener('mousemove',e=>{ const r=svg.getBoundingClientRect(), px=(e.clientX-r.left)/r.width*W; let bi=0,bd=Infinity;
+    meses.forEach((m,i)=>{const d=Math.abs(X(m)-px); if(d<bd){bd=d;bi=i;}});
+    cx.setAttribute('x1',X(meses[bi])); cx.setAttribute('x2',X(meses[bi])); cx.style.opacity=.7;
+    const rows=series.map(s=>[s.name,fx(s.vals[bi])+' mdp']).filter((_,k)=>(series[k].vals[bi]||0)>0.05).reverse();
+    showTip(e,lbl(meses[bi]),[...rows,['Total',fx(tot[bi])+' mdp']]); });
+  hit.addEventListener('mouseleave',()=>{cx.style.opacity=0; hideTip();});
+}
+
+/* ---------- yearly bars, zero axis, optional line on the right axis ---------- */
+function barrasAnio(host, anios, vals, opts){
+  const est = opts.est || (()=> 'real');
+  const W = opts.w||1000, H = opts.h||230, ML = 48, MR = opts.linea?52:14, MT = 14, MB = 30; const iw = W-ML-MR, ih = H-MT-MB;
+  const v = vals.filter(x=>x!=null); let hi = Math.max(0,...v), lo = Math.min(0,...v);
+  const r = (hi-lo)||1; hi += r*0.12; if(lo<0) lo -= r*0.08;
+  const Y = x => MT+ih-(x-lo)/(hi-lo)*ih;
+  const paso = [2,5,10,25,50,100,250,500,1000,2000,4000].find(p=>(hi-lo)/p<=6) || 4000;
+  const [grid,ylab] = bandaY(lo,hi,Y,W,ML,MR,paso);
+  const bw = iw/anios.length, an = Math.min(bw*0.6, 44), cx = i => ML+bw*i+bw/2;
+  let bars='', xlab='';
+  anios.forEach((a,i)=>{ const x = vals[i]; xlab += `<text class="axl x" x="${cx(i).toFixed(1)}" y="${H-9}">${String(a).slice(2)}</text>`;
+    if(x==null) return; const y0=Y(0), y1=Y(x), e=est(a); const col = cvar(x<0 ? (opts.neg||opts.color) : opts.color);
+    bars += `<rect class="rf-bar" data-i="${i}" x="${(cx(i)-an/2).toFixed(1)}" y="${Math.min(y0,y1).toFixed(1)}" width="${an.toFixed(1)}" height="${Math.max(1.5,Math.abs(y1-y0)).toFixed(1)}" rx="1.5" fill="${col}" opacity="${e==='real'?1:(e==='curso'?.74:.44)}" stroke="${e==='real'?'none':col}" stroke-width="${e==='real'?0:1}" stroke-dasharray="${e==='proy'?'2.5 2':'0'}"/>`; });
+  let ln='';
+  if(opts.linea){ const lv = opts.linea.vals.filter(x=>x!=null); const bruto = Math.max(...lv)*1.15 || 1;
+    const escl = Math.pow(10, Math.floor(Math.log10(bruto))-1)*2.5; const lhi = Math.ceil(bruto/escl)*escl; const LY = x => MT+ih-x/lhi*ih;
+    const pts = anios.map((a,i)=>opts.linea.vals[i]==null?null:[cx(i),LY(opts.linea.vals[i])]).filter(Boolean);
+    ln = `<path class="lineP" d="M${pts.map(q=>q[0].toFixed(1)+' '+q[1].toFixed(1)).join('L')}" stroke="${cvar(opts.linea.color)}" stroke-dasharray="3 3"/>` +
+      pts.map(q=>`<circle cx="${q[0].toFixed(1)}" cy="${q[1].toFixed(1)}" r="2.6" fill="${cvar(opts.linea.color)}"/>`).join('') +
+      [0,0.5,1].map(f=>`<text class="axl" text-anchor="start" x="${W-MR+8}" y="${(LY(lhi*f)+3.5).toFixed(1)}">${f0(lhi*f)}</text>`).join(''); }
+  host.innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(opts.aria||'')}">${grid}${bars}${ln}${ylab}${xlab}</svg>`;
+  host.querySelectorAll('.rf-bar').forEach(b=>{ const i=+b.dataset.i; const filas=[[opts.serie||'Valor', (opts.fmt||fx)(vals[i])+(opts.u||'')]];
+    if(opts.linea) filas.push([opts.linea.name, f0(opts.linea.vals[i])]);
+    filas.push(['Periodo', est(anios[i])==='real'?'real':est(anios[i])==='curso'?'en curso':'proyección']); bind(b, String(anios[i]), filas); });
+}
+
+/* ==================== FLUJO: ORIGEN Y APLICACIÓN ==================== */
+const FL = DATOS.flujo;
+const MFL = FL.meses, NM = MFL.length;
+const GRUPO = {op:'Operativos', de:'Deuda y proyectos no operativos', in:'Inversión', or:'Origen'};
+const GCOL  = {op:'--s2', de:'--s8', in:'--s4', or:'--s3'};
+const estado = {};                       // row -> switched on
+FL.lineas.forEach(l => estado[l.r] = l.on);
+const FIN = lblL(MFL[NM-1]), INI = lblL(MFL[0]);
+$('escNote').textContent = `Cada casilla es una línea del modelo. Apagarla o prenderla recalcula los totales, igual que la columna de banderas del archivo. A la derecha de cada una, el acumulado a ${FIN}.`;
+
+const cero = () => new Array(NM).fill(0);
+function suma(pred){ const a = cero(); FL.lineas.forEach(l => { if (estado[l.r] && pred(l)) for (let i=0;i<NM;i++) a[i]+=l.v[i]; }); return a; }
+const finArr = a => a[a.length-1];
+const minArr = a => a.reduce((b,v,i)=> v<b.v ? {v,i} : b, {v:Infinity,i:0});
+function calcular(){ const g = {}; ['op','de','in','or'].forEach(k => g[k] = suma(l => l.g===k));
+  const aplic = cero(), flujo = cero();
+  for (let i=0;i<NM;i++){ aplic[i] = g.op[i]+g.de[i]+g.in[i]; flujo[i] = aplic[i]+g.or[i]; }
+  return {g, aplic, origen:g.or, flujo}; }
+const kpiHTML = k => `<div class="rf-kpi ${k.cls||''}"><span class="rf-lab">${k.lab}</span><div class="rf-val">${k.val}${k.u===''?'':`<small>${k.u||'mdp'}</small>`}</div><div class="rf-sub">${k.sub}</div></div>`;
+
+/* ---- scenario panel ---- */
+(function(){
+  const host = $('escenario');
+  host.innerHTML = ['op','de','in','or'].map(k=>{ const ls = FL.lineas.filter(l=>l.g===k);
+    return `<div class="escg"><h4><i class="rf-sw" style="background:var(${GCOL[k]})"></i>${GRUPO[k]}<span class="gt" data-gt="${k}"></span></h4>` +
+      ls.map(l=>`<label class="chk${l.hay?'':' nada'}" title="${l.hay?'':'El modelo no le asigna monto'}"><input type="checkbox" data-r="${l.r}" ${estado[l.r]?'checked':''} ${l.hay?'':'disabled'}><span class="nm">${esc(l.n)}</span><span class="amt">${l.hay?fx(finArr(l.v)):'—'}</span></label>`).join('') + `</div>`; }).join('');
+  host.addEventListener('change', e=>{ const cb = e.target.closest('input[type=checkbox]'); if(!cb) return; estado[+cb.dataset.r] = cb.checked; pintarFlujo(); });
+  const set = v => { FL.lineas.forEach(l=>{ if(l.hay) estado[l.r]=v; });
+    host.querySelectorAll('input[type=checkbox]').forEach(cb=>{ if(!cb.disabled) cb.checked = estado[+cb.dataset.r]; }); pintarFlujo(); };
+  $('escTodo').addEventListener('click', ()=>set(true));
+  $('escNada').addEventListener('click', ()=>set(false));
+  $('escReset').addEventListener('click', ()=>{ FL.lineas.forEach(l=>estado[l.r]=l.on);
+    host.querySelectorAll('input[type=checkbox]').forEach(cb=>cb.checked=estado[+cb.dataset.r]); pintarFlujo(); });
+})();
+
+/* ---- everything recomputes from the scenario ---- */
+function pintarFlujo(){
+  const R2 = calcular();
+  const cambiadas = FL.lineas.filter(l=>estado[l.r]!==l.on).length;
+  const prendidas = FL.lineas.filter(l=>estado[l.r] && l.hay).length;
+  const conMonto  = FL.lineas.filter(l=>l.hay).length;
+  $('escEstado').textContent = `${prendidas} de ${conMonto} líneas prendidas · ` + (cambiadas ? `${cambiadas} cambiada${cambiadas===1?'':'s'} contra el archivo` : 'igual que el archivo');
+  $('escEstado').className = 'escnote'+(cambiadas?' alt':'');
+  ['op','de','in','or'].forEach(k=>{ const el=RF.querySelector(`[data-gt="${k}"]`); if(el) el.textContent = fx(finArr(R2.g[k])); });
+
+  const mn = minArr(R2.flujo);
+  $('flKpis').innerHTML = [
+    {lab:'Aplicación', val:fx(Math.abs(finArr(R2.aplic))), cls:'orange', sub:'acumulada a '+FIN},
+    {lab:'Origen', val:fx(finArr(R2.origen)), cls:'good', sub:'acumulado a '+FIN},
+    {lab:'Flujo Ranman', val:fx(finArr(R2.flujo)), cls:finArr(R2.flujo)<0?'bad':'good', sub:'acumulado a '+FIN},
+    {lab:'Punto más bajo', val:fx(mn.v), cls:mn.v<0?'bad':'', sub:lbl(MFL[mn.i])},
+    {lab:'Al corte', val:fx(R2.flujo[0]), cls:R2.flujo[0]<0?'bad':'', sub:INI},
+  ].map(kpiHTML).join('');
+
+  lineaMensual($('chFlujo'), MFL, R2.flujo, { h:280, color:'--s1', serie:'Flujo Ranman',
+    aria:`Flujo Ranman acumulado de ${INI} a ${FIN}`,
+    eventos:[{m:MFL[mn.i], t:'mínimo '+fx(mn.v), hot:mn.v<0}],
+    extra:i=>[['Aplicación', fx(R2.aplic[i])+' mdp'],['Origen', fx(R2.origen[i])+' mdp']] });
+
+  areaMensual($('chAplic'), MFL, [
+    {name:'Operativos', color:'--s2', vals:R2.g.op.map(v=>Math.abs(v))},
+    {name:'Deuda y proyectos no operativos', color:'--s8', vals:R2.g.de.map(v=>Math.abs(v))},
+    {name:'Inversión', color:'--s4', vals:R2.g.in.map(v=>Math.abs(v))},
+  ], {w:560, h:250, aria:'Aplicación acumulada por categoría'});
+
+  const orLin = FL.lineas.filter(l=>l.g==='or' && estado[l.r] && finArr(l.v)>0.05).sort((a,b)=>finArr(b.v)-finArr(a.v));
+  const orSer = orLin.slice(0,7).map((l,i)=>({name:l.n, color:PAL[i], vals:l.v.map(v=>Math.max(0,v))}));
+  if (orLin.length>7) orSer.push({name:'Otros', color:PAL[7], vals:MFL.map((_,i)=>orLin.slice(7).reduce((a,l)=>a+Math.max(0,l.v[i]),0))});
+  $('lgOrigen').innerHTML = orSer.map(s=>`<span><i class="rf-sw" style="background:var(${s.color})"></i>${esc(s.name)}</span>`).join('') || '—';
+  if (orSer.length) areaMensual($('chOrigen'), MFL, orSer, {w:560, h:250, aria:'Origen acumulado por línea'});
+  else $('chOrigen').innerHTML = '<p class="rf-note" style="margin:0">Sin líneas de origen prendidas.</p>';
+
+  pintarTabla(R2);
+}
+
+/* ---- detail by line, grouped and collapsible ---- */
+const ORDEN = ['op','de','in','or'];
+const HORIZ = [3,6,12,18].map(m=>({m, i:Math.min(m, NM-1)})).filter(h=>h.i<NM);
+const abiertos = {};
+let ultimoR = null;
+const celda = v => `<td class="${Math.abs(v)<0.05?'zero':''}">${fx(v)}</td>`;
+function pintarTabla(R2){
+  ultimoR = R2;
+  const ref = HORIZ[HORIZ.length-1].i;
+  let filas = '';
+  ORDEN.forEach(k=>{
+    const ls = FL.lineas.filter(l=>l.g===k).sort((a,b)=> Math.abs(b.v[ref])-Math.abs(a.v[ref]) || Math.abs(finArr(b.v))-Math.abs(finArr(a.v)));
+    const on = ls.filter(l=>estado[l.r] && l.hay).length, con = ls.filter(l=>l.hay).length;
+    const ab = !!abiertos[k];
+    filas += `<tr class="grp" data-g="${k}" tabindex="0" role="button" aria-expanded="${ab}"><td><span class="chev" aria-hidden="true">&#9660;</span><i class="rf-sw" style="background:var(${GCOL[k]})"></i>${GRUPO[k]}</td><td class="est">${on} de ${con} prendidas</td>${HORIZ.map(h=>celda(R2.g[k][h.i])).join('')}</tr>`;
+    ls.forEach(l=>{ const p = estado[l.r] && l.hay;
+      filas += `<tr class="ln"${ab?'':' hidden'}${p?'':' data-off="1"'}><td class="sub">${esc(l.n)}</td><td class="est">${!l.hay?'<span class="zero">sin monto</span>':estado[l.r]?'Prendida':'<span class="zero">Apagada</span>'}</td>${HORIZ.map(h=>celda(p ? l.v[h.i] : 0)).join('')}</tr>`; });
+  });
+  $('tblLineas').innerHTML = `<thead><tr><th>Línea</th><th style="text-align:left">Estado</th>${HORIZ.map(h=>`<th>+${h.m} m<br><span class="sub2">${lbl(MFL[h.i])}</span></th>`).join('')}</tr></thead><tbody>${filas}</tbody>` +
+    `<tfoot><tr><td>Flujo Ranman</td><td></td>${HORIZ.map(h=>`<td>${fx(R2.flujo[h.i])}</td>`).join('')}</tr></tfoot>`;
+}
+(function(){
+  const t = $('tblLineas');
+  const alterna = tr => { const g = tr.dataset.g; abiertos[g] = !abiertos[g]; pintarTabla(ultimoR); const nv = t.querySelector(`tr.grp[data-g="${g}"]`); if(nv) nv.focus(); };
+  t.addEventListener('click', e=>{ const tr=e.target.closest('tr.grp'); if(tr) alterna(tr); });
+  t.addEventListener('keydown', e=>{ if(e.key!=='Enter' && e.key!==' ') return; const tr=e.target.closest('tr.grp'); if(!tr) return; e.preventDefault(); alterna(tr); });
+})();
+
+/* ==================== DEUDA CORPORATIVA PROYECTADA ==================== */
+let pintarDeuda = () => {};
+(function(){
+  const nombres = Object.keys(FL.deuda||{});
+  if (!nombres.length || !(FL.saldoNec||[]).length){ $('deNote').textContent='El archivo no trae saldos de deuda corporativa.'; return; }
+  // the chart ends as soon as the balance reaches zero
+  let ult = FL.saldoNec.length-1;
+  while (ult>0 && Math.abs(FL.saldoNec[ult])<0.05 && Math.abs(FL.saldoNec[ult-1])<0.05) ult--;
+  const MD = FL.meses.slice(0, ult+1);
+  const SN = FL.saldoNec.slice(0, ult+1);
+  const ser = nombres.map((n,i)=>({name:n, color:PAL[i%8], vals:FL.deuda[n].slice(0, ult+1)}));
+  $('deNote').textContent = `Las ${nombres.length} líneas corporativas del archivo, renglones 79 a 86: no incluye créditos puente. La serie termina cuando el saldo llega a cero. No depende del escenario de la primera pestaña.`;
+  $('lgDeuda').innerHTML = ser.map(s=>`<span><i class="rf-sw" style="background:var(${s.color})"></i>${esc(s.name)}</span>`).join('');
+  const pico = SN.reduce((b,v,i)=> v>b.v ? {v,i} : b, {v:-Infinity,i:0});
+  const kp = [
+    {lab:'Saldo al corte', val:fx(SN[0]), cls:'orange', sub:lblL(MD[0])},
+    {lab:'Máximo proyectado', val:fx(pico.v), sub:lbl(MD[pico.i])} ];
+  if (FL.deuda['Crédito VRM']) kp.push({lab:'Crédito VRM', val:fx(FL.deuda['Crédito VRM'][0]), sub:'deuda con el accionista'});
+  kp.push({lab:'Queda en cero', val:lbl(MD[MD.length-1]), u:'', cls:'good', sub:`${MD.length-1} meses desde el corte`});
+  $('deKpis').innerHTML = kp.map(kpiHTML).join('');
+  pintarDeuda = () => areaMensual($('chDeuda'), MD, ser, {h:280, aria:`Saldo de deuda corporativa por línea desde ${lblL(MD[0])} hasta quedar en cero`});
+  pintarDeuda();
+  const anios=[...new Set(MD.map(m=>m.slice(0,4)))];
+  const ult_=a=>{ let k=-1; MD.forEach((m,i)=>{ if(m.slice(0,4)===a) k=i; }); return k; };
+  $('tblDeuda').innerHTML = `<thead><tr><th>Línea</th>${anios.map(a=>`<th>${a}</th>`).join('')}</tr></thead><tbody>` +
+    nombres.map(n=>`<tr><td>${esc(n)}</td>${anios.map(a=>{ const v=FL.deuda[n][ult_(a)]; return `<td class="${Math.abs(v)<0.05?'zero':''}">${fx(v)}</td>`;}).join('')}</tr>`).join('') +
+    '</tbody><tfoot><tr><td>Saldo</td>' + anios.map(a=>`<td>${fx(SN[ult_(a)])}</td>`).join('') + '</tr></tfoot>';
+})();
+
+/* ==================== PLP ==================== */
+const EP = Object.assign({asOf:DATOS.asOf, archivo:DATOS.archivo}, DATOS.plp);
+const AN = EP.anios, MS = EP.meses;
+const ANIO_ACT = +EP.asOf.slice(0,4), ANIO_SIG = ANIO_ACT + 1;
+const MESES_ACT = MS.map((m,i)=>({m,i})).filter(x=>+x.m.slice(0,4)===ANIO_ACT);
+const MESES_SIG = MS.map((m,i)=>({m,i})).filter(x=>+x.m.slice(0,4)===ANIO_SIG);
+const CORTE = EP.asOf.slice(0,7);
+const SECCION = {4:'Operación', 7:'Estado de resultados', 44:'Flujo de efectivo'};
+const CLAVE = new Set([7,33,39,42,47,55,76,82]);
+const estAnio = a => a<ANIO_ACT ? 'real' : (a===ANIO_ACT ? 'curso' : 'proy');
+const estMes  = m => m < CORTE ? 'real' : (m===CORTE ? 'curso' : 'proy');
+const fmtV = (v,t) => v==null ? '—' : t==='pct' ? (v*100).toFixed(0)+'%' : t==='cuenta' ? f0(v) : fx(v);
+
+/* each row's children, by outline level */
+const HIJOS = {};
+EP.filas.forEach((f,k)=>{ if (f.sep || f.niv!==0) return; const h = [];
+  for (let j=k+1; j<EP.filas.length; j++){ const g = EP.filas[j]; if (g.sep || g.niv===0) break; h.push(g.r); }
+  if (h.length) HIJOS[f.r] = h; });
+const abiertoG = {};
+Object.keys(HIJOS).forEach(r=>{ const h1 = EP.filas.find(x=>x.r===HIJOS[r][0]); abiertoG[r] = !h1.plg; });   // as the file has it
+const padre = {};
+Object.entries(HIJOS).forEach(([r,hs])=>hs.forEach(h=>padre[h]=+r));
+let vista = 'anual', verSig = true;
+
+function columnas(){
+  if (vista==='anual') return AN.map((a,i)=>({k:'a', i, cab:String(a), sep:false, e:estAnio(a)}));
+  const cols = MESES_ACT.map((x,k)=>({k:'m', i:x.i, cab:lbl(x.m).slice(0,3), sep:k===0, e:estMes(x.m)}));
+  if (verSig) MESES_SIG.forEach((x,k)=>cols.push({k:'m', i:x.i, cab:lbl(x.m).slice(0,3), sep:k===0, e:'proy'}));
+  else cols.push({k:'a', i:AN.indexOf(ANIO_SIG), cab:String(ANIO_SIG), sep:true, e:'proy'});
+  const kc = cols.findIndex(c=>c.k==='m' && MS[c.i]===CORTE);     // first projected month is marked
+  if (kc>=0 && cols[kc+1]) cols[kc+1].tras = true;
+  return cols;
+}
+function pintarEstado(){
+  const cols = columnas();
+  let filas = '';
+  EP.filas.forEach(f=>{
+    if (f.sep){ filas += `<tr class="vac"><td colspan="${cols.length+1}"></td></tr>`; return; }
+    if (SECCION[f.r]) filas += `<tr class="sec"><td colspan="${cols.length+1}">${SECCION[f.r]}</td></tr>`;
+    const pr = padre[f.r]; if (pr && !abiertoG[pr]) return;
+    const gr = HIJOS[f.r];
+    const cls = (gr?'grp2 ':'') + (f.niv?'hijo ':'') + (CLAVE.has(f.r)?'clave':'');
+    filas += `<tr class="${cls.trim()}"${gr?` data-r="${f.r}" tabindex="0" role="button" aria-expanded="${!!abiertoG[f.r]}"`:''}><td>${gr?'<span class="chev" aria-hidden="true">&#9660;</span>':''}${esc(f.n)}</td>` +
+      cols.map(c=>{ const v = f[c.k][c.i]; return `<td class="${c.e} ${c.sep?'ysep ':''}${c.tras?'tras ':''}${v==null||Math.abs(v)<0.005?'zero':(v<0?'neg':'')}">${fmtV(v,f.t)}</td>`; }).join('') + '</tr>';
+  });
+  $('tblEstado').innerHTML = `<thead><tr><th>Concepto</th>` + cols.map(c=>`<th class="${c.e} ${c.sep?'ysep ':''}${c.tras?'tras':''}">${c.cab}</th>`).join('') + '</tr>' +
+    (vista==='mensual' ? `<tr class="anio"><th></th>` + cols.map((c,k)=>{ const a = c.k==='a' ? ANIO_SIG : +MS[c.i].slice(0,4);
+        const primero = k===0 || (cols[k-1].k==='a'?ANIO_SIG:+MS[cols[k-1].i].slice(0,4))!==a;
+        return `<th class="${c.sep?'ysep ':''}${c.tras?'tras':''}">${primero?a:''}</th>`; }).join('') + '</tr>' : '') +
+    `</thead><tbody>${filas}</tbody>`;
+  const nAb = Object.values(abiertoG).filter(Boolean).length;
+  $('plpTodo').textContent = nAb===Object.keys(HIJOS).length ? 'Cerrar todos los grupos' : 'Abrir todos los grupos';
+  $('plpNota').textContent = vista==='anual' ? `${AN[0]} a ${AN[AN.length-1]}`
+    : (verSig ? `${ANIO_ACT} y ${ANIO_SIG} mes a mes` : `${ANIO_ACT} mes a mes, ${ANIO_SIG} en total`) + ` · la raya punteada marca el corte: a su izquierda es real`;
+  const sig = $('plpSig'); sig.hidden = vista!=='mensual'; sig.textContent = verSig ? `Colapsar ${ANIO_SIG}` : `Abrir ${ANIO_SIG}`;
+}
+(function(){
+  const t = $('tblEstado');
+  const flip = tr => { abiertoG[tr.dataset.r] = !abiertoG[tr.dataset.r]; pintarEstado(); };
+  t.addEventListener('click', e=>{ const tr = e.target.closest('tr[data-r]'); if(tr) flip(tr); });
+  t.addEventListener('keydown', e=>{ if(e.key!=='Enter' && e.key!==' ') return; const tr = e.target.closest('tr[data-r]'); if(!tr) return; e.preventDefault(); flip(tr); });
+  const va=$('vAnual'), vm=$('vMensual');
+  const pon = v => { vista=v; va.setAttribute('aria-pressed',String(v==='anual')); vm.setAttribute('aria-pressed',String(v==='mensual'));
+    t.classList.toggle('mens', v==='mensual'); pintarEstado(); store('plp-vista', v); };
+  va.addEventListener('click',()=>pon('anual')); vm.addEventListener('click',()=>pon('mensual'));
+  $('plpSig').addEventListener('click',()=>{ verSig=!verSig; pintarEstado(); });
+  $('plpTodo').addEventListener('click',()=>{ const todos = Object.values(abiertoG).every(Boolean); Object.keys(abiertoG).forEach(r=>abiertoG[r]=!todos); pintarEstado(); });
+  pon(recall('plp-vista')==='mensual' ? 'mensual' : 'anual');
+})();
+
+/* ---- yearly charts ---- */
+const fila = r => EP.filas.find(f=>f.r===r);
+function pintarPlp(){
+  $('lgReal').innerHTML = `<span><i class="rf-sw" style="background:var(--s1)"></i>real (${AN[0]}–${ANIO_ACT-1})</span><span><i class="rf-sw" style="background:var(--s1);opacity:.74"></i>${ANIO_ACT} en curso</span><span><i class="rf-sw" style="background:var(--s1);opacity:.44;outline:1px dashed var(--s1);outline-offset:-1px"></i>proyección</span>`;
+  if (fila(7)) barrasAnio($('chVentasA'), AN, fila(7).a, {h:250, color:'--s1', serie:'Ventas', u:' mdp', est:estAnio, linea: fila(5) ? {vals:fila(5).a, color:'--s2', name:'Firmas'} : null, aria:'Ventas y firmas por año'});
+  if (fila(39)) barrasAnio($('chUairA'), AN, fila(39).a, {w:560, h:230, color:'--s3', neg:'--s8', serie:'UAIR', u:' mdp', est:estAnio, aria:'UAIR por año'});
+  if (fila(82)) barrasAnio($('chEfeA'), AN, fila(82).a, {w:560, h:230, color:'--s1', neg:'--s8', serie:'Saldo final', u:' mdp', est:estAnio, aria:'Saldo final de efectivo por año'});
+}
+pintarPlp();
+
+/* ---- current-year indicators ---- */
+(function(){
+  const ia = AN.indexOf(ANIO_ACT);
+  const kpi = (r,lab,cls) => { const f=fila(r); return f ? {lab, val:fmtV(f.a[ia],f.t), u:f.t==='mdp'?'mdp':'', cls} : null; };
+  $('plpKpis').innerHTML = [ kpi(7,'Ventas '+ANIO_ACT,'blue'), kpi(5,'Firmas '+ANIO_ACT), kpi(33,'EBIT '+ANIO_ACT), kpi(35,'Gastos financieros '+ANIO_ACT,'bad'),
+    kpi(42,'Utilidad neta '+ANIO_ACT), kpi(82,'Efectivo al cierre','orange') ].filter(Boolean)
+    .map(k=>kpiHTML({...k, sub:'cierre de '+ANIO_ACT})).join('');
+})();
+
+/* ---- fold the scenario ---- */
+(function(){
+  const tg=$('escTog'), bd=$('escBody');
+  const set=v=>{ tg.setAttribute('aria-expanded',String(v)); bd.hidden=!v; store('esc', v?'1':'0'); };
+  tg.addEventListener('click',()=>set(tg.getAttribute('aria-expanded')!=='true'));
+  if (recall('esc')==='1') set(true);
+})();
+
+pintarFlujo();
+// SVG colours are fixed at draw time: redraw when the dashboard theme flips
+const redraw = () => { pintarFlujo(); pintarDeuda(); pintarPlp(); };
+new MutationObserver(redraw).observe(document.documentElement, {attributes:true, attributeFilter:['data-theme']});
+if (window.matchMedia) matchMedia('(prefers-color-scheme: dark)').addEventListener('change', redraw);
+})();
+</script>

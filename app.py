@@ -27,6 +27,7 @@ import maquina_cf_parser
 import polaris_parser
 import kmz_parser
 import ranman_deuda_parser
+import ranman_flujo_parser
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "maquina-dev-secret-change-me")
@@ -762,19 +763,40 @@ def load_ranman_debt():
         return None
     if not rows or not last:
         return None
+    P = ranman_deuda_parser
     k = lambda d: {kk: round((vv or 0) / 1000.0, 2) for kk, vv in (d or {}).items()}
-    S = []
-    for r in rows:
+    S, linv, ltipo = [], {}, {}     # linv: line -> mdp per corte (the tablero's `lineas`)
+    for i, r in enumerate(rows):
         rec = _jl(r["record"]) or {}
         sob = rec.get("sobretasaPond")
+        # Three-way split + per-line saldos: the record's own (script v4 /
+        # tablero import) when present, otherwise derived from the two-way record.
+        c3 = P.tres_vias_de_record(rec)
+        for name, v in P.lineas_de_record(rec).items():
+            linv.setdefault(name, [0.0] * len(rows))[i] = round((v or 0) / 1000.0, 2)
+        for name, t in P.lineas_tipo_de_record(rec).items():
+            ltipo[name] = t
         S.append(dict(
             f=str(r["fecha"])[:10], t=round((rec.get("total") or 0) / 1000.0, 2), n=rec.get("n") or 0,
-            c=k(rec.get("cat")), b=k(rec.get("banco")), d=k(rec.get("desarrollo")), l=k(rec.get("linea")),
-            np=k(rec.get("np")), pe=round((rec.get("porEjercer") or 0) / 1000.0, 2),
+            c=k(c3), b=k(rec.get("banco")), d=k(rec.get("desarrollo")),
+            pe=round((rec.get("porEjercer") or 0) / 1000.0, 2),
             s=(round(sob * 100.0, 3) if sob is not None else None),
             v=round((rec.get("vence12") or 0) / 1000.0, 2)))
     latest = _jl(last["record"]) or {}
     C = [dict(c) for c in (_jl(last["creditos"]) or []) if isinstance(c, dict)]
+    LIN = {}
+    for name in sorted(linv):
+        vals = linv[name]
+        if max(vals) <= 0.005:
+            continue
+        meta = P.LINEAS_META.get(name)
+        if meta:
+            tipo, banco, aut = meta
+        else:
+            tipo = ltipo.get(name) or ("Créditos Simples" if name in P.SIMPLES else "Líneas Revolventes")
+            banco = next((c.get("banco") for c in C if P.LINEA_ALIAS.get(c.get("linea"), c.get("linea")) == name), "") or ""
+            aut = None
+        LIN[name] = dict(tipo=tipo, banco=banco, aut=aut, v=vals)
     MESES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"]
     def lbl(iso):
         d = datetime.date.fromisoformat(iso)
@@ -783,7 +805,45 @@ def load_ranman_debt():
     ua = last.get("uploaded_at")
     return dict(
         as_of=as_of, as_of_label=lbl(as_of), first=S[0]["f"], first_label=lbl(S[0]["f"]),
-        archivo=last.get("archivo") or "", n_cortes=len(S), latest=latest, C=C, S=S,
+        archivo=last.get("archivo") or "", n_cortes=len(S), latest=latest, C=C, S=S, LIN=LIN,
+        vrm_n=len(_vrm_flujos()),
+        uploaded_at=(ua.strftime("%Y-%m-%d %H:%M") if hasattr(ua, "strftime") else (str(ua)[:16] if ua else None)),
+    )
+
+
+def _vrm_flujos():
+    """Dated movements of the VRM shareholder credit, as stored from
+    `Credito VRM.xlsx` ([[fecha_iso, monto_miles], ...]); [] when not loaded."""
+    try:
+        raw = db.get_setting("ranman_vrm_flujos")
+        out = json.loads(raw) if raw else []
+        return out if isinstance(out, list) else []
+    except Exception:
+        return []
+
+
+def load_ranman_flujo():
+    """RANMAN's Flujo y PLP — the latest corte's flujo_plp.json document, as
+    Valoran's tablero renders it. None when nothing has been loaded."""
+    try:
+        row = db.ranman_flujo_latest()
+    except Exception as e:
+        app.logger.warning("ranman flujo load failed: %s", e)
+        return None
+    if not row:
+        return None
+    data = _jl(row["data"]) or {}
+    if not (isinstance(data, dict) and data.get("flujo") and data.get("plp")):
+        return None
+    as_of = str(row["as_of"])[:10]
+    MESES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"]
+    d = datetime.date.fromisoformat(as_of)
+    ua = row.get("uploaded_at")
+    fl = data["flujo"]
+    return dict(
+        as_of=as_of, as_of_label="%d %s %d" % (d.day, MESES[d.month - 1], d.year),
+        archivo=row.get("archivo") or data.get("archivo") or "", data=data,
+        n_meses=len(fl.get("meses") or []), n_lineas=len(fl.get("lineas") or []),
         uploaded_at=(ua.strftime("%Y-%m-%d %H:%M") if hasattr(ua, "strftime") else (str(ua)[:16] if ua else None)),
     )
 
@@ -1251,6 +1311,7 @@ def ranman_debt_upload(slug):
         flash("Choose one or more Cuadro de riesgos .xlsm files first.", "error")
         return redirect(url_for("company", slug=slug))
     ok, problems = 0, []
+    vrm = _vrm_flujos()
     for f in files:
         name = f.filename
         if not name.lower().endswith((".xlsm", ".xlsx")):
@@ -1267,12 +1328,15 @@ def ranman_debt_upload(slug):
         bad = ranman_deuda_parser.reconcile(creds, declarado)
         if bad:
             problems.append("%s: %s — not imported" % (name, bad)); continue
+        # the VRM shareholder credit joins AFTER the file reconciles: its Total is bank debt only
+        creds = creds + ranman_deuda_parser.credito_vrm(vrm, fecha)
         rec = ranman_deuda_parser.serie_record(fecha, name, creds)
         db.save_ranman_corte(fecha, name, json.dumps(rec, ensure_ascii=False),
                              json.dumps(creds, ensure_ascii=False), session.get("username") or "admin")
         ok += 1
     if ok:
-        flash("Imported %d corte%s." % (ok, "" if ok == 1 else "s"), "ok")
+        flash("Imported %d corte%s%s." % (ok, "" if ok == 1 else "s",
+              "" if vrm else " — without the VRM credit (load Credito VRM.xlsx below to include it)"), "ok")
     for p in problems[:6]:
         flash(p, "error")
     return redirect(url_for("company", slug=slug))
@@ -1281,34 +1345,112 @@ def ranman_debt_upload(slug):
 @app.route("/company/<slug>/deuda/import", methods=["POST"])
 @login_required
 def ranman_debt_import(slug):
-    """Admin-only — bulk-seed the history from the tablero's serie.json, plus
-    the credit-level detail from corte_actual.json when provided."""
+    """Admin-only — bulk-seed or refresh the history from the tablero's own
+    data: serie.json (+ corte_actual.json), and/or the exported tablero .html,
+    whose embedded SD block carries the three-way split and the per-line
+    trajectories for every corte it knows."""
     if not session.get("is_admin"):
         abort(403)
     c = _company_or_404(slug)
     if c["slug"] != "ranman":
         abort(404)
-    fs = request.files.get("serie")
-    if not fs or not fs.filename:
-        flash("Choose the serie.json file first.", "error")
+    fs, fa, ft, fv = (request.files.get(n) for n in ("serie", "corte_actual", "tablero", "vrm"))
+    has = lambda f: bool(f and f.filename)
+    if not (has(fs) or has(ft) or has(fv)):
+        flash("Choose the serie.json, the exported tablero .html and/or Credito VRM.xlsx first.", "error")
         return redirect(url_for("company", slug=slug))
     try:
-        serie = ranman_deuda_parser.parse_serie_json(fs.read())
-        actual = None
-        fa = request.files.get("corte_actual")
-        if fa and fa.filename:
-            actual = ranman_deuda_parser.parse_corte_actual_json(fa.read())
+        serie = ranman_deuda_parser.parse_serie_json(fs.read()) if has(fs) else []
+        actual = ranman_deuda_parser.parse_corte_actual_json(fa.read()) if has(fa) else None
+        tab = ranman_deuda_parser.parse_tablero_html(ft.read()) if has(ft) else None
+        vrm = ranman_deuda_parser.parse_vrm(fv.read()) if has(fv) else None
     except (ValueError, UnicodeDecodeError) as e:
         flash("Import failed: %s" % e, "error")
         return redirect(url_for("company", slug=slug))
+    except Exception as e:  # pragma: no cover
+        app.logger.warning("Ranman import parse failed: %s", e)
+        flash("Import failed: one of the files could not be read.", "error")
+        return redirect(url_for("company", slug=slug))
+    if vrm is not None:
+        db.set_setting("ranman_vrm_flujos", json.dumps(vrm))
+    recs = {r["fecha"]: (r, r.get("archivo")) for r in serie}
+    merged = 0
+    if tab:
+        if tab.get("actual") and not actual:
+            actual = tab["actual"]
+        existing = {str(r["fecha"])[:10]: (_jl(r["record"]) or {}, r.get("archivo")) for r in db.ranman_cortes()}
+        for fecha, extra in tab["cortes"].items():
+            if fecha in recs:
+                recs[fecha][0].update(extra); merged += 1
+            elif fecha in existing:            # refresh a corte already stored
+                rec, arch = existing[fecha]
+                rec.update(extra); recs[fecha] = (rec, arch); merged += 1
     n = 0
-    for r in serie:
-        creds = actual["creditos"] if (actual and actual.get("asOf") == r["fecha"]) else None
-        db.save_ranman_corte(r["fecha"], r.get("archivo"), json.dumps(r, ensure_ascii=False),
+    for fecha in sorted(recs):
+        rec, arch = recs[fecha]
+        creds = actual["creditos"] if (actual and actual.get("asOf") == fecha) else None
+        db.save_ranman_corte(fecha, arch, json.dumps(rec, ensure_ascii=False),
                              json.dumps(creds, ensure_ascii=False) if creds is not None else None,
                              session.get("username") or "admin")
         n += 1
-    flash("Imported %d cortes from serie.json%s." % (n, " with credit detail for %s" % actual["asOf"] if actual else ""), "ok")
+    bits = []
+    if serie:
+        bits.append("%d cortes from serie.json" % len(serie))
+    if tab:
+        bits.append("three-way split and line trajectories for %d cortes from the tablero" % merged)
+    if actual:
+        bits.append("credit detail for %s" % actual["asOf"])
+    if vrm is not None:
+        bits.append("%d VRM movements (%s → %s, %.1f mdp at the last one)" % (
+            len(vrm), vrm[0][0], vrm[-1][0], sum(m for _, m in vrm) / 1000.0))
+    flash("Imported %s%s." % (", ".join(bits) or "nothing", " (%d cortes saved)" % n if n else ""),
+          "ok" if (n or vrm is not None) else "error")
+    return redirect(url_for("company", slug=slug))
+
+
+@app.route("/company/<slug>/flujo/upload", methods=["POST"])
+@login_required
+def ranman_flujo_upload(slug):
+    """Admin-only — the monthly 'Flujo y PLP DRA - MAQUINA - <dd-mm-aa>.xlsx'
+    (parsed with the tablero script's rules and validated against the file's
+    own totals) or the flujo_plp.json that script writes. Upserted by corte
+    date; the Operations tab shows the latest."""
+    if not session.get("is_admin"):
+        abort(403)
+    c = _company_or_404(slug)
+    if c["slug"] != "ranman":
+        abort(404)
+    files = [f for f in request.files.getlist("files") if f and f.filename]
+    if not files:
+        flash("Choose a Flujo y PLP .xlsx or flujo_plp.json first.", "error")
+        return redirect(url_for("company", slug=slug))
+    ok, problems = 0, []
+    for f in files:
+        name = f.filename
+        low = name.lower()
+        try:
+            if low.endswith(".json"):
+                datos = ranman_flujo_parser.parse_json(f.read())
+            elif low.endswith(".xlsx"):
+                datos, valid, lines = ranman_flujo_parser.parse_workbook(f.read(), name)
+                if not valid:
+                    problems.append("%s: HAY DIFERENCIAS — the recomputed totals don't match the file's own; not imported. %s"
+                                    % (name, " · ".join(l for l in lines if "dif" in l)[:600]))
+                    continue
+            else:
+                problems.append("%s: expected a .xlsx workbook or flujo_plp.json" % name); continue
+        except (ValueError, UnicodeDecodeError, KeyError) as e:
+            problems.append("%s: %s" % (name, e)); continue
+        except Exception as e:  # pragma: no cover
+            app.logger.warning("Ranman flujo parse failed: %s", e)
+            problems.append("%s: could not read the file" % name); continue
+        db.save_ranman_flujo(datos["asOf"], datos.get("archivo") or name, json.dumps(datos, ensure_ascii=False),
+                             session.get("username") or "admin")
+        ok += 1
+    if ok:
+        flash("Imported %d Flujo y PLP corte%s." % (ok, "" if ok == 1 else "s"), "ok")
+    for p in problems[:6]:
+        flash(p, "error")
     return redirect(url_for("company", slug=slug))
 
 
@@ -2009,9 +2151,11 @@ def company(slug):
     polaris = None    # Modelo Polaris toll-road model — Meta only
     if c["slug"] == "meta":
         polaris = load_polaris()
-    ranman_debt = None  # Cuadro de Riesgos (deuda con costo) — Ranman only
+    ranman_debt = None   # Cuadro de Riesgos (deuda con costo) — Ranman only
+    ranman_flujo = None  # Flujo y PLP tablero — Ranman only
     if c["slug"] == "ranman":
         ranman_debt = load_ranman_debt()
+        ranman_flujo = load_ranman_flujo()
     if c["slug"] == "ember":
         ember_loans = fetch_ember_loans()
         ember_returns = fetch_ember_returns()
@@ -2135,6 +2279,7 @@ def company(slug):
         ember_returns=ember_returns, summary=summary, fin=fin, leverage=leverage,
         valuation=valuation, cap=cap, hold=hold, exitr=exitr, fre_basis=fre_basis,
         verticals=verticals, sales=sales, ember_budget=ember_budget, polaris=polaris, ranman_debt=ranman_debt,
+        ranman_flujo=ranman_flujo,
     )
 
 

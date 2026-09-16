@@ -262,6 +262,17 @@ CREATE TABLE IF NOT EXISTS ranman_debt_cortes (
     uploaded_by TEXT,
     uploaded_at TIMESTAMP DEFAULT NOW()
 );
+
+-- RANMAN «Flujo y PLP» tablero: one JSON document per corte, in the shape of
+-- the flujo_plp.json written by Valoran's actualizar_flujo_plp.py. The
+-- Operations tab shows the latest corte.
+CREATE TABLE IF NOT EXISTS ranman_flujo_plp (
+    as_of DATE PRIMARY KEY,
+    archivo TEXT,
+    data JSONB NOT NULL,
+    uploaded_by TEXT,
+    uploaded_at TIMESTAMP DEFAULT NOW()
+);
 """
 
 
@@ -397,3 +408,38 @@ def ranman_latest_corte():
     row = cur.fetchone()
     cur.close(); conn.close()
     return row
+
+
+def save_ranman_flujo(as_of: str, archivo: str, data_json: str, uploaded_by: str) -> None:
+    """Upsert one Flujo y PLP corte (latest file for a date wins)."""
+    conn = get_db(); cur = conn.cursor()
+    cur.execute("INSERT INTO ranman_flujo_plp (as_of, archivo, data, uploaded_by) "
+                "VALUES (%s, %s, %s, %s) ON CONFLICT (as_of) DO UPDATE SET "
+                "archivo = EXCLUDED.archivo, data = EXCLUDED.data, "
+                "uploaded_by = EXCLUDED.uploaded_by, uploaded_at = NOW()",
+                (as_of, archivo, data_json, uploaded_by))
+    conn.commit(); cur.close(); conn.close()
+
+
+def ranman_flujo_latest():
+    conn = get_db(); cur = conn.cursor()
+    cur.execute("SELECT as_of, archivo, data, uploaded_by, uploaded_at FROM ranman_flujo_plp "
+                "ORDER BY as_of DESC LIMIT 1")
+    row = cur.fetchone()
+    cur.close(); conn.close()
+    return row
+
+
+def get_setting(key: str):
+    conn = get_db(); cur = conn.cursor()
+    cur.execute("SELECT value FROM app_settings WHERE key = %s", (key,))
+    row = cur.fetchone()
+    cur.close(); conn.close()
+    return row["value"] if row and "value" in row else None
+
+
+def set_setting(key: str, value: str) -> None:
+    conn = get_db(); cur = conn.cursor()
+    cur.execute("INSERT INTO app_settings (key, value) VALUES (%s, %s) "
+                "ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value", (key, value))
+    conn.commit(); cur.close(); conn.close()
