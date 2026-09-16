@@ -1,0 +1,706 @@
+{# RANMAN · Cuadro de Riesgo — faithful port of Valoran's tablero (Sep-2026).
+   Two views (Corte actual / Histórico), the same KPIs, matrices, capacity
+   bars, maturity list, filterable detail table, SVG series charts and notes.
+   Everything is computed client-side from `rd.C` (credits, thousands MXN)
+   and `rd.S` (one record per corte, mdp) exactly as the tablero did, but the
+   facts the tablero hard-coded (bank exits, overdue credits, gaps, lámina-21
+   reconciliation) are derived from the data so they never go stale.
+   Expects `rd` (ranman_debt) in context. Classes are namespaced `rr-` to stay
+   clear of the dashboard's own .kpi/.grid/.tab styles. #}
+<style>
+.rr{ --pu:#2a78d6; --np:#eb6834; --s3:#1baf7a; --s4:#eda100; --s5:#e87ba4; --s6:#008300; --s7:#4a3aa7; --s8:#e34948;
+     --crit:#c0362c; --warn:#a9700a; --ok:#1f7a52;
+     --bg:var(--mq-bg-2); --surface:var(--mq-surface); --surface-2:var(--mq-surface-2); --surface-3:var(--mq-surface-2);
+     --line:var(--mq-line); --line-strong:var(--mq-line-2); --ink:var(--mq-ink-2); --ink-2:var(--mq-muted); --ink-3:var(--mq-subtle);
+     --accent:var(--mq-accent); --cond:var(--font-display); --mono:var(--font-num); font-size:14px; }
+:root[data-theme="dark"] .rr{ --pu:#3987e5; --np:#d95926; --s3:#199e70; --s4:#c98500; --s5:#d55181; --s7:#9085e9; --s8:#e66767; --crit:#e66767; --warn:#c98500; --ok:#35a877; }
+.rr .rr-num{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.rr .rr-hdr{display:flex;flex-wrap:wrap;gap:10px 28px;align-items:flex-end;justify-content:space-between;margin-bottom:14px}
+.rr .rr-eyebrow{font-family:var(--cond);font-size:11px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3);margin:0 0 4px}
+.rr h2.rr-title{font-family:var(--cond);font-weight:700;font-size:26px;letter-spacing:-.012em;margin:0;line-height:1.08;color:var(--ink)}
+.rr .rr-meta{display:flex;flex-wrap:wrap;gap:8px 10px;align-items:center}
+.rr .rr-pill{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--line-strong);border-radius:999px;padding:5px 12px;font-size:12px;color:var(--ink-2);background:var(--surface-2)}
+.rr .rr-pill b{color:var(--ink);font-weight:600}
+.rr .rr-dot{width:7px;height:7px;border-radius:50%;background:var(--ok);flex:none}
+.rr .rr-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(176px,1fr));gap:1px;background:var(--line);border:1px solid var(--line);border-radius:10px;overflow:hidden;margin-bottom:22px}
+.rr .rr-kpi{background:var(--surface);padding:16px 18px 15px;position:relative}
+.rr .rr-kpi::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:transparent}
+.rr .rr-kpi.pu::before{background:var(--pu)} .rr .rr-kpi.np::before{background:var(--np)} .rr .rr-kpi.rev::before{background:var(--s7)} .rr .rr-kpi.flag::before{background:var(--crit)}
+.rr .rr-kpi .rr-lab{font-family:var(--cond);font-size:10.5px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);display:block;margin-bottom:7px}
+.rr .rr-kpi .rr-val{font-family:var(--mono);font-size:25px;font-weight:500;letter-spacing:-.025em;line-height:1.05;white-space:nowrap;color:var(--ink)}
+.rr .rr-kpi.rate .rr-val{font-size:21px}
+.rr .rr-kpis-in{margin-bottom:18px;border-radius:8px} .rr .rr-kpis-in .rr-kpi{padding:13px 15px 12px} .rr .rr-kpis-in .rr-val{font-size:21px}
+.rr .rr-kpi .rr-val small{font-size:13px;font-weight:400;color:var(--ink-2);margin-left:3px;letter-spacing:0}
+.rr .rr-kpi .rr-sub{font-size:11.5px;color:var(--ink-2);margin-top:6px;line-height:1.4}
+.rr .rr-kpi.flag .rr-val{color:var(--crit)}
+.rr .rr-grid{display:grid;gap:16px;grid-template-columns:repeat(12,1fr);align-items:start}
+.rr .rr-panel{grid-column:span 12;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:18px 18px 20px;min-width:0}
+@media(min-width:900px){.rr .rr-col7{grid-column:span 7}.rr .rr-col5{grid-column:span 5}}
+.rr .rr-panel h3{font-family:var(--cond);font-size:15px;font-weight:600;margin:0 0 3px;color:var(--ink)}
+.rr .rr-note{font-size:11.5px;color:var(--ink-3);margin:0 0 15px;line-height:1.45}
+.rr .rr-legend{display:flex;flex-wrap:wrap;gap:6px 16px;margin:0 0 13px;font-size:11.5px;color:var(--ink-2)}
+.rr .rr-legend span{display:inline-flex;align-items:center;gap:6px}
+.rr .rr-sw{width:11px;height:11px;border-radius:2px;flex:none;display:inline-block}
+.rr .rr-sw.pu{background:var(--pu)} .rr .rr-sw.np{background:var(--np)} .rr .rr-sw.free{background:var(--pu);opacity:.3} .rr .rr-sw.term{background:var(--line-strong)}
+.rr .mxwrap{overflow-x:auto}
+.rr .mx{width:100%;min-width:430px;border-collapse:collapse;font-size:12.5px}
+.rr .mx th{font-family:var(--cond);font-size:10px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);text-align:right;padding:0 0 7px;white-space:nowrap;background:transparent}
+.rr .mx th:first-child{text-align:left} .rr .mx th.bar{width:38%;text-align:left;padding-left:12px}
+.rr .mx td{padding:6px 0;border-top:1px solid var(--line);text-align:right;white-space:nowrap;background:transparent}
+.rr .mx td:first-child{text-align:left;white-space:normal;padding-right:8px} .rr .mx td.bar{padding-left:12px;width:38%}
+.rr .mx .nm{cursor:pointer;color:var(--ink)} .rr .mx .nm:hover{color:var(--accent);text-decoration:underline;text-underline-offset:2px}
+.rr .mx .v{font-family:var(--mono);font-variant-numeric:tabular-nums;color:var(--ink-2);padding-left:14px}
+.rr .mx .v.tot{color:var(--ink);font-weight:500} .rr .mx .v.zero{color:var(--ink-3)}
+.rr .mx tfoot td{border-top:1.5px solid var(--line-strong);font-weight:600;padding-top:8px} .rr .mx tfoot .v{color:var(--ink)}
+.rr .track{height:16px;display:flex;gap:2px;min-width:0;width:100%}
+.rr .seg{height:100%;border-radius:2px;min-width:2px;cursor:pointer;transition:filter .12s}
+.rr .seg:first-child{border-radius:3px 2px 2px 3px} .rr .seg:last-child{border-radius:2px 3px 3px 2px} .rr .seg:only-child{border-radius:3px}
+.rr .seg:hover{filter:brightness(1.12)}
+.rr .seg.pu{background:var(--pu)} .rr .seg.np{background:var(--np)} .rr .seg.free{background:var(--pu);opacity:.3} .rr .seg.term{background:var(--line-strong)}
+.rr .caps{display:flex;flex-direction:column;gap:12px}
+.rr .cap{display:grid;grid-template-columns:1fr auto;gap:4px 12px;align-items:baseline}
+.rr .cap .cn{font-size:12.5px;color:var(--ink)} .rr .cap .cn small{display:block;font-family:var(--cond);font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3)}
+.rr .cap .cv{font-family:var(--mono);font-size:12px;color:var(--ink-2);white-space:nowrap} .rr .cap .cv b{color:var(--ink);font-weight:500}
+.rr .cap .track{grid-column:1 / -1;height:14px}
+.rr .capfoot{margin-top:16px;padding-top:14px;border-top:1px solid var(--line);font-size:12px;color:var(--ink-2);line-height:1.5}
+.rr .capfoot b{color:var(--ink)} .rr .capfoot .big{font-family:var(--mono);font-size:19px;color:var(--ink);font-weight:500;display:block;margin-bottom:3px}
+.rr .vlist{list-style:none;margin:0;padding:0;display:flex;flex-direction:column}
+.rr .vlist li{display:grid;grid-template-columns:1fr auto auto;gap:12px;align-items:baseline;font-size:12.5px;padding:8px 0;border-bottom:1px solid var(--line)}
+.rr .vlist li:last-child{border-bottom:none}
+.rr .vlist .nm{color:var(--ink);min-width:0;overflow-wrap:anywhere}
+.rr .vlist .bk{display:block;font-size:10px;color:var(--ink-3);font-family:var(--cond);letter-spacing:.06em;text-transform:uppercase}
+.rr .vlist .dt{font-family:var(--mono);font-size:11.5px;color:var(--ink-2);white-space:nowrap}
+.rr .vlist .amt{font-family:var(--mono);color:var(--ink);white-space:nowrap;min-width:46px;text-align:right}
+.rr .vlist li.past .dt{color:var(--crit);font-weight:500} .rr .vlist li.past .nm{font-weight:500}
+.rr .vfoot{display:grid;grid-template-columns:1fr auto;gap:12px;padding-top:11px;margin-top:4px;border-top:1.5px solid var(--line-strong);font-size:12.5px;font-weight:600}
+.rr .vfoot .amt{font-family:var(--mono)}
+.rr .warnbox{display:flex;gap:10px;align-items:flex-start;margin-bottom:15px;padding:11px 13px;border:1px solid color-mix(in srgb,var(--crit) 32%,transparent);background:color-mix(in srgb,var(--crit) 8%,transparent);border-radius:7px;font-size:12px;color:var(--ink-2);line-height:1.45}
+.rr .warnbox b{color:var(--ink);font-weight:600} .rr .warnbox .ic{color:var(--crit);font-weight:700;flex:none;line-height:1.3}
+.rr .filters{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:14px;align-items:center}
+.rr .fgroup{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.rr .flab{font-family:var(--cond);font-size:10.5px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);margin-right:2px}
+.rr .rr-chip{font:inherit;font-size:12px;cursor:pointer;padding:4px 11px;border-radius:999px;border:1px solid var(--line-strong);background:var(--surface-2);color:var(--ink-2)}
+.rr .rr-chip:hover{border-color:var(--ink-3);color:var(--ink)} .rr .rr-chip[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:#fff}
+.rr button.rr-ghost{font:inherit;font-size:12px;color:var(--ink-2);cursor:pointer;border:1px solid var(--line-strong);background:var(--surface-2);border-radius:999px;padding:5px 12px}
+.rr .tablewrap{overflow-x:auto;border:1px solid var(--line);border-radius:8px}
+.rr table.det{border-collapse:collapse;width:100%;min-width:840px;font-size:12.5px}
+.rr .det th,.rr .det td{padding:8px 11px;text-align:left;border-bottom:1px solid var(--line);white-space:nowrap;background:transparent}
+.rr .det thead th{position:sticky;top:0;background:var(--surface-3);z-index:1;font-family:var(--cond);font-size:10.5px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-2)}
+.rr .det th.sortable{cursor:pointer;user-select:none} .rr .det th.sortable:hover{color:var(--ink)}
+.rr .det th.sortable[data-dir="asc"]::after{content:" ▲";font-size:8px} .rr .det th.sortable[data-dir="desc"]::after{content:" ▼";font-size:8px}
+.rr .det td.r,.rr .det th.r{text-align:right;font-family:var(--mono);font-variant-numeric:tabular-nums}
+.rr .det tbody tr:hover{background:var(--surface-2)} .rr .det tbody tr:last-child td{border-bottom:none}
+.rr .det tfoot td{background:var(--surface-3);font-weight:600;border-top:1px solid var(--line-strong);border-bottom:none}
+.rr .rr-tag{display:inline-block;padding:1.5px 8px;border-radius:999px;font-size:10.5px;font-family:var(--cond);font-weight:600;letter-spacing:.05em;text-transform:uppercase;border:1px solid transparent}
+.rr .rr-tag.pu{color:var(--pu);background:color-mix(in srgb,var(--pu) 12%,transparent);border-color:color-mix(in srgb,var(--pu) 30%,transparent)}
+.rr .rr-tag.np{color:var(--np);background:color-mix(in srgb,var(--np) 12%,transparent);border-color:color-mix(in srgb,var(--np) 30%,transparent)}
+.rr .mrk{color:var(--crit);font-weight:500}
+.rr .rr-notes{margin-top:26px;border-top:1px solid var(--line);padding-top:20px}
+.rr .rr-notes h3{font-family:var(--cond);font-size:13px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-2);margin:0 0 12px}
+.rr .rr-notes ul{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:9px;max-width:76ch}
+.rr .rr-notes li{font-size:12.5px;color:var(--ink-2);line-height:1.5} .rr .rr-notes b{color:var(--ink);font-weight:600} .rr .rr-notes .rr-num{color:var(--ink)}
+.rr .chart{position:relative;width:100%} .rr .chart svg{display:block;width:100%;height:auto;overflow:visible}
+.rr .gl{stroke:var(--line);stroke-width:1}
+.rr .axl{fill:var(--ink-3);font-family:var(--mono);font-size:9.5px} .rr .axl.y{text-anchor:end} .rr .axl.x{text-anchor:middle}
+.rr .cross{stroke:var(--ink-3);stroke-width:1;stroke-dasharray:3 3;opacity:0} .rr .hit{fill:transparent;cursor:crosshair}
+.rr .tline{fill:none;stroke:var(--ink);stroke-width:1.5;opacity:.55} .rr .mk{fill:var(--surface);stroke-width:2;opacity:0}
+.rr .evt{stroke:var(--ink-3);stroke-width:1;stroke-dasharray:2 3}
+.rr .evtl{fill:var(--ink-3);font-family:var(--cond);font-size:9.5px;letter-spacing:.06em;text-transform:uppercase}
+.rr .sparkfill{stroke:none} .rr .sparkline{fill:none;stroke-width:2;stroke-linejoin:round;stroke-linecap:round}
+.rr .hist{width:100%;border-collapse:collapse;font-size:12.5px;min-width:640px}
+.rr .hist th{font-family:var(--cond);font-size:10px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);text-align:right;padding:0 10px 7px;white-space:nowrap;position:sticky;top:0;background:var(--surface)}
+.rr .hist th:first-child{text-align:left;padding-left:0}
+.rr .hist td{padding:6px 10px;border-top:1px solid var(--line);text-align:right;white-space:nowrap;font-family:var(--mono);font-variant-numeric:tabular-nums;background:transparent}
+.rr .hist td:first-child{text-align:left;font-family:var(--font-sans);padding-left:0}
+.rr .hist .up{color:var(--crit)} .rr .hist .dn{color:var(--ok)} .rr .hist .flat{color:var(--ink-3)}
+.rr .hist tbody tr:hover{background:var(--surface-2)} .rr .scrollbox{max-height:420px;overflow:auto}
+#rr-tip{position:fixed;z-index:50;pointer-events:none;opacity:0;transition:opacity .1s;background:var(--mq-surface);border:1px solid var(--mq-line-2);border-radius:7px;padding:9px 11px;box-shadow:0 4px 14px rgba(0,0,0,.14);font-size:12px;max-width:270px;color:var(--mq-ink-2)}
+#rr-tip .tt{font-weight:600;margin-bottom:4px;font-size:12.5px} #rr-tip .tr{display:flex;justify-content:space-between;gap:18px;color:var(--mq-muted)} #rr-tip .tr b{color:var(--mq-ink-2);font-family:var(--font-num);font-weight:500}
+</style>
+
+<div class="rr card mb-24" id="rr" data-tabgroup>
+  <div class="rr-hdr">
+    <div><p class="rr-eyebrow">Maquina Holdings · Ranman</p><h2 class="rr-title">Cuadro de Riesgo</h2></div>
+    <div class="rr-meta">
+      <span class="rr-pill"><span class="rr-dot"></span>Saldos al <b>{{ rd.as_of_label }}</b></span>
+      <span class="rr-pill">Cifras en <b>mdp</b></span>
+      <span class="rr-pill" title="{{ rd.archivo }}">{{ rd.n_cortes }} cortes · <b>{{ rd.first_label }} → {{ rd.as_of_label }}</b></span>
+    </div>
+  </div>
+  <div class="tabs" style="margin-bottom:16px;">
+    <button class="tab active" data-tab="rr-actual" type="button">Corte actual</button>
+    <button class="tab" data-tab="rr-hist" type="button">Histórico</button>
+  </div>
+
+  <div class="tab-panel active" data-panel="rr-actual">
+    <div class="rr-kpis" id="rr-kpis"></div>
+    <div class="rr-grid">
+      <section class="rr-panel rr-col7">
+        <h3>Puentes vs. No-Puentes y costo por institución</h3>
+        <p class="rr-note">Saldo deudor por banco. «Capacidad» es el monto autorizado de las líneas No-Puentes. Haz clic en una institución para filtrar el detalle.</p>
+        <div class="rr-legend"><span><i class="rr-sw pu"></i>Puentes de proyecto</span><span><i class="rr-sw np"></i>No-Puentes</span></div>
+        <div class="mxwrap"><table class="mx" id="rr-instTable"></table></div>
+      </section>
+      <section class="rr-panel rr-col5">
+        <h3>Destino de los recursos</h3>
+        <p class="rr-note">Saldo deudor asignado a cada desarrollo. Haz clic en un desarrollo para filtrar el detalle.</p>
+        <div class="rr-legend"><span><i class="rr-sw pu"></i>Puentes de proyecto</span><span><i class="rr-sw np"></i>No-Puentes</span></div>
+        <div class="mxwrap"><table class="mx" id="rr-destTable"></table></div>
+      </section>
+      <section class="rr-panel rr-col7">
+        <h3>Uso de la capacidad No-Puentes</h3>
+        <p class="rr-note">Monto autorizado de cada línea corporativa contra lo dispuesto. En las revolventes, el capital que se amortiza vuelve a quedar disponible; en los créditos simples, no.</p>
+        <div class="rr-legend"><span><i class="rr-sw np"></i>Dispuesto</span><span><i class="rr-sw free"></i>Por disponer</span><span><i class="rr-sw term"></i>Amortizado, ya no disponible</span></div>
+        <div class="caps" id="rr-capList"></div>
+        <div class="capfoot" id="rr-capFoot"></div>
+      </section>
+      <section class="rr-panel rr-col5">
+        <h3>Créditos que vencen en 12 meses</h3>
+        <p class="rr-note" id="rr-vNote"></p>
+        <div class="warnbox" id="rr-warnBox"></div>
+        <ul class="vlist" id="rr-vList"></ul>
+        <div class="vfoot" id="rr-vFoot"></div>
+      </section>
+      <section class="rr-panel">
+        <h3>Detalle de créditos</h3>
+        <p class="rr-note" id="rr-detNote"></p>
+        <div class="filters" id="rr-filters"></div>
+        <div class="tablewrap">
+          <table class="det" id="rr-tbl">
+            <thead><tr>
+              <th class="sortable" data-k="credito">Crédito</th><th class="sortable" data-k="banco">Banco</th>
+              <th class="sortable" data-k="linea">Línea</th><th class="sortable" data-k="desarrollo">Desarrollo</th>
+              <th class="sortable" data-k="cat">Clasificación</th><th class="sortable r" data-k="vence">Vence</th>
+              <th class="sortable r" data-k="saldo">Saldo</th><th class="sortable r" data-k="porEjercer">Por ejercer</th>
+              <th class="sortable r" data-k="sobretasa">Sobretasa</th><th class="sortable r" data-k="avance">Avance</th>
+            </tr></thead>
+            <tbody id="rr-tbody"></tbody><tfoot id="rr-tfoot"></tfoot>
+          </table>
+        </div>
+      </section>
+    </div>
+    <div class="rr-notes"><h3>Notas y conciliación</h3><ul id="rr-notesList"></ul></div>
+  </div>
+
+  <div class="tab-panel" data-panel="rr-hist">
+    <div class="rr-kpis" id="rr-hkpis"></div>
+    <div class="rr-grid">
+      <section class="rr-panel">
+        <h3>Saldo deudor y mezcla</h3><p class="rr-note" id="rr-hRange"></p>
+        <div class="rr-legend"><span><i class="rr-sw pu"></i>Puentes de proyecto</span><span><i class="rr-sw np"></i>No-Puentes</span></div>
+        <div class="chart" id="rr-chMix"></div>
+      </section>
+      <section class="rr-panel">
+        <h3>Deuda No-Puentes: ¿se está pagando?</h3>
+        <p class="rr-note">Las líneas No-Puentes financian costos que no cuelgan de un desarrollo, así que no traen fuente de pago propia. Aquí van en su propia escala, separadas entre lo que desaparece al pagarse y lo que puede volver a disponerse.</p>
+        <div class="rr-kpis rr-kpis-in" id="rr-npKpis"></div>
+        <div class="rr-legend"><span><i class="rr-sw" style="background:var(--np)"></i>Créditos simples — se amortizan y no se redisponen</span><span><i class="rr-sw" style="background:var(--s7)"></i>Líneas revolventes — se pueden volver a disponer</span></div>
+        <div class="chart" id="rr-chNP"></div>
+        <div class="capfoot" id="rr-npFoot"></div>
+      </section>
+      <section class="rr-panel">
+        <h3>Exposición por institución</h3><p class="rr-note" id="rr-bancoNote"></p>
+        <div class="rr-legend" id="rr-lgBanco"></div>
+        <div class="chart" id="rr-chBanco"></div>
+      </section>
+      <section class="rr-panel">
+        <h3>Destino por desarrollo</h3>
+        <p class="rr-note">Saldo deudor asignado a cada desarrollo en cada corte. Los desarrollos menores se agrupan en «Otros».</p>
+        <div class="rr-legend" id="rr-lgDesa"></div>
+        <div class="chart" id="rr-chDesa"></div>
+      </section>
+      <section class="rr-panel">
+        <h3>Costo de la deuda</h3>
+        <p class="rr-note">Sobretasa sobre TIIE, promedio ponderado por saldo en cada corte.</p>
+        <div class="chart" id="rr-chSob"></div>
+        <div class="capfoot" id="rr-sobFoot"></div>
+      </section>
+      <section class="rr-panel">
+        <h3>Cortes de fin de mes</h3><p class="rr-note" id="rr-fmNote"></p>
+        <div class="scrollbox"><table class="hist" id="rr-histTable"></table></div>
+      </section>
+    </div>
+    <div class="rr-notes"><h3>Cómo se construyó esta serie</h3><ul id="rr-hNotes"></ul></div>
+  </div>
+</div>
+<div id="rr-tip" role="status" aria-live="polite"></div>
+
+<script>
+(function(){
+/* ===================== DATA (from the database) ===================== */
+const C = {{ rd.C | tojson }};              // credits of the latest corte, thousands of MXN
+const S = {{ rd.S | tojson }};              // one record per corte, mdp
+const AS_OF_ISO = {{ rd.as_of | tojson }};
+if (!C.length || !S.length) return;
+const RR = document.getElementById('rr');
+const $ = id => document.getElementById('rr-' + id);
+const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[ch]));
+const f1 = v => (v/1000).toLocaleString('es-MX',{minimumFractionDigits:1,maximumFractionDigits:1});
+const pct = v => (v*100).toLocaleString('es-MX',{minimumFractionDigits:1,maximumFractionDigits:1})+'%';
+const fx = v => v.toLocaleString('es-MX',{minimumFractionDigits:1,maximumFractionDigits:1});
+const MES = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+const fdate = s => { const [y,m] = s.split('-'); return MES[+m-1]+'-'+y.slice(2); };
+const lbl = f => { const [y,m,d]=f.split('-'); return `${+d} ${MES[+m-1]} ${y.slice(2)}`; };
+const tms = f => Date.parse(f+'T00:00:00');
+const AS_OF = new Date(AS_OF_ISO+'T00:00:00');
+const CUT12 = new Date(AS_OF); CUT12.setFullYear(CUT12.getFullYear()+1);
+const CUT12_ISO = CUT12.toISOString().slice(0,10);
+
+/* ---- clasificación de la lámina 21 (misma regla que el parser) ---- */
+C.forEach(c=>{
+  if (!c.cat) c.cat = (c.linea === 'Crédito puente' || c.linea === 'Crédito tierra' ||
+          (c.banco === 'BanBajío' && c.desarrollo === 'Cúspide')) ? 'Puentes' : 'No-Puentes';
+  if (c.porEjercer == null) c.porEjercer = 0;
+});
+const CATS = ['Puentes','No-Puentes'];
+const CK = {'Puentes':'pu','No-Puentes':'np'};
+const sum = (arr,f=c=>c.saldo) => arr.reduce((a,c)=>a+f(c),0);
+const TOTAL = sum(C);
+const PU = sum(C.filter(c=>c.cat==='Puentes'));
+const NP = sum(C.filter(c=>c.cat==='No-Puentes'));
+const N_BANCOS = new Set(C.map(c=>c.banco)).size;
+
+/* ---- capacidad autorizada de las líneas No-Puentes (montos del título de cada línea) ---- */
+const CAP = [
+  {banco:'BBVA',     linea:'Simple 100 mdp',  aut:100000, rev:false},
+  {banco:'BBVA',     linea:'Simple 99.8 mdp', aut:100000, rev:false},
+  {banco:'BBVA',     linea:'CCC 55 mdp',      aut:55000,  rev:true},
+  {banco:'BanCrea',  linea:'Línea 48 mdp',    aut:48000,  rev:true},
+  {banco:'BBVA',     linea:'Simple 28 mdp',   aut:28000,  rev:false},
+  {banco:'BanBajío', linea:'Infraestructura', aut:15000,  rev:false, shared:true},
+];
+const capRows = CAP.map(l=>{
+  const sub = C.filter(c=>c.banco===l.banco && c.linea===l.linea);
+  const drawnAll = sum(sub);
+  const drawnNP  = sum(sub.filter(c=>c.cat==='No-Puentes'));
+  const free = l.rev ? Math.max(0, l.aut - drawnAll) : 0;
+  return {...l, drawnAll, drawnNP, free, term: Math.max(0, l.aut - drawnAll - free)};
+});
+const CAP_TOT   = capRows.reduce((a,r)=>a+r.aut,0);
+const CAP_DRAWN = capRows.reduce((a,r)=>a+r.drawnAll,0);
+const FREE_TOT  = capRows.reduce((a,r)=>a+r.free,0);
+const TERM_TOT  = CAP_TOT - CAP_DRAWN - FREE_TOT;
+const capBanco = b => capRows.filter(r=>r.banco===b).reduce((a,r)=>a+r.aut,0);
+
+/* ---- vencimientos a 12 meses, con las líneas consolidadas ---- */
+const soonRaw = C.filter(c=> c.vence && new Date(c.vence+'T00:00:00') <= CUT12 && c.saldo > 0);
+const SOON_TOT = sum(soonRaw);
+const vgroups = new Map();
+soonRaw.forEach(c=>{
+  const solo = c.linea === 'Crédito puente' || c.linea === 'Crédito tierra';
+  const key = solo ? c.credito : c.banco+'|'+c.linea;
+  if (!vgroups.has(key)) vgroups.set(key, { nombre: solo ? c.credito : 'Línea '+c.linea, banco: c.banco,
+    desarrollo: solo ? c.desarrollo : null, vence: c.vence, saldo: 0, n: 0 });
+  const g = vgroups.get(key); g.saldo += c.saldo; g.n++;
+  if (c.vence < g.vence) g.vence = c.vence;
+});
+const soon = [...vgroups.values()].sort((a,b)=>a.vence.localeCompare(b.vence));
+const HOY = new Date(); HOY.setHours(0,0,0,0);
+const vencidos = soon.filter(g=> new Date(g.vence+'T00:00:00') < HOY);
+const VENCIDO_TOT = vencidos.reduce((a,g)=>a+g.saldo,0);
+
+/* ---- KPIs del corte ---- */
+const kpiHTML = k => `<div class="rr-kpi ${k.cls||''}"><span class="rr-lab">${k.lab}</span>
+  <div class="rr-val">${k.val}${k.unit?`<small>${k.unit}</small>`:''}</div><div class="rr-sub">${k.sub}</div></div>`;
+$('kpis').innerHTML = [
+  {lab:'Saldo deudor', val:f1(TOTAL), unit:'mdp', sub:C.length+' créditos · '+N_BANCOS+' instituciones'},
+  {lab:'Puentes de proyecto', val:f1(PU), unit:'mdp', cls:'pu', sub:pct(PU/TOTAL)+' del saldo · con fuente de pago de obra'},
+  {lab:'No-Puentes', val:f1(NP), unit:'mdp', cls:'np', sub:pct(NP/TOTAL)+' del saldo · líneas corporativas'},
+  {lab:'Capacidad No-Puentes', val:f1(CAP_TOT), unit:'mdp', sub:pct(CAP_DRAWN/CAP_TOT)+' dispuesta · quedan '+f1(FREE_TOT)+' mdp por disponer'},
+  {lab:'Vence en 12 meses', val:f1(SOON_TOT), unit:'mdp', cls:'flag', sub:pct(SOON_TOT/TOTAL)+' del saldo · '+soonRaw.length+' créditos'},
+].map(kpiHTML).join('');
+
+/* ---- tooltip ---- */
+const tip = document.getElementById('rr-tip');
+function showTip(e,title,rows){
+  tip.innerHTML = `<div class="tt">${esc(title)}</div>`+rows.map(r=>`<div class="tr"><span>${esc(r[0])}</span><b>${esc(r[1])}</b></div>`).join('');
+  tip.style.opacity=1; moveTip(e);
+}
+function moveTip(e){
+  const r = tip.getBoundingClientRect();
+  let x=e.clientX+14, y=e.clientY+14;
+  if (x+r.width > innerWidth-8) x = e.clientX-r.width-14;
+  if (y+r.height > innerHeight-8) y = e.clientY-r.height-14;
+  tip.style.left=Math.max(8,x)+'px'; tip.style.top=Math.max(8,y)+'px';
+}
+const hideTip = ()=> tip.style.opacity=0;
+function bindTip(el,title,rows){
+  el.addEventListener('mouseenter',e=>showTip(e,title,rows));
+  el.addEventListener('mousemove',moveTip);
+  el.addEventListener('mouseleave',hideTip);
+}
+function track(parts, max, total){
+  const tr = document.createElement('div'); tr.className='track';
+  tr.style.width = (total/max*100)+'%';
+  parts.filter(p=>p.v>0).forEach(p=>{
+    const s=document.createElement('div'); s.className='seg '+p.k; s.style.flex=p.v;
+    bindTip(s, p.title, p.rows); tr.appendChild(s);
+  });
+  return tr;
+}
+
+/* ---- matriz por institución / destino ---- */
+function sobreRange(rows){
+  const s = rows.map(c=>c.sobretasa).filter(v=>v!=null);
+  if (!s.length) return '—';
+  const lo=Math.min(...s)*100, hi=Math.max(...s)*100;
+  return lo===hi ? '+'+lo.toFixed(2)+'%' : '+'+lo.toFixed(2)+'% – '+hi.toFixed(2)+'%';
+}
+const bancos = [...new Set(C.map(c=>c.banco))].map(b=>{
+    const rows = C.filter(c=>c.banco===b);
+    return {name:b, rows, pu:sum(rows.filter(c=>c.cat==='Puentes')), np:sum(rows.filter(c=>c.cat==='No-Puentes')), cap:capBanco(b), sob:sobreRange(rows)};
+  }).filter(b=>b.pu+b.np>0).sort((a,b)=>(b.pu+b.np)-(a.pu+a.np));
+const dest = [...new Set(C.map(c=>c.desarrollo))].map(d=>{
+    const rows = C.filter(c=>c.desarrollo===d);
+    return {name:d, rows, pu:sum(rows.filter(c=>c.cat==='Puentes')), np:sum(rows.filter(c=>c.cat==='No-Puentes'))};
+  }).filter(d=>d.pu+d.np>0).sort((a,b)=>(b.pu+b.np)-(a.pu+a.np));
+
+function buildMatrix(id, rows, heads, onClick, hasCap){
+  const max = Math.max(...rows.map(r=>r.pu+r.np));
+  const t = $(id); t.innerHTML='';
+  const thead = document.createElement('thead');
+  thead.innerHTML = '<tr><th>'+heads[0]+'</th><th class="bar">Mezcla</th>'+heads.slice(1).map(h=>'<th>'+h+'</th>').join('')+'</tr>';
+  const tb = document.createElement('tbody');
+  rows.forEach(r=>{
+    const tot = r.pu+r.np;
+    const tr = document.createElement('tr');
+    const c1 = document.createElement('td');
+    const nm = document.createElement('span'); nm.className='nm'; nm.textContent = r.name;
+    nm.addEventListener('click', ()=>onClick(r));
+    c1.appendChild(nm); tr.appendChild(c1);
+    const cb = document.createElement('td'); cb.className='bar';
+    cb.appendChild(track([
+      {k:'pu', v:r.pu, title:r.name, rows:[['Puentes', f1(r.pu)+' mdp'],['% del grupo', pct(r.pu/tot)]]},
+      {k:'np', v:r.np, title:r.name, rows:[['No-Puentes', f1(r.np)+' mdp'],['% del grupo', pct(r.np/tot)]]},
+    ], max, tot));
+    tr.appendChild(cb);
+    const cells = hasCap
+      ? [[f1(r.pu), r.pu?'':'zero'], [f1(r.np), r.np?'':'zero'], [r.cap? f1(r.cap) : '—', r.cap?'':'zero'], [r.sob, '']]
+      : [[f1(r.pu), r.pu?'':'zero'], [f1(r.np), r.np?'':'zero'], [f1(tot), 'tot']];
+    cells.forEach(([txt,cls])=>{ const td=document.createElement('td'); td.className='v '+cls; td.textContent=txt; tr.appendChild(td); });
+    tb.appendChild(tr);
+  });
+  const tf = document.createElement('tfoot');
+  const tpu=rows.reduce((a,r)=>a+r.pu,0), tnp=rows.reduce((a,r)=>a+r.np,0);
+  tf.innerHTML = '<tr><td>Total</td><td class="bar"></td>'+
+    (hasCap ? `<td class="v">${f1(tpu)}</td><td class="v">${f1(tnp)}</td><td class="v">${f1(CAP_TOT)}</td><td class="v">—</td>`
+            : `<td class="v">${f1(tpu)}</td><td class="v">${f1(tnp)}</td><td class="v tot">${f1(tpu+tnp)}</td>`)+'</tr>';
+  t.append(thead, tb, tf);
+}
+buildMatrix('instTable', bancos, ['Institución','Puentes','No-P.','Capacidad','Sobretasa'], r=>setFilter('banco', r.name), true);
+buildMatrix('destTable', dest, ['Desarrollo','Puentes','No-P.','Total'], r=>setFilter('desarrollo', r.name), false);
+
+/* ---- capacidad ---- */
+const capMax = Math.max(...capRows.map(r=>r.aut));
+const capHost = $('capList');
+capRows.forEach(r=>{
+  const d = document.createElement('div'); d.className='cap';
+  const nm = document.createElement('div'); nm.className='cn';
+  nm.innerHTML = esc(r.linea) + (r.shared?' <span style="color:var(--ink-3)" title="línea compartida entre Puentes y No-Puentes">*</span>':'') +
+    '<small>'+esc(r.banco)+' · '+(r.rev?'revolvente':'simple amortizable')+'</small>';
+  const cv = document.createElement('div'); cv.className='cv';
+  cv.innerHTML = `<b>${f1(r.drawnAll)}</b> / ${f1(r.aut)} · ${pct(r.drawnAll/r.aut)}`;
+  d.append(nm, cv);
+  d.appendChild(track([
+    {k:'np', v:r.drawnAll, title:r.banco+' · '+r.linea, rows:[['Dispuesto', f1(r.drawnAll)+' mdp'],['Autorizado', f1(r.aut)+' mdp'],['Utilización', pct(r.drawnAll/r.aut)]]},
+    {k:'free', v:r.free, title:r.banco+' · '+r.linea, rows:[['Redisponible', f1(r.free)+' mdp'],['Tipo','Revolvente']]},
+    {k:'term', v:r.term, title:r.banco+' · '+r.linea, rows:[['Amortizado', f1(r.term)+' mdp'],['Tipo','No redisponible']]},
+  ], capMax, r.aut));
+  capHost.appendChild(d);
+});
+const revLines = capRows.filter(r=>r.rev);
+$('capFoot').innerHTML =
+  `<span class="big">${f1(FREE_TOT)} mdp por disponer</span>` +
+  `Es lo único que RANMAN todavía puede tomar de sus líneas corporativas: ` +
+  revLines.map(r=>`<b class="rr-num">${f1(r.free)} mdp</b> en ${esc(r.linea)} de ${esc(r.banco)}`).join(' y ') + `. ` +
+  `Son las ${revLines.length===2?'dos únicas':revLines.length} revolventes, es decir, las únicas donde el capital que se amortiza vuelve a quedar disponible.<br><br>` +
+  `Entre la capacidad autorizada (<span class="rr-num">${f1(CAP_TOT)} mdp</span>) y lo dispuesto (<span class="rr-num">${f1(CAP_DRAWN)} mdp</span>) hay ` +
+  `<b class="rr-num">${f1(CAP_TOT-CAP_DRAWN)} mdp</b> de diferencia, pero <b class="rr-num">${f1(TERM_TOT)} mdp</b> de esa cifra ya se amortizaron ` +
+  `en créditos simples y no se pueden volver a disponer.` + (FREE_TOT>0 && (CAP_TOT-CAP_DRAWN)/FREE_TOT>=2 ? ` Tomar esa diferencia como disponibilidad sobrestima la liquidez por más de ${Math.floor((CAP_TOT-CAP_DRAWN)/FREE_TOT)} veces.` : '');
+
+/* ---- vencimientos ---- */
+$('vNote').textContent = `Vencimiento contractual dentro de los 12 meses siguientes al corte (al ${lbl(CUT12_ISO)}). Las líneas se presentan consolidadas.`;
+$('warnBox').innerHTML = vencidos.length
+  ? `<span class="ic">⚑</span><span><b>${vencidos.length===1?'Un crédito ya rebasó su vencimiento':vencidos.length+' créditos ya rebasaron su vencimiento'}</b> ` +
+    `(<span class="rr-num">${f1(VENCIDO_TOT)} mdp</span>, el <span class="rr-num">${pct(VENCIDO_TOT/TOTAL)}</span> del saldo): ` +
+    vencidos.map(g=>`${esc(g.nombre)} — ${fdate(g.vence)}, <span class="rr-num">${f1(g.saldo)} mdp</span>`).join('; ') + '.</span>'
+  : `<span class="ic">⚑</span><span>Ningún crédito rebasa su vencimiento a la fecha de hoy.</span>`;
+$('vList').innerHTML = soon.map(g=>{
+  const past = new Date(g.vence+'T00:00:00') < HOY;
+  return `<li class="${past?'past':''}"><span class="nm">${esc(g.nombre)}<span class="bk">${esc(g.banco)}${g.desarrollo?' · '+esc(g.desarrollo):''}${g.n>1?' · '+g.n+' disposiciones':''}</span></span>
+    <span class="dt">${fdate(g.vence)}${past?' ⚑':''}</span><span class="amt">${f1(g.saldo)}</span></li>`;
+}).join('') || '<li><span class="nm" style="color:var(--ink-3)">Nada vence en los próximos 12 meses.</span></li>';
+$('vFoot').innerHTML = `<span>Total — ${soonRaw.length} créditos</span><span class="amt">${f1(SOON_TOT)}</span>`;
+
+/* ---- filtros + detalle ---- */
+const FILTERS = [
+  {key:'banco', label:'Banco', vals:bancos.map(b=>b.name)},
+  {key:'cat',   label:'Clasificación', vals:CATS},
+  {key:'desarrollo', label:'Desarrollo', vals:dest.map(d=>d.name)},
+];
+let active = {banco:null, cat:null, desarrollo:null};
+let sortK='saldo', sortDir='desc';
+$('filters').innerHTML = FILTERS.map(f=>`<div class="fgroup"><span class="flab">${f.label}</span>
+  ${f.vals.map(v=>`<button class="rr-chip" type="button" data-key="${f.key}" data-val="${esc(v)}" aria-pressed="false">${esc(v)}</button>`).join('')}</div>`).join('')
+  + `<button class="rr-ghost" type="button" id="rr-clearF">Limpiar</button>`;
+$('filters').addEventListener('click', e=>{
+  const b = e.target.closest('.rr-chip');
+  if (b){ setFilter(b.dataset.key, active[b.dataset.key]===b.dataset.val ? null : b.dataset.val); return; }
+  if (e.target.id==='rr-clearF'){ active={banco:null,cat:null,desarrollo:null}; render(); }
+});
+function setFilter(key,val){ active[key]=val; render(); $('tbl').scrollIntoView({behavior:'smooth', block:'center'}); }
+RR.querySelectorAll('th.sortable').forEach(th=>{
+  th.tabIndex=0;
+  const go=()=>{ const k=th.dataset.k;
+    if (sortK===k) sortDir = sortDir==='asc'?'desc':'asc';
+    else { sortK=k; sortDir = ['saldo','porEjercer','sobretasa','avance'].includes(k)?'desc':'asc'; }
+    render(); };
+  th.addEventListener('click',go);
+  th.addEventListener('keydown',e=>{ if(e.key==='Enter'||e.key===' '){e.preventDefault();go();} });
+});
+function render(){
+  RR.querySelectorAll('.rr-chip').forEach(c=>c.setAttribute('aria-pressed', String(active[c.dataset.key]===c.dataset.val)));
+  RR.querySelectorAll('th.sortable').forEach(th=> th.dataset.dir = th.dataset.k===sortK ? sortDir : '');
+  let rows = C.filter(c=> (!active.banco || c.banco===active.banco) && (!active.cat || c.cat===active.cat) && (!active.desarrollo || c.desarrollo===active.desarrollo));
+  rows = rows.slice().sort((a,b)=>{
+    let x=a[sortK], y=b[sortK];
+    if (x==null) x = typeof y==='number' ? -1 : '';
+    if (y==null) y = typeof x==='number' ? -1 : '';
+    const r = typeof x==='number' ? x-y : String(x).localeCompare(String(y),'es');
+    return sortDir==='asc' ? r : -r;
+  });
+  $('tbody').innerHTML = rows.map(c=>{
+    const past = c.vence && new Date(c.vence+'T00:00:00') <= CUT12;
+    return `<tr><td>${esc(c.credito)}</td><td>${esc(c.banco)}</td><td>${esc(c.linea)}</td><td>${esc(c.desarrollo)}</td>
+      <td><span class="rr-tag ${CK[c.cat]}">${c.cat}</span></td>
+      <td class="r${past?' mrk':''}">${c.vence?fdate(c.vence):'—'}</td>
+      <td class="r">${f1(c.saldo)}</td><td class="r">${c.porEjercer>0?f1(c.porEjercer):'—'}</td>
+      <td class="r">${c.sobretasa!=null?'+'+(c.sobretasa*100).toFixed(2)+'%':'—'}</td>
+      <td class="r">${c.avance!=null?pct(c.avance):'—'}</td></tr>`;
+  }).join('') || `<tr><td colspan="10" style="color:var(--ink-3)">Ningún crédito coincide con los filtros.</td></tr>`;
+  const s=sum(rows), pe=sum(rows,c=>c.porEjercer);
+  $('tfoot').innerHTML = `<tr><td colspan="6">Total — ${rows.length} crédito${rows.length===1?'':'s'}</td><td class="r">${f1(s)}</td><td class="r">${pe>0?f1(pe):'—'}</td><td colspan="2"></td></tr>`;
+  $('detNote').textContent = `${f1(s)} mdp de ${f1(TOTAL)} mdp (${pct(s/TOTAL)}). Los vencimientos dentro de 12 meses aparecen en rojo.`;
+}
+render();
+
+/* ---- notas del corte (derivadas de los datos) ---- */
+const sobByBank = bancos.map(b=>`${esc(b.name)} <span class="rr-num">${b.sob}</span>`).join(', ');
+const shared = capRows.filter(r=>r.shared).map(r=>{
+  const puPart = sum(C.filter(c=>c.banco===r.banco && c.linea===r.linea && c.cat==='Puentes'));
+  return `<b>Línea ${esc(r.banco)}.</b> Los <span class="rr-num">${f1(r.drawnAll)} mdp</span> están dispuestos ${r.drawnAll>=r.aut-1?'en su totalidad ':''}y la línea es compartida: <span class="rr-num">${f1(puPart)} mdp</span> en infraestructura de proyecto (Puentes) y <span class="rr-num">${f1(r.drawnAll-puPart)} mdp</span> en Corporativo (No-Puentes).`;
+});
+const notes = [
+  `<b>Fuente.</b> <span class="rr-num">${esc({{ rd.archivo | tojson }})}</span>, pestaña «deuda con costo». Los ${C.length} créditos se leen a nivel de disposición y el total cuadra contra el que declara el propio archivo.`,
+  `<b>Clasificación.</b> «Puentes» son los créditos garantizados con el terreno del propio proyecto —puentes de construcción, el crédito de tierra de Azhala en BANREGIO y la porción de infraestructura de Cúspide en BanBajío—. «No-Puentes» son las líneas corporativas: CCC 55, los tres simples de BBVA, la línea 48 de BanCrea y la porción corporativa de BanBajío. Es la misma clasificación de la lámina 21 del reporte a MAQUINA.`,
+  `<b>La holgura No-Puentes no es disponibilidad.</b> Entre la capacidad autorizada (<span class="rr-num">${f1(CAP_TOT)} mdp</span>) y lo dispuesto sobre esas líneas (<span class="rr-num">${f1(CAP_DRAWN)} mdp</span>) hay <span class="rr-num">${f1(CAP_TOT-CAP_DRAWN)} mdp</span> de diferencia, pero solo <span class="rr-num">${f1(FREE_TOT)} mdp</span> pueden volver a disponerse. Los <span class="rr-num">${f1(TERM_TOT)} mdp</span> restantes son amortizaciones de créditos simples, que no se redisponen.` +
+    (CAP_DRAWN > NP+1 ? ` Nota: lo dispuesto (<span class="rr-num">${f1(CAP_DRAWN)} mdp</span>) excede el saldo No-Puentes (<span class="rr-num">${f1(NP)} mdp</span>) porque la porción de infraestructura de la línea compartida se clasifica como Puentes.` : ''),
+  vencidos.length ? `<b>Vencimientos rebasados.</b> ${vencidos.map(g=>`${esc(g.nombre)} (${esc(g.banco)}) venció el <span class="rr-num">${fdate(g.vence)}</span> con <span class="rr-num">${f1(g.saldo)} mdp</span>`).join('; ')}. En conjunto son <span class="rr-num">${f1(VENCIDO_TOT)} mdp</span>, el <span class="rr-num">${pct(VENCIDO_TOT/TOTAL)}</span> del saldo.` : null,
+  ...shared,
+  `<b>Sobretasas.</b> Tomadas de la columna «Sobretasa Autorizada» del archivo, sin redondear: ${sobByBank}.`,
+  `<b>Pestaña «Resumen AAA» no actualizada.</b> Lleva más de dos años sin refrescarse (todavía lista a ION entre los acreedores) y sus ratios no corresponden a este corte. Se excluye del tablero a propósito.`,
+].filter(Boolean);
+$('notesList').innerHTML = notes.map(t=>`<li>${t}</li>`).join('');
+
+/* ===================== HISTÓRICO ===================== */
+const PAL = ['--pu','--np','--s3','--s4','--s5','--s6','--s7','--s8'];
+const cvar = n => getComputedStyle(RR).getPropertyValue(n).trim();
+const S0 = S[0], SN = S[S.length-1];
+const pico = S.reduce((a,x)=> x.t>a.t ? x : a, S[0]);
+const mixP = x => (x.c['Puentes']||0) / x.t * 100;
+const bancosHist = [...new Set(S.flatMap(x=>Object.keys(x.b)))];
+const nBancos = x => Object.keys(x.b).length;
+const ult = b => S.filter(x=>x.b[b]).slice(-1)[0];
+const pri = b => S.filter(x=>x.b[b])[0];
+const salieron = bancosHist.filter(b=> ult(b).f < SN.f);
+const entraron = bancosHist.filter(b=> pri(b).f > S0.f);
+const meses = (a,b) => Math.round((tms(b)-tms(a))/864e5/30.4);
+
+function etiquetasAnio(X, y, minSep){
+  const vistos=new Map();
+  S.forEach(x=>{ const a=x.f.slice(0,4); if(!vistos.has(a)) vistos.set(a, X(x.f)); });
+  const cand=[...vistos.entries()]; const keep=[]; let ultimo=Infinity;
+  for(let i=cand.length-1;i>=0;i--){ const [a,px]=cand[i]; if (ultimo-px >= (minSep||46)){ keep.push(`<text class="axl x" x="${px.toFixed(1)}" y="${y}">${a}</text>`); ultimo=px; } }
+  return keep.join('');
+}
+
+/* ---- KPIs históricos ---- */
+const dTot = SN.t - S0.t, dNP = (SN.c['No-Puentes']||0) - (S0.c['No-Puentes']||0);
+const npMax = Math.max(...S.map(x=>x.c['No-Puentes']||0));
+const sob0 = S0.s, sobN = SN.s;
+$('hkpis').innerHTML = [
+  {lab:'Saldo deudor hoy', val:fx(SN.t), unit:'mdp', sub:`${dTot>=0?'+':'−'}${fx(Math.abs(dTot))} mdp (${dTot>=0?'+':'−'}${Math.abs(dTot/S0.t*100).toFixed(1)}%) desde ${lbl(S0.f)}`},
+  {lab:'Máximo del periodo', val:fx(pico.t), unit:'mdp', sub:`${lbl(pico.f)} · ${fx(pico.t-SN.t)} mdp por encima de hoy`},
+  {lab:'Mezcla puentes', val:mixP(SN).toFixed(1), unit:'%', cls:'pu', sub:`desde ${mixP(S0).toFixed(1)}% en ${lbl(S0.f)} · ${mixP(SN)-mixP(S0)>=0?'+':'−'}${Math.abs(mixP(SN)-mixP(S0)).toFixed(1)} pp`},
+  {lab:'Deuda No-Puentes', val:fx(SN.c['No-Puentes']||0), unit:'mdp', cls:'np', sub:`−${fx(npMax-(SN.c['No-Puentes']||0))} mdp desde el máximo de ${fx(npMax)} · ${dNP>=0?'+':'−'}${fx(Math.abs(dNP))} vs ${lbl(S0.f)}`},
+  {lab:'Acreedores', val:String(nBancos(SN)), unit:'', sub:`de ${Math.max(...S.map(nBancos))} en el punto más alto${salieron.length?' · salieron '+salieron.join(' y '):''}`},
+  {lab:'Sobretasa ponderada', val:sobN!=null?'+'+sobN.toFixed(2):'—', unit:'%', cls:'rate', sub:(sob0!=null&&sobN!=null) ? (Math.abs(sobN-sob0)<0.05 ? `prácticamente sin cambio desde +${sob0.toFixed(2)}% en ${lbl(S0.f)}` : `desde +${sob0.toFixed(2)}% en ${lbl(S0.f)}`) : ''},
+].map(kpiHTML).join('');
+$('hRange').textContent = `${S.length} cortes entre el ${lbl(S0.f)} y el ${lbl(SN.f)}. Pasa el cursor para ver cualquier corte.`;
+$('bancoNote').textContent = `RANMAN ${nBancos(SN)<Math.max(...S.map(nBancos))?'pasó de '+Math.max(...S.map(nBancos))+' acreedores a '+nBancos(SN):'mantiene '+nBancos(SN)+' acreedores'}.` +
+  (salieron.length||entraron.length ? ' Las líneas punteadas marcan '+[...salieron.map(b=>'la salida de '+b), ...entraron.map(b=>'la entrada de '+b)].join(', ')+'.' : '');
+
+/* ---- gráfica de área apilada (SVG) ---- */
+function areaChart(host, series, opts){
+  const W=1000, H=opts.h||260, ML=46, MR=10, MT=12, MB=26, iw=W-ML-MR, ih=H-MT-MB;
+  const t0=tms(S0.f), t1=tms(SN.f) || t0+1;
+  const X = f => ML + (tms(f)-t0)/((t1-t0)||1)*iw;
+  const totals = S.map((_,i)=> series.reduce((a,s)=>a+s.vals[i],0));
+  const ymax = opts.ymax || Math.max(...totals)*1.06 || 1;
+  const Y = v => MT + ih - v/ymax*ih;
+  const step = ymax>800?250:(ymax>400?100:50);
+  let grid='', ylab='';
+  for(let v=0; v<=ymax; v+=step){
+    grid += `<line class="gl" x1="${ML}" y1="${Y(v).toFixed(1)}" x2="${W-MR}" y2="${Y(v).toFixed(1)}"/>`;
+    ylab += `<text class="axl y" x="${ML-7}" y="${(Y(v)+3.5).toFixed(1)}">${v.toLocaleString('es-MX')}</text>`;
+  }
+  const xlab = etiquetasAnio(X, H-8);
+  let paths='', acc=S.map(()=>0);
+  series.forEach(s=>{
+    const top=[], bot=[];
+    S.forEach((x,i)=>{ bot.push([X(x.f), Y(acc[i])]); acc[i]+=s.vals[i]; top.push([X(x.f), Y(acc[i])]); });
+    const d = 'M'+top.map(p=>p[0].toFixed(1)+' '+p[1].toFixed(1)).join('L') + 'L'+bot.reverse().map(p=>p[0].toFixed(1)+' '+p[1].toFixed(1)).join('L')+'Z';
+    paths += `<path d="${d}" fill="${cvar(s.color)}" opacity="${opts.flat?1:.88}"/>`;
+  });
+  if (opts.totalLine) paths += `<path class="tline" d="M${S.map((x,i)=>X(x.f).toFixed(1)+' '+Y(totals[i]).toFixed(1)).join('L')}"/>`;
+  let evts='';
+  (opts.events||[]).filter(e=>e && e.f).forEach(e=>{
+    evts += `<line class="evt" x1="${X(e.f).toFixed(1)}" y1="${MT}" x2="${X(e.f).toFixed(1)}" y2="${MT+ih}"/><text class="evtl" x="${(X(e.f)+4).toFixed(1)}" y="${MT+11}">${esc(e.t)}</text>`;
+  });
+  host.innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(opts.aria||'serie histórica')}">
+    ${grid}${paths}${evts}${ylab}${xlab}
+    <line class="cross" x1="0" y1="${MT}" x2="0" y2="${MT+ih}"/><circle class="mk" r="4"/>
+    <rect class="hit" x="${ML}" y="${MT}" width="${iw}" height="${ih}"/></svg>`;
+  const svg=host.querySelector('svg'), hit=host.querySelector('.hit'), cx=host.querySelector('.cross'), mk=host.querySelector('.mk');
+  hit.addEventListener('mousemove', ev=>{
+    const r=svg.getBoundingClientRect(); const px=(ev.clientX-r.left)/r.width*W;
+    let bi=0, bd=Infinity; S.forEach((x,i)=>{ const d=Math.abs(X(x.f)-px); if(d<bd){bd=d;bi=i;} });
+    const x=S[bi];
+    cx.setAttribute('x1',X(x.f)); cx.setAttribute('x2',X(x.f)); cx.style.opacity=.7;
+    mk.setAttribute('cx',X(x.f)); mk.setAttribute('cy',Y(totals[bi])); mk.setAttribute('stroke',cvar('--ink')); mk.style.opacity=1;
+    const rows = series.map(s=>[s.name, fx(s.vals[bi])+' mdp']).filter((r,k)=> series[k].vals[bi]>0.05).reverse();
+    showTip(ev, lbl(x.f), [...rows, ['Total', fx(totals[bi])+' mdp']]);
+  });
+  hit.addEventListener('mouseleave', ()=>{ cx.style.opacity=0; mk.style.opacity=0; hideTip(); });
+}
+
+/* ---- deuda No-Puentes: pico, composición y ritmo de pago ---- */
+const npT = x => x.c['No-Puentes']||0, npA = x => x.np['Amortizable']||0, npR = x => x.np['Revolvente']||0;
+const npPico = S.reduce((a,x)=> npT(x)>npT(a) ? x : a, S[0]);
+const hace12 = S.filter(x=> tms(x.f) <= tms(SN.f)-365*864e5).slice(-1)[0] || S0;
+$('npKpis').innerHTML = [
+  {lab:'Máximo del periodo', val:fx(npT(npPico)), unit:'mdp', sub:lbl(npPico.f)},
+  {lab:'Hoy', val:fx(npT(SN)), unit:'mdp', sub:`${(npT(SN)/SN.t*100).toFixed(1)}% del saldo total`},
+  {lab:'Desde el máximo', val:'−'+fx(npT(npPico)-npT(SN)), unit:'mdp', cls:'np', sub:`${((npT(SN)/npT(npPico)-1)*100).toFixed(1)}% en ${meses(npPico.f, SN.f)} meses`},
+  {lab:'Amortizado en 12 meses', val:(npA(hace12)-npA(SN)>=0?'−':'+')+fx(Math.abs(npA(hace12)-npA(SN))), unit:'mdp', sub:'baja de los créditos simples, que ya no se redisponen'},
+  {lab:'Revolvente pagado en 12 meses', val:(npR(hace12)-npR(SN)>=0?'−':'+')+fx(Math.abs(npR(hace12)-npR(SN))), unit:'mdp', cls:'rev', sub:'puede volver a disponerse en cualquier momento'},
+].map(kpiHTML).join('');
+const bajaTot = npT(npPico)-npT(SN), bajaRev = npR(npPico)-npR(SN), bajaAm = npA(npPico)-npA(SN);
+const mesesTot = meses(S0.f, SN.f);
+$('npFoot').innerHTML =
+  `<span class="big">${bajaTot>0 ? (bajaRev/bajaTot>0.5 ? 'Sí se está pagando, pero casi todo es reversible' : 'Sí se está pagando') : 'No ha bajado desde el máximo'}</span>` +
+  `Desde el máximo del <b>${lbl(npPico.f)}</b> la deuda No-Puentes ${bajaTot>=0?'bajó':'subió'} <b class="rr-num">${fx(Math.abs(bajaTot))} mdp</b>. ` +
+  `De esa variación, <b class="rr-num">${fx(bajaRev)} mdp</b> son líneas revolventes y <b class="rr-num">${fx(bajaAm)} mdp</b> amortización de créditos simples. ` +
+  `Lo revolvente se puede volver a disponer, así que ese avance no está asegurado.<br><br>` +
+  `Visto a ${mesesTot} meses: los créditos simples pasaron de <b class="rr-num">${fx(npA(S0))}</b> a <b class="rr-num">${fx(npA(SN))} mdp</b> ` +
+  `(<b class="rr-num">${npA(S0)-npA(SN)>=0?'−':'+'}${fx(Math.abs(npA(S0)-npA(SN)))} mdp</b> que ya no regresan), mientras lo revolvente pasó de ` +
+  `<span class="rr-num">${fx(npR(S0))}</span> a <span class="rr-num">${fx(npR(SN))} mdp</span>. ` +
+  (mesesTot>0 ? `El bloque amortizable avanza a un ritmo de alrededor de <b class="rr-num">${fx((npA(S0)-npA(SN))/mesesTot)} mdp al mes</b>.` : '');
+
+/* ---- series por institución y por desarrollo ---- */
+const ordenBanco = ['BBVA','BANREGIO','BanCrea','BanBajío','SANTANDER','ION'];
+const bList = [...ordenBanco.filter(b=>bancosHist.includes(b)), ...bancosHist.filter(b=>!ordenBanco.includes(b))];
+const bSeries = bList.map((b,i)=>({name:b, color:PAL[i%PAL.length], vals:S.map(x=>x.b[b]||0)}));
+const desaTot = {};
+S.forEach(x=> Object.entries(x.d).forEach(([k,v])=> desaTot[k]=Math.max(desaTot[k]||0, v)));
+const topD = Object.entries(desaTot).sort((a,b)=>b[1]-a[1]).slice(0,7).map(e=>e[0]);
+const dSeries = topD.map((d,i)=>({name:d, color:PAL[i], vals:S.map(x=>x.d[d]||0)}));
+const otros = S.map(x=>Object.entries(x.d).filter(([k])=>!topD.includes(k)).reduce((a,[,v])=>a+v,0));
+if (otros.some(v=>v>0)) dSeries.push({name:'Otros', color:PAL[7], vals:otros});
+const primerCorte = n => S.find(x=>x.d[n]>0);
+const nuevosDesa = topD.filter(d=> !(S0.d[d]>0)).map(d=>({f:primerCorte(d).f, t:d})).slice(0,3);
+const swatches = ser => ser.map(s=>`<span><i class="rr-sw" style="background:var(${s.color})"></i>${esc(s.name)}</span>`).join('');
+$('lgBanco').innerHTML = swatches(bSeries);
+$('lgDesa').innerHTML  = swatches(dSeries);
+
+function drawSob(){
+  const host=$('chSob');
+  const pts=S.filter(x=>x.s!=null);
+  if (pts.length<2){ host.innerHTML=''; $('sobFoot').innerHTML=''; return; }
+  const W=1000,H=210,ML=52,MR=10,MT=14,MB=26, iw=W-ML-MR, ih=H-MT-MB;
+  const t0=tms(S0.f), t1=tms(SN.f);
+  const vs=pts.map(x=>x.s);
+  const lo=Math.floor(Math.min(...vs)*20)/20-0.05, hi=Math.ceil(Math.max(...vs)*20)/20+0.05;
+  const X=f=>ML+(tms(f)-t0)/((t1-t0)||1)*iw, Y=v=>MT+ih-(v-lo)/((hi-lo)||1)*ih;
+  let grid='',ylab='';
+  for(let v=lo; v<=hi+1e-9; v+=0.1){
+    grid+=`<line class="gl" x1="${ML}" y1="${Y(v).toFixed(1)}" x2="${W-MR}" y2="${Y(v).toFixed(1)}"/>`;
+    ylab+=`<text class="axl y" x="${ML-6}" y="${(Y(v)+3.5).toFixed(1)}">+${v.toFixed(2)}%</text>`;
+  }
+  const xlab = etiquetasAnio(X, H-8);
+  const d='M'+pts.map(x=>X(x.f).toFixed(1)+' '+Y(x.s).toFixed(1)).join('L');
+  const dArea=d+`L${X(pts[pts.length-1].f).toFixed(1)} ${MT+ih}L${X(pts[0].f).toFixed(1)} ${MT+ih}Z`;
+  const last=pts[pts.length-1];
+  host.innerHTML=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Sobretasa ponderada sobre TIIE a lo largo del tiempo">
+    ${grid}<path class="sparkfill" d="${dArea}" fill="${cvar('--pu')}" opacity=".13"/><path class="sparkline" d="${d}" stroke="${cvar('--pu')}"/>
+    <circle cx="${X(last.f).toFixed(1)}" cy="${Y(last.s).toFixed(1)}" r="3.5" fill="${cvar('--pu')}" stroke="${cvar('--surface')}" stroke-width="2"/>
+    ${ylab}${xlab}<line class="cross" x1="0" y1="${MT}" x2="0" y2="${MT+ih}"/><rect class="hit" x="${ML}" y="${MT}" width="${iw}" height="${ih}"/></svg>`;
+  const svg=host.querySelector('svg'), hit=host.querySelector('.hit'), cx=host.querySelector('.cross');
+  hit.addEventListener('mousemove', ev=>{
+    const r=svg.getBoundingClientRect(), px=(ev.clientX-r.left)/r.width*W;
+    let b=pts[0], bd=Infinity; pts.forEach(x=>{const dd=Math.abs(X(x.f)-px); if(dd<bd){bd=dd;b=x;}});
+    cx.setAttribute('x1',X(b.f)); cx.setAttribute('x2',X(b.f)); cx.style.opacity=.7;
+    showTip(ev, lbl(b.f), [['Sobretasa','+'+b.s.toFixed(2)+'%'],['Saldo', fx(b.t)+' mdp']]);
+  });
+  hit.addEventListener('mouseleave', ()=>{cx.style.opacity=0; hideTip();});
+  const mn=Math.min(...vs), mx=Math.max(...vs);
+  $('sobFoot').innerHTML = `<span class="big">+${last.s.toFixed(2)}% sobre TIIE</span>` +
+    `En ${mesesTot} meses la sobretasa ponderada se movió entre <b class="rr-num">+${mn.toFixed(2)}%</b> y <b class="rr-num">+${mx.toFixed(2)}%</b>: ` +
+    `un rango de <b class="rr-num">${((mx-mn)*100).toFixed(0)} puntos base</b>. El costo relativo de la deuda ${((mx-mn)*100)<25?'no cambió':'se movió'} mientras el saldo ${dTot>=0?'crecía':'bajaba'} ` +
+    `<b class="rr-num">${Math.abs(dTot/S0.t*100).toFixed(0)}%</b>${salieron.length?' y salían '+salieron.length+' acreedor'+(salieron.length>1?'es':''):''}.`;
+}
+
+function drawHistCharts(){
+  areaChart($('chMix'), [
+    {name:'No-Puentes', color:'--np', vals:S.map(x=>x.c['No-Puentes']||0)},
+    {name:'Puentes de proyecto', color:'--pu', vals:S.map(x=>x.c['Puentes']||0)},
+  ], {h:280, totalLine:true, aria:'Saldo deudor total dividido entre puentes de proyecto y líneas No-Puentes', events:[{f:pico.f, t:'máximo'}]});
+  areaChart($('chNP'), [
+    {name:'Créditos simples (amortizables)', color:'--np', vals:S.map(npA)},
+    {name:'Líneas revolventes', color:'--s7', vals:S.map(npR)},
+  ], {h:250, totalLine:true, aria:'Deuda No-Puentes, separada entre créditos simples amortizables y líneas revolventes', events:[{f:npPico.f, t:'máximo '+fx(npT(npPico))}]});
+  areaChart($('chBanco'), bSeries, {h:260, aria:'Saldo deudor por institución a lo largo del tiempo',
+    events:[...salieron.map(b=>({f:ult(b).f, t:'sale '+b})), ...entraron.map(b=>({f:pri(b).f, t:'entra '+b}))]});
+  drawSob();
+  areaChart($('chDesa'), dSeries, {h:280, aria:'Saldo deudor por desarrollo a lo largo del tiempo', events:nuevosDesa});
+}
+drawHistCharts();
+// redraw when the dashboard theme flips (SVG colours are fixed at draw time)
+new MutationObserver(drawHistCharts).observe(document.documentElement, {attributes:true, attributeFilter:['data-theme']});
+if (window.matchMedia) matchMedia('(prefers-color-scheme: dark)').addEventListener('change', drawHistCharts);
+
+/* ---- tabla de fin de mes ---- */
+const finMes = S.filter((x,i)=> i===S.length-1 || S[i+1].f.slice(0,7)!==x.f.slice(0,7));
+const dlt = (a,b)=>{ if (b==null) return '<span class="flat">—</span>'; const v=a-b;
+  if (Math.abs(v)<0.05) return '<span class="flat">0.0</span>';
+  return `<span class="${v>0?'up':'dn'}">${v>0?'+':'−'}${fx(Math.abs(v))}</span>`; };
+$('histTable').innerHTML =
+  `<thead><tr><th>Corte</th><th>Saldo</th><th>Δ mes</th><th>Puentes</th><th>No-Puentes</th><th>% Puentes</th><th>Por ejercer</th><th>Vence 12m</th><th>Créditos</th></tr></thead><tbody>` +
+  finMes.slice().reverse().map((x,ri,arr)=>{ const prev = arr[ri+1];
+    return `<tr><td>${lbl(x.f)}</td><td>${fx(x.t)}</td><td>${dlt(x.t, prev?prev.t:null)}</td><td>${fx(x.c['Puentes']||0)}</td><td>${fx(x.c['No-Puentes']||0)}</td>
+      <td>${mixP(x).toFixed(1)}%</td><td>${fx(x.pe)}</td><td>${fx(x.v)}</td><td>${x.n}</td></tr>`; }).join('') + '</tbody>';
+// months with no file at all (gaps), for the note
+const faltan=[]; { const d=new Date(S0.f+'T00:00:00'); const end=new Date(SN.f+'T00:00:00'); const have=new Set(S.map(x=>x.f.slice(0,7)));
+  while (d<=end){ const k=d.toISOString().slice(0,7); if(!have.has(k)) faltan.push(MES[d.getMonth()]+' '+d.getFullYear()); d.setMonth(d.getMonth()+1); } }
+$('fmNote').textContent = 'Último corte de cada mes, con la variación contra el mes anterior.' + (faltan.length ? ' Sin archivo: '+faltan.join(', ')+'.' : '');
+
+/* ---- notas del histórico ---- */
+$('hNotes').innerHTML = [
+  `<b>Cobertura.</b> <span class="rr-num">${S.length}</span> cortes, del <span class="rr-num">${lbl(S0.f)}</span> al <span class="rr-num">${lbl(SN.f)}</span>, leídos de los archivos «Cuadro de riesgos Ranman» de la carpeta Archivos Ranman. Cuando dos archivos traen la misma fecha se conserva uno solo.`,
+  `<b>Validación.</b> Cada archivo se parseó a nivel de disposición y se cuadró contra el total que el propio archivo declara en la pestaña «deuda con costo»; los que no cuadran no se importan.`,
+  faltan.length ? `<b>Huecos en la serie.</b> No hay archivo de ${faltan.join(', ')}. El eje respeta el tiempo real, así que esos huecos se ven como tramos más largos entre puntos, no como continuidad.` : null,
+  `<b>Clasificación homogénea.</b> Puentes y No-Puentes se aplican con la misma regla de la lámina 21 a los ${S.length} cortes, no con la clasificación que cada archivo traía. Así la serie es comparable de punta a punta.`,
+  (salieron.length||entraron.length) ? `<b>Acreedores que cambiaron.</b> ${salieron.map(b=>`${b} aparece por última vez el <span class="rr-num">${lbl(ult(b).f)}</span>`).join('; ')}${salieron.length&&entraron.length?'. ':''}${entraron.map(b=>`${b} entra el <span class="rr-num">${lbl(pri(b).f)}</span>`).join('; ')}.` : null,
+].filter(Boolean).map(t=>`<li>${t}</li>`).join('');
+})();
+</script>

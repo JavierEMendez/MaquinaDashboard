@@ -750,8 +750,10 @@ def _jl(v):
 
 
 def load_ranman_debt():
-    """History + latest corte of RANMAN's debt with cost, or None when nothing
-    has been loaded. Amounts stay in thousands of MXN; the template shows mdp."""
+    """RANMAN's debt with cost — history + latest corte — in the exact shapes
+    Valoran's tablero renders from: C = credits of the latest corte (thousands
+    of MXN, as stored) and S = one compact record per corte in mdp. None when
+    nothing has been loaded."""
     try:
         rows = db.ranman_cortes()
         last = db.ranman_latest_corte()
@@ -760,59 +762,29 @@ def load_ranman_debt():
         return None
     if not rows or not last:
         return None
-    serie = []
+    k = lambda d: {kk: round((vv or 0) / 1000.0, 2) for kk, vv in (d or {}).items()}
+    S = []
     for r in rows:
         rec = _jl(r["record"]) or {}
-        cat = rec.get("cat") or {}
-        npd = rec.get("np") or {}
-        serie.append(dict(
-            fecha=str(r["fecha"])[:10], total=rec.get("total") or 0.0,
-            puentes=cat.get("Puentes", 0.0), no_puentes=cat.get("No-Puentes", 0.0),
-            amort=npd.get("Amortizable", 0.0), revolv=npd.get("Revolvente", 0.0),
-            vence12=rec.get("vence12") or 0.0, sobretasa=rec.get("sobretasaPond"),
-            por_ejercer=rec.get("porEjercer") or 0.0, n=rec.get("n") or 0))
+        sob = rec.get("sobretasaPond")
+        S.append(dict(
+            f=str(r["fecha"])[:10], t=round((rec.get("total") or 0) / 1000.0, 2), n=rec.get("n") or 0,
+            c=k(rec.get("cat")), b=k(rec.get("banco")), d=k(rec.get("desarrollo")), l=k(rec.get("linea")),
+            np=k(rec.get("np")), pe=round((rec.get("porEjercer") or 0) / 1000.0, 2),
+            s=(round(sob * 100.0, 3) if sob is not None else None),
+            v=round((rec.get("vence12") or 0) / 1000.0, 2)))
     latest = _jl(last["record"]) or {}
-    creditos = _jl(last["creditos"]) or []
-    first, cur = serie[0], serie[-1]
-    # insights, mirroring the tablero's README reading of the book
-    d0 = datetime.date.fromisoformat(first["fecha"]); d1 = datetime.date.fromisoformat(cur["fecha"])
-    months = (d1.year - d0.year) * 12 + (d1.month - d0.month)
-    peak = max(serie, key=lambda x: x["no_puentes"])
-    lineas = latest.get("linea") or {}
-    authorized = 0.0; redisp = 0.0
-    for ln, saldo in lineas.items():
-        m = re.search(r"(\d+(?:\.\d+)?)\s*mdp", ln)
-        auth = float(m.group(1)) * 1000 if m else saldo          # unknown size -> treat as fully drawn
-        authorized += auth
-        if ln in ranman_deuda_parser.REVOLVING_AUTHORIZED_MDP:
-            redisp += max(0.0, ranman_deuda_parser.REVOLVING_AUTHORIZED_MDP[ln] * 1000 - saldo)
-    insights = dict(
-        months=months, growth_pct=(cur["total"] / first["total"] - 1) if first["total"] else None,
-        puentes_share_first=(first["puentes"] / first["total"]) if first["total"] else None,
-        puentes_share_last=(cur["puentes"] / cur["total"]) if cur["total"] else None,
-        np_change=cur["no_puentes"] - first["no_puentes"],
-        np_peak=peak["no_puentes"], np_peak_fecha=peak["fecha"],
-        np_from_peak=cur["no_puentes"] - peak["no_puentes"],
-        revolv_from_peak=cur["revolv"] - peak["revolv"], amort_from_peak=cur["amort"] - peak["amort"],
-        vence12_pct=(cur["vence12"] / cur["total"]) if cur["total"] else None,
-        np_authorized=authorized, np_redisponible=redisp,
-    )
-    # credit rows grouped for the table: Puentes first, then No-Puentes; by bank, biggest first
-    creditos = sorted(creditos, key=lambda c: (c.get("cat") != "Puentes", c.get("banco") or "", -(c.get("saldo") or 0)))
-    corte12 = d1 + datetime.timedelta(days=365)
-    for c in creditos:
-        v = c.get("vence")
-        c["due12"] = bool(v) and datetime.date.fromisoformat(v) <= corte12
+    C = [dict(c) for c in (_jl(last["creditos"]) or []) if isinstance(c, dict)]
+    MESES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"]
+    def lbl(iso):
+        d = datetime.date.fromisoformat(iso)
+        return "%d %s %d" % (d.day, MESES[d.month - 1], d.year)
+    as_of = S[-1]["f"]
     ua = last.get("uploaded_at")
     return dict(
-        as_of=cur["fecha"], archivo=last.get("archivo"), n_cortes=len(serie), first=first["fecha"],
+        as_of=as_of, as_of_label=lbl(as_of), first=S[0]["f"], first_label=lbl(S[0]["f"]),
+        archivo=last.get("archivo") or "", n_cortes=len(S), latest=latest, C=C, S=S,
         uploaded_at=(ua.strftime("%Y-%m-%d %H:%M") if hasattr(ua, "strftime") else (str(ua)[:16] if ua else None)),
-        latest=latest, creditos=creditos, serie=serie, insights=insights,
-        banks=sorted((latest.get("banco") or {}).items(), key=lambda kv: -kv[1]),
-        desarrollos=sorted((latest.get("desarrollo") or {}).items(), key=lambda kv: -kv[1]),
-        lineas=sorted(lineas.items(), key=lambda kv: -kv[1]),
-        gaps=[(serie[i]["fecha"], serie[i + 1]["fecha"]) for i in range(len(serie) - 1)
-              if (datetime.date.fromisoformat(serie[i + 1]["fecha"]) - datetime.date.fromisoformat(serie[i]["fecha"])).days > 45],
     )
 
 
