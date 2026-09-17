@@ -92,7 +92,7 @@
     <div style="flex:1;min-width:0;position:relative;padding:14px 14px 28px 40px;">
       <div class="quadrant" id="quad">
         {% for c in comps %}
-        <div class="quadrant-dot" style="left:{{ (c.external/10*100)|round(1) }}%; bottom:{{ (c.internal/10*100)|round(1) }}%;" title="{{ c.name }} · ext {{ c.external }} / int {{ c.internal }}">
+        <div class="quadrant-dot{% if is_admin %} draggable{% endif %}" data-cid="{{ c.id }}" data-x="{{ c.external|round|int }}" data-y="{{ c.internal|round|int }}" style="left:{{ (c.external/10*100)|round(1) }}%; bottom:{{ (c.internal/10*100)|round(1) }}%;" title="{{ c.name }} · ext {{ '%g'|format(c.external) }} / int {{ '%g'|format(c.internal) }}">
           <span class="lbl">{{ c.name }}</span>
           <span class="dot" style="background:{{ c.accent }};"></span>
         </div>
@@ -108,10 +108,67 @@
       {% for c in comps %}
       <div class="row between" style="font-size:13px;padding:7px 0;border-bottom:1px solid var(--mq-line);">
         <span class="legend-left"><span class="legend-dot" style="background:{{ c.accent }};"></span>{{ c.name }}</span>
-        <span class="subtle tnum" style="font-size:12px;">int {{ c.internal }} · ext {{ c.external }}</span>
+        <span class="subtle tnum" style="font-size:12px;" id="ql-{{ c.id }}">int {{ '%g'|format(c.internal) }} · ext {{ '%g'|format(c.external) }}</span>
       </div>
       {% endfor %}
+      {% if is_admin %}
+      <form method="POST" action="{{ url_for('update_risk_quadrant') }}" id="quadForm" style="margin-top:12px;">
+        {% for c in comps %}<input type="hidden" name="int_{{ c.id }}" value="{{ c.internal|round|int }}"><input type="hidden" name="ext_{{ c.id }}" value="{{ c.external|round|int }}">{% endfor %}
+        <div class="subtle" style="font-size:11.5px;margin-bottom:8px;">Drag a dot to re-rate a company, then save.</div>
+        <button class="btn btn-primary btn-sm" type="submit" id="quadSave" disabled>Save positions</button>
+      </form>
+      {% endif %}
     </div>
   </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+{% if is_admin %}
+<style>.quadrant-dot.draggable{cursor:grab;touch-action:none;user-select:none;z-index:3}.quadrant-dot.draggable:hover .dot{transform:scale(1.15)}</style>
+<script>
+// ── Risk quadrant: drag a company dot to set external (x) / internal (y), 0–10, then save ──
+(function(){
+  const box = document.getElementById('quad'); if (!box) return;
+  const save = document.getElementById('quadSave');
+  let active = null;
+  const clamp = v => Math.max(0, Math.min(10, v));
+  function place(dot, x, y){
+    dot.dataset.x = x; dot.dataset.y = y;
+    dot.style.left = (x / 10 * 100) + '%';
+    dot.style.bottom = (y / 10 * 100) + '%';
+    const cid = dot.dataset.cid, name = dot.querySelector('.lbl').textContent;
+    dot.title = name + ' · ext ' + x + ' / int ' + y;
+    const lg = document.getElementById('ql-' + cid); if (lg) lg.textContent = 'int ' + y + ' · ext ' + x;
+    const fi = document.querySelector('input[name="int_' + cid + '"]'), fe = document.querySelector('input[name="ext_' + cid + '"]');
+    if (fi) fi.value = y;
+    if (fe) fe.value = x;
+    if (save) save.disabled = false;
+  }
+  function fromEvent(e){
+    const r = box.getBoundingClientRect();
+    return [clamp(Math.round((e.clientX - r.left) / r.width * 10)), clamp(Math.round((r.bottom - e.clientY) / r.height * 10))];
+  }
+  box.querySelectorAll('.quadrant-dot.draggable').forEach(dot => {
+    dot.addEventListener('pointerdown', e => {
+      active = dot; dot.setPointerCapture(e.pointerId);
+      dot.style.cursor = 'grabbing'; dot.style.zIndex = 9;
+      e.preventDefault();
+    });
+    dot.addEventListener('pointermove', e => {
+      if (active !== dot) return;
+      const [x, y] = fromEvent(e);
+      if (String(x) !== dot.dataset.x || String(y) !== dot.dataset.y) place(dot, x, y);
+    });
+    const end = e => {
+      if (active !== dot) return;
+      active = null; dot.style.cursor = 'grab'; dot.style.zIndex = 3;
+      try { dot.releasePointerCapture(e.pointerId); } catch (err) {}
+    };
+    dot.addEventListener('pointerup', end);
+    dot.addEventListener('pointercancel', end);
+  });
+})();
+</script>
+{% endif %}
 {% endblock %}

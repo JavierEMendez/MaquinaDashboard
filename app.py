@@ -1584,7 +1584,8 @@ def strategy():
             id=c["id"], slug=c["slug"], name=c["name"], accent=c["accent"], industry=c["industry"],
             has_logo=c["has_logo"], logo_ver=c["logo_ver"],
             takeover_year=c["takeover_year"],
-            internal=c["internal_risk"] or 5, external=c["external_risk"] or 5,
+            internal=(c["internal_risk"] if c["internal_risk"] is not None else 5),
+            external=(c["external_risk"] if c["external_risk"] is not None else 5),
             phase_name=cp["name"] if cp else "—",
             phase_order=cp["phase_order"] if cp else 0,
             phase_color=cp["color"] if cp else "#8A9199",
@@ -2381,6 +2382,41 @@ def _period_years(year, month):
         return None
     today = datetime.date.today()
     return max(0.0, (today.year * 12 + (today.month - 1) - mi) / 12.0)
+
+
+@app.route("/strategy/risk-quadrant", methods=["POST"])
+@login_required
+def update_risk_quadrant():
+    """Admin-only — the Risk Quadrant dots on /strategy, dragged and saved in
+    one go: fields int_<company_id> / ext_<company_id> (0–10). Touches ONLY the
+    two quadrant ratings; the per-category matrix values are left alone."""
+    if not session.get("is_admin"):
+        abort(403)
+    conn = db.get_db(); cur = conn.cursor()
+    cur.execute("SELECT id FROM companies")
+    valid = {r["id"] for r in cur.fetchall()}
+    n = 0
+    for key, raw in request.form.items():
+        if not key.startswith("int_"):
+            continue
+        try:
+            cid = int(key[4:])
+        except ValueError:
+            continue
+        if cid not in valid or ("ext_%d" % cid) not in request.form:
+            continue
+        internal = _rating(raw)
+        external = _rating(request.form.get("ext_%d" % cid))
+        cur.execute(
+            """INSERT INTO company_risks (company_id, internal_risk, external_risk)
+               VALUES (%s, %s, %s)
+               ON CONFLICT (company_id) DO UPDATE SET
+                 internal_risk = EXCLUDED.internal_risk, external_risk = EXCLUDED.external_risk""",
+            (cid, internal, external))
+        n += 1
+    conn.commit(); cur.close(); conn.close()
+    flash("Risk quadrant updated for %d compan%s." % (n, "y" if n == 1 else "ies") if n else "Nothing to save.", "ok" if n else "error")
+    return redirect(url_for("strategy"))
 
 
 def _exit_label(year, month, hold_years):
