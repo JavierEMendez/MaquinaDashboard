@@ -48,16 +48,10 @@
     <div class="divider"></div>
     <div class="row between" style="font-size:12.5px;"><span class="muted">Phase</span>
       <span class="badge" style="border-color:{{ c.phase_color }};color:{{ c.phase_color }};">{{ c.phase_name }}</span></div>
-    {% if c.phase_window %}
-    <div class="row between" style="font-size:12px;margin-top:8px;"><span class="muted">Timeline</span>
-      <span class="subtle tnum" style="font-weight:600;">{{ c.phase_window }}</span></div>
-    {% endif %}
+    <div class="row between" style="font-size:12px;margin-top:8px;"><span class="muted">Takeover / start</span>
+      <span class="subtle tnum" style="font-weight:600;">{{ c.takeover_label }}</span></div>
     <div class="row between" style="font-size:12.5px;margin-top:8px;"><span class="muted">Hold period</span>
       <span class="tnum" style="font-weight:600;{{ 'color:#D2452F;' if c.over_due }}">{{ '%.1f yrs'|format(c.hold_years) if c.hold_years is not none else '—' }}</span></div>
-    {% if c.proj %}
-    <div class="row between" style="font-size:12.5px;margin-top:8px;"><span class="muted">Proj. exit</span>
-      <span class="tnum" style="font-weight:600;color:var(--mq-accent);">{{ '%.2fx'|format(c.proj.moic) }}</span></div>
-    {% endif %}
   </a>
   {% endfor %}
 </div>
@@ -86,18 +80,6 @@
     {% for v in hold.vintages %}
     <span class="badge" title="{{ v.names | join(', ') }}">{{ v.year }} · {{ v.n }}</span>
     {% else %}<span class="subtle" style="font-size:12px;">No vintages recorded yet.</span>{% endfor %}
-  </div>
-</div>
-
-<div class="card mb-24">
-  <div class="card-head"><div>
-    <div class="card-title">Projected Exit Returns</div>
-    <div class="card-sub">Gross MOIC if each company is exited at its current valuation on its target-hold date.</div>
-  </div></div>
-  <div class="grid grid-3">
-    <div class="kpi"><div class="kpi-top"><span class="kpi-label">Blended MOIC</span></div><div class="kpi-value">{{ '%.2fx'|format(proj.moic) if proj.moic is not none else '—' }}</div><div class="kpi-foot"><span class="kpi-sub">(distributions + exit) / invested</span></div></div>
-    <div class="kpi"><div class="kpi-top"><span class="kpi-label">Projected Proceeds</span></div><div class="kpi-value">{{ proj.proceeds | money }}</div><div class="kpi-foot"><span class="kpi-sub">distributions + exit value</span></div></div>
-    <div class="kpi"><div class="kpi-top"><span class="kpi-label">Invested</span></div><div class="kpi-value">{{ proj.invested | money }}</div><div class="kpi-foot"><span class="kpi-sub">across {{ proj.n }} compan{{ 'y' if proj.n == 1 else 'ies' }}</span></div></div>
   </div>
 </div>
 

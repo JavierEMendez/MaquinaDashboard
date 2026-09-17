@@ -1589,6 +1589,7 @@ def strategy():
             phase_order=cp["phase_order"] if cp else 0,
             phase_color=cp["color"] if cp else "#8A9199",
             phase_window=phase_window.get(c["id"]),
+            takeover_label=_fmt_month(c["takeover_year"], c["takeover_month"]),   # takeover / start-up date
             hold_years=hold_years,
             vintage=c["hold_start_year"],
             target_hold=target,
