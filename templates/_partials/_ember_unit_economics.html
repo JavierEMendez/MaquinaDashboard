@@ -1,0 +1,368 @@
+{# EMBER · Unit Economics — every uploaded scenario of an entity side by side.
+   Port of EmberApps' Unit Economics page at entity level: where Ember compares
+   two scenarios at a time, this lays them all out against one baseline (the
+   entity's default unless another is picked). Data = `ue`, EmberApps'
+   view:unit_economics payload — each scenario's entity statement exactly as
+   Ember's page builds it (BVA-fed actuals, $/unit restated on each scenario's
+   own units), so nothing here re-derives a figure. Ids/classes namespaced ue-. #}
+<style>
+.ue .ue-controls{display:flex;flex-wrap:wrap;gap:14px 22px;align-items:flex-end;margin-bottom:18px}
+.ue .ue-ctl{display:flex;flex-direction:column;gap:6px;min-width:0}
+.ue .ue-ctl label.fld-label{margin:0}
+.ue .ue-ctl select.input{width:auto;min-width:200px;padding:7px 34px 7px 12px;font-size:13px}
+.ue .pillgroup{flex-wrap:wrap}
+.ue .pill small{font-weight:500;opacity:.75;margin-left:4px}
+.ue .ue-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:16px;margin-bottom:24px}
+.ue .ue-sc{cursor:pointer;min-height:0;gap:6px;transition:border-color .14s}
+.ue .ue-sc:hover{border-color:var(--mq-line-2)}
+.ue .ue-sc.is-base{border-color:var(--mq-accent);box-shadow:0 0 0 1px var(--mq-accent),var(--mq-shadow-card)}
+.ue .ue-sc .kpi-top{gap:8px;align-items:flex-start}
+.ue .ue-sc .kpi-label{color:var(--mq-ink-2);font-size:13px;font-weight:700;line-height:1.3}
+.ue .ue-sc .ue-badges{display:flex;gap:4px;flex-shrink:0}
+.ue .ue-sc .badge{font-size:10px;padding:2px 7px}
+.ue .ue-sc-cap{font-size:11px;color:var(--mq-subtle);text-transform:uppercase;letter-spacing:.06em;font-weight:600}
+.ue .ue-sc-line{font-size:12.5px;color:var(--mq-muted);font-variant-numeric:tabular-nums}
+.ue .ue-sc-line b{color:var(--mq-ink);font-weight:600}
+.ue .ue-sc-delta{font-size:12.5px;font-variant-numeric:tabular-nums;padding-top:6px;margin-top:2px;border-top:1px solid var(--mq-line)}
+.ue .ue-sc-delta .pos,.ue .ue-sc-delta .neg{font-weight:700}
+.ue .ue-table th.ue-sch{white-space:normal;min-width:118px;max-width:170px;vertical-align:bottom;line-height:1.3}
+.ue .ue-table th.ue-sch.is-base{color:var(--mq-accent)}
+.ue .ue-table th.ue-dh{color:var(--mq-subtle);font-weight:600;vertical-align:bottom;white-space:normal;min-width:96px;max-width:130px;line-height:1.3}
+.ue .ue-table td.ue-d{color:var(--mq-subtle)}
+.ue .ue-table td.ue-d.pos{color:var(--mq-good)}
+.ue .ue-table td.ue-d.neg{color:var(--mq-bad)}
+.ue .ue-table td.ue-v.neg{color:var(--mq-bad)}
+.ue .ue-table td.ue-v.pos{color:var(--mq-good)}
+.ue .ue-table td.ue-miss{color:var(--mq-subtle);opacity:.6}
+.ue .ue-table tr.ue-band td{background:var(--mq-surface-2);color:var(--mq-subtle);font-size:10.5px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;padding-top:7px;padding-bottom:7px}
+.ue .ue-table tr.ue-sub td:first-child{padding-left:30px;color:var(--mq-muted)}
+.ue .ue-table tr.ue-strong td{font-weight:700;color:var(--mq-ink-2)}
+.ue .ue-table tr.ue-strong td.ue-d{font-weight:600}
+.ue .ue-table tr.ue-accent td{background:var(--mq-accent-soft)}
+.ue .ue-table tr.ue-rule td{border-top:1px solid var(--mq-line-2)}
+.ue .ue-table td.ue-txt{font-size:12px;color:var(--mq-muted)}
+.ue .ue-head{display:flex;flex-wrap:wrap;gap:12px 20px;align-items:flex-start;justify-content:space-between;padding:20px 22px 14px}
+.ue .ue-note{font-size:12px;color:var(--mq-subtle);margin-top:14px;line-height:1.55}
+.ue .ue-empty{padding:28px;text-align:center;color:var(--mq-muted);font-size:13px}
+</style>
+
+{% set ue_comms = (ue.communities if ue else []) | selectattr('entities') | list %}
+<div class="ue">
+{% if not ue %}
+  <div class="card"><span class="subtle" style="font-size:12.5px;">Unit Economics will appear here once EmberApps publishes its unit-economics view to the shared database (<code>reports.report_type='view:unit_economics'</code>). EmberApps republishes it whenever a model is uploaded or its Unit Economics page is opened, and nightly.</span></div>
+{% elif not ue_comms %}
+  <div class="card"><span class="subtle" style="font-size:12.5px;">No Unit Economics models have been uploaded in EmberApps yet. Upload an entity's pro-forma model on EmberApps' Unit Economics page and its scenarios will show up here.</span></div>
+{% else %}
+  <div class="row wrap" style="gap:8px;margin-bottom:16px;align-items:center;">
+    <span class="badge good">● Live from Ember</span>
+    <span class="badge accent" title="Rendered from EmberApps' published unit-economics view — identical figures, no re-derivation">Ember view{% if ue.src_asof %} · {{ ue.src_asof[:10] }}{% endif %}</span>
+    <span class="subtle" style="font-size:12px;" id="ue-summary"></span>
+  </div>
+
+  <div class="ue-controls">
+    <div class="ue-ctl" id="ue-comm-wrap"><label class="fld-label">Community</label><div class="pillgroup" id="ue-comm"></div></div>
+    <div class="ue-ctl"><label class="fld-label">Entity</label><div class="pillgroup" id="ue-ent"></div></div>
+    <div class="ue-ctl"><label class="fld-label" for="ue-base">Compare against</label><select class="input" id="ue-base"></select></div>
+  </div>
+
+  <div class="ue-cards" id="ue-cards"></div>
+
+  <div class="card" style="padding:0;overflow:hidden;">
+    <div class="ue-head">
+      <div><div class="card-title" id="ue-title">Entity statement</div>
+        <div class="card-sub" id="ue-basis-note"></div></div>
+      <div class="pillgroup" id="ue-basis"></div>
+    </div>
+    <div class="table-scroll" style="max-height:none;border:none;border-top:1px solid var(--mq-line);border-radius:0;">
+      <table class="data-table ue-table" id="ue-table"></table>
+    </div>
+  </div>
+  <div class="ue-note" id="ue-note"></div>
+
+<script>
+(function () {
+  "use strict";
+  const UE = {{ ue | tojson }};
+  const $ = (id) => document.getElementById(id);
+  const comms = (UE.communities || []).filter(c => (c.entities || []).length);
+  const BASES = [
+    ['total', 'Life of Project', 'Total over the life of each pro forma.'],
+    ['to_date', 'To Date', 'Actuals through each scenario’s actuals date — fed from Budget vs Actuals for uploaded models; imported pro formas (e.g. Original UW) carry their own projection through their cutoff.'],
+    ['per_ff', '$/FF', 'Each scenario over its own front feet — the fair read when a plan’s scope moved.'],
+    ['per_lot', '$/Lot', 'Each scenario over its own lots — the fair read when a plan’s scope moved.'],
+    ['per_acre', '$/Acre', 'Each scenario over its own acreage — the fair read when a plan’s scope moved.'],
+    ['pct_rev', '% of Rev', 'Each line over its scenario’s total revenue; changes in percentage points.'],
+  ];
+  const COST_SUMMARY = new Set(['gross costs', 'net costs', 'operations & overhead', 'financing']);
+
+  // Selection is a per-viewer convenience; the page works without storage.
+  const KEY = 'mq-ue-sel';
+  let saved = {};
+  try { saved = JSON.parse(localStorage.getItem(KEY) || '{}') || {}; } catch (e) { saved = {}; }
+  const state = {community: null, entity: null, base: null, basis: 'total'};
+  state.community = (comms.find(c => c.key === saved.community) || comms[0]).key;
+  if (BASES.some(b => b[0] === saved.basis)) state.basis = saved.basis;
+  function persist() {
+    try { localStorage.setItem(KEY, JSON.stringify({community: state.community, entity: state.entity, basis: state.basis})); } catch (e) {}
+  }
+
+  // ── formatting (Ember's money convention: whole dollars, em-dash for empty) ──
+  const esc = (s) => String(s ?? '').replace(/[&<>"']/g,
+    c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
+  const isNum = (n) => n !== null && n !== undefined && !isNaN(n);
+  const fmtMoney = (n) => !isNum(n) || Math.round(n) === 0 ? '—'
+    : (n < 0 ? '-$' : '$') + Math.abs(Math.round(n)).toLocaleString('en-US');
+  const fmtCompact = (n) => {
+    if (!isNum(n)) return '—';
+    const a = Math.abs(n), s = n < 0 ? '-$' : '$';
+    return a >= 1e9 ? s + (a / 1e9).toFixed(1) + 'B' : a >= 1e6 ? s + (a / 1e6).toFixed(1) + 'M'
+      : a >= 1e3 ? s + (a / 1e3).toFixed(0) + 'K' : s + a.toFixed(0);
+  };
+  const fmtPct = (n, dp) => !isNum(n) || n === 0 ? '—' : (n * 100).toFixed(dp ?? 1) + '%';
+  const fmtQty = (n, dp) => !isNum(n) || n === 0 ? '—'
+    : Number(n).toLocaleString('en-US', {maximumFractionDigits: dp ?? 0});
+  const sign = (d) => d > 0 ? '+' : d < 0 ? '-' : '';
+  function fmtDate(iso) {
+    if (!iso) return '—';
+    const d = new Date(iso.length <= 10 ? iso + 'T00:00:00' : iso);
+    return isNaN(d) ? iso : d.toLocaleDateString('en-US', {month: 'short', day: 'numeric', year: 'numeric'});
+  }
+
+  // ── model ──────────────────────────────────────────────────
+  const comm = () => comms.find(c => c.key === state.community) || comms[0];
+  const entity = () => { const c = comm(); return c.entities.find(e => e.name === state.entity) || c.entities[0]; };
+  const lineId = (r) => r.group + '|' + (r.key || String(r.label || '').trim().toLowerCase());
+  for (const c of comms) for (const e of c.entities) for (const s of e.scenarios) {
+    s._idx = {};
+    for (const r of s.rows || []) s._idx[lineId(r)] = r;
+  }
+  const findRow = (s, group, key) => (s.rows || []).find(r => r.group === group && (key === null || r.key === key));
+  const headline = (s) => {
+    const rev = findRow(s, 'revenue_total', null), nc = findRow(s, 'summary', 'net costs'),
+          nm = findRow(s, 'summary', 'net margin');
+    const R = rev ? rev.total : null, M = nm ? nm.total : null;
+    return {rev: R, costs: nc ? nc.total : null, margin: M, pct: isNum(M) && R ? M / R : null};
+  };
+  // Baseline first, then the rest in Ember's order (default first, then by upload).
+  function ordered(e) {
+    const base = e.scenarios.find(s => s.name === state.base) || e.scenarios[0];
+    return [base, ...e.scenarios.filter(s => s !== base)];
+  }
+  // Union of line items in statement order: the baseline's order, with a line
+  // only another scenario breaks out slotted in after the line preceding it
+  // there (the same rule Ember's comparison uses).
+  function alignRows(scens) {
+    const order = [], meta = {};
+    for (const s of scens) {
+      let prev = null;
+      for (const r of s.rows || []) {
+        const k = lineId(r);
+        if (!(k in meta)) {
+          meta[k] = r;
+          order.splice(prev === null ? 0 : order.indexOf(prev) + 1, 0, k);
+        }
+        prev = k;
+      }
+    }
+    return order.map(k => meta[k]);
+  }
+  const costLike = (r) => r.group === 'cost' || COST_SUMMARY.has(r.key || String(r.label).toLowerCase());
+  const isMargin = (r) => r.group === 'summary' && /margin/i.test(r.label);
+
+  // ── controls ───────────────────────────────────────────────
+  function pills(el, items, active, onPick) {
+    el.innerHTML = items.map(([v, t]) =>
+      `<button type="button" class="pill${v === active ? ' is-active' : ''}" data-v="${esc(v)}">${t}</button>`).join('');
+    el.onclick = (ev) => { const b = ev.target.closest('[data-v]'); if (b) onPick(b.dataset.v); };
+  }
+  function renderControls() {
+    const c = comm();
+    $('ue-comm-wrap').style.display = comms.length > 1 ? '' : 'none';
+    pills($('ue-comm'), comms.map(x => [x.key, esc(x.label)]), c.key, (v) => {
+      state.community = v; state.entity = null; state.base = null; persist(); renderAll();
+    });
+    if (!c.entities.some(e => e.name === state.entity)) {
+      state.entity = (c.entities.find(e => e.name === saved.entity) || c.entities[0]).name;
+    }
+    pills($('ue-ent'), c.entities.map(e => [e.name,
+      `${esc(e.name)}<small>${e.scenarios.length}</small>`]), state.entity, (v) => {
+      state.entity = v; state.base = null; persist(); renderAll();
+    });
+    const e = entity();
+    if (!e.scenarios.some(s => s.name === state.base)) state.base = e.scenarios[0].name;
+    const sel = $('ue-base');
+    sel.innerHTML = e.scenarios.map(s => `<option value="${esc(s.name)}"${s.name === state.base ? ' selected' : ''}>` +
+      `${esc(s.name)}${s.is_default ? ' (default)' : ''}</option>`).join('');
+    sel.disabled = e.scenarios.length < 2;
+    sel.onchange = () => { state.base = sel.value; renderAll(); };
+    renderBasis();
+    const nScen = c.entities.reduce((n, x) => n + x.scenarios.length, 0);
+    $('ue-summary').textContent = `${c.label} · ${c.entities.length} ${c.entities.length === 1 ? 'entity' : 'entities'} · ${nScen} scenarios`;
+  }
+
+  function renderBasis() {
+    pills($('ue-basis'), BASES.map(b => [b[0], b[1]]), state.basis, (v) => {
+      state.basis = v; persist(); renderBasis(); renderTable();
+    });
+  }
+
+  // ── scenario cards ─────────────────────────────────────────
+  function renderCards() {
+    const e = entity(), scens = ordered(e), base = scens[0], hb = headline(base);
+    $('ue-cards').innerHTML = scens.map((s, i) => {
+      const h = headline(s), r = s.returns || {};
+      const badges = (s.is_default ? '<span class="badge accent">Default</span>' : '') +
+        (s.kind === 'summary' ? '<span class="badge" title="Imported entity-level pro forma — no section detail">Entity totals</span>' : '');
+      let delta = '';
+      if (i > 0) {
+        const dm = isNum(h.margin) && isNum(hb.margin) ? h.margin - hb.margin : null;
+        const dp = isNum(h.pct) && isNum(hb.pct) ? (h.pct - hb.pct) * 100 : null;
+        delta = `<div class="ue-sc-delta">vs ${esc(base.name)}: ` +
+          (isNum(dm) ? `<span class="${dm >= 0 ? 'pos' : 'neg'}">${sign(dm)}${fmtCompact(Math.abs(dm))}</span> net margin` : '—') +
+          (!isNum(dp) ? '' : Math.abs(dp) < 0.05 ? ' · same margin %'
+            : ` · <span class="${dp > 0 ? 'pos' : 'neg'}">${sign(dp)}${Math.abs(dp).toFixed(1)} pts</span>`) + `</div>`;
+      } else if (scens.length > 1) {
+        delta = `<div class="ue-sc-delta subtle">Baseline — the others are compared against it</div>`;
+      }
+      const ret = [isNum(r.irr) ? `LP IRR <b>${(r.irr * 100).toFixed(1)}%</b>` : '',
+                   isNum(r.multiple) ? `<b>${r.multiple.toFixed(2)}x</b>` : '',
+                   isNum(r.promote) ? `Promote <b>${fmtCompact(r.promote)}</b>` : ''].filter(Boolean).join(' · ');
+      const when = s.kind === 'summary' ? 'Pro forma to date' : 'Actuals';
+      return `<div class="kpi ue-sc${i === 0 && scens.length > 1 ? ' is-base' : ''}" data-scen="${esc(s.name)}" title="${esc(s.source_filename || '')}">
+        <div class="kpi-top"><span class="kpi-label">${esc(s.name)}</span><span class="ue-badges">${badges}</span></div>
+        <div class="ue-sc-cap">Net Margin</div>
+        <div class="kpi-value ${isNum(h.margin) ? (h.margin < 0 ? 'neg' : '') : ''}">${fmtCompact(h.margin)}</div>
+        <div class="ue-sc-line"><b>${fmtPct(h.pct)}</b> of revenue</div>
+        <div class="ue-sc-line">Revenue <b>${fmtCompact(h.rev)}</b> · Net costs <b>${fmtCompact(h.costs)}</b></div>
+        ${ret ? `<div class="ue-sc-line">${ret}</div>` : ''}
+        ${delta}
+        <div class="kpi-foot"><span class="kpi-sub">${when} through ${fmtDate(s.actuals_date)} · uploaded ${fmtDate(s.uploaded_at)}</span></div>
+      </div>`;
+    }).join('');
+    $('ue-cards').onclick = (ev) => {
+      const card = ev.target.closest('[data-scen]');
+      if (!card || card.dataset.scen === state.base || entity().scenarios.length < 2) return;
+      state.base = card.dataset.scen; renderAll();
+    };
+  }
+
+  // ── statement table ────────────────────────────────────────
+  function deltaCell(a, b, f, cl, aHas, bHas, baseName, mix) {
+    if (!aHas || !bHas) {
+      return `<td class="ue-d" title="${aHas ? esc(baseName) : 'This scenario'} doesn’t break this line out">—</td>`;
+    }
+    const av = a[f] || 0, bv = b[f] || 0, d = av - bv;
+    if (f === 'pct_rev') {
+      const pts = d * 100;
+      if (Math.abs(pts) < 0.05) return '<td class="ue-d">—</td>';
+      // A revenue line's share of revenue is mix, not better or worse.
+      const tone = mix ? '' : (cl ? pts < 0 : pts > 0) ? ' pos' : ' neg';
+      return `<td class="ue-d${tone}">${sign(pts)}${Math.abs(pts).toFixed(1)} pts</td>`;
+    }
+    if (Math.abs(d) < 0.5) return '<td class="ue-d">—</td>';
+    const pct = bv ? ` (${sign(d)}${Math.abs(d / bv * 100).toFixed(Math.abs(d / bv) < 0.1 ? 1 : 0)}%)` : '';
+    return `<td class="ue-d ${(cl ? d < 0 : d > 0) ? 'pos' : 'neg'}" title="${sign(d)}$${Math.abs(Math.round(d)).toLocaleString('en-US')}${pct} vs ${esc(baseName)}">` +
+      `${sign(d)}$${Math.abs(Math.round(d)).toLocaleString('en-US')}</td>`;
+  }
+
+  function renderTable() {
+    const e = entity(), scens = ordered(e), base = scens[0], multi = scens.length > 1;
+    const f = state.basis, basis = BASES.find(b => b[0] === f);
+    $('ue-title').textContent = `${e.name} · ${basis[1]}`;
+    $('ue-basis-note').textContent = basis[2] + (multi ? ` Δ = scenario − ${base.name}.` : '');
+    const cols = 1 + scens.length + (multi ? scens.length - 1 : 0);
+    let head = '<thead><tr><th>Line Item</th>';
+    scens.forEach((s, i) => {
+      head += `<th class="ue-sch${i === 0 && multi ? ' is-base' : ''}" title="${esc(s.source_filename || '')}">${esc(s.name)}</th>`;
+      if (i > 0) head += `<th class="ue-dh">Δ vs ${esc(base.name)}</th>`;
+    });
+    head += '</tr></thead>';
+
+    const fmtV = (v) => f === 'pct_rev' ? fmtPct(v) : fmtMoney(v);
+    let body = '', last = null;
+    for (const line of alignRows(scens)) {
+      if (line.group === 'revenue' && last !== 'revenue')
+        body += `<tr class="ue-band"><td colspan="${cols}">Revenues</td></tr>`;
+      if (line.group === 'cost' && last !== 'cost')
+        body += `<tr class="ue-band"><td colspan="${cols}">Costs</td></tr>`;
+      last = line.group;
+      const id = lineId(line), cl = costLike(line), mg = isMargin(line);
+      const cls = [line.indent ? 'ue-sub' : '', line.bold ? 'ue-strong' : '',
+        line.group === 'revenue_total' || line.key === 'net margin' ? 'ue-accent'
+          : (line.group === 'summary' && line.bold ? 'ue-rule' : '')].filter(Boolean).join(' ');
+      let cells = `<td>${esc(line.label)}</td>`;
+      const b = base._idx[id];
+      scens.forEach((s, i) => {
+        const r = s._idx[id];
+        if (!r) cells += `<td class="ue-miss" title="${esc(s.name)} doesn’t break this line out">—</td>`;
+        else {
+          const v = r[f];
+          const tone = isNum(v) && v < 0 ? ' neg' : (mg && isNum(v) && v > 0 && f !== 'pct_rev' ? ' pos' : '');
+          cells += `<td class="ue-v${tone}">${fmtV(v)}</td>`;
+        }
+        if (i > 0) cells += deltaCell(r || {}, b || {}, f, cl, !!r, !!b, base.name, line.group === 'revenue');
+      });
+      body += `<tr class="${cls}">${cells}</tr>`;
+    }
+
+    // Scope & returns — the denominators and the Returns tab, whatever the basis.
+    const facts = [
+      ['Front Feet', s => (s.units || {}).front_feet, v => fmtQty(v), 'qty'],
+      ['Lots', s => (s.units || {}).lots, v => fmtQty(v), 'qty'],
+      ['Acreage', s => (s.units || {}).acreage, v => fmtQty(v, 1), 'qty1'],
+      ['LP IRR', s => (s.returns || {}).irr, v => isNum(v) ? (v * 100).toFixed(2) + '%' : '—', 'pts'],
+      ['Equity Multiple', s => (s.returns || {}).multiple, v => isNum(v) ? v.toFixed(2) + 'x' : '—', 'x'],
+      ['Promote', s => (s.returns || {}).promote, v => fmtMoney(v), 'money'],
+      ['Projected AV', s => s.projected_av, v => fmtMoney(v), 'money'],
+      ['Sections', s => s.kind === 'summary' ? null : s.section_count, v => fmtQty(v), 'qty'],
+    ].filter(([, get]) => scens.some(s => isNum(get(s)) && get(s) !== 0));
+    if (facts.length) {
+      body += `<tr class="ue-band"><td colspan="${cols}">Scope &amp; Returns</td></tr>`;
+      for (const [label, get, fmt, kind] of facts) {
+        const bv = get(base);
+        let cells = `<td>${label}</td>`;
+        scens.forEach((s, i) => {
+          const v = get(s);
+          cells += `<td class="ue-v">${fmt(v)}</td>`;
+          if (i === 0) return;
+          if (!isNum(v) || !isNum(bv)) { cells += '<td class="ue-d">—</td>'; return; }
+          const d = v - bv;
+          let txt, tiny;
+          if (kind === 'pts') { txt = `${sign(d)}${Math.abs(d * 100).toFixed(2)} pts`; tiny = Math.abs(d * 100) < 0.005; }
+          else if (kind === 'x') { txt = `${sign(d)}${Math.abs(d).toFixed(2)}x`; tiny = Math.abs(d) < 0.005; }
+          else if (kind === 'money') { txt = `${sign(d)}$${Math.abs(Math.round(d)).toLocaleString('en-US')}`; tiny = Math.abs(d) < 0.5; }
+          else { txt = sign(d) + Number(Math.abs(d)).toLocaleString('en-US', {maximumFractionDigits: kind === 'qty1' ? 1 : 0}); tiny = Math.abs(d) < (kind === 'qty1' ? 0.05 : 0.5); }
+          // Scope moves are neutral; returns read up = good.
+          const tone = tiny || kind === 'qty' || kind === 'qty1' ? '' : (d > 0 ? ' pos' : ' neg');
+          cells += `<td class="ue-d${tone}">${tiny ? '—' : txt}</td>`;
+        });
+        body += `<tr>${cells}</tr>`;
+      }
+      let dates = '<td>Actuals Through</td>';
+      scens.forEach((s, i) => {
+        dates += `<td class="ue-txt">${fmtDate(s.actuals_date)}</td>`;
+        if (i > 0) dates += '<td></td>';
+      });
+      body += `<tr>${dates}</tr>`;
+    }
+    $('ue-table').innerHTML = head + `<tbody>${body}</tbody>`;
+
+    const notes = [];
+    if (!multi) notes.push(`${e.name} has one uploaded scenario. Upload another model (or import an Original UW) on EmberApps’ Unit Economics page to compare it here.`);
+    for (const s of scens) {
+      const a = s.actuals;
+      if (!a) continue;
+      let t = `${s.name}: actuals from Budget vs Actuals · ${a.source}, ${fmtMoney(a.total)} mapped`;
+      const un = Object.entries(a.unmapped || {});
+      if (un.length) t += `; unmapped ${un.map(([k, v]) => `${k} ${fmtMoney(v)}`).join(', ')}`;
+      notes.push(t + '.');
+    }
+    $('ue-note').innerHTML = notes.map(n => `<div>${esc(n)}</div>`).join('');
+  }
+
+  function renderAll() { renderControls(); renderCards(); renderTable(); }
+  renderAll();
+})();
+</script>
+{% endif %}
+</div>

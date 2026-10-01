@@ -67,6 +67,7 @@
     <button class="tab" data-tab="operations">{{ 'Cashflow & PLP' if c.slug == 'ranman' else 'Operations' }}</button>
     <button class="tab" data-tab="finance">Finance</button>
     {% if cap %}<button class="tab" data-tab="projects">Projects</button>{% endif %}
+    {% if c.slug == 'ember' %}<button class="tab" data-tab="unit-economics">Unit Economics</button>{% endif %}
     <button class="tab" data-tab="strategy">Strategy</button>
     {% endif %}
   </div>
@@ -774,6 +775,13 @@
   {% if cap %}
   <div class="tab-panel" data-panel="projects">
     {% include "_partials/_ember_capital.html" %}
+  </div>
+  {% endif %}
+
+  {# ───────── Unit Economics (every uploaded scenario, entity level) ───────── #}
+  {% if c.slug == 'ember' %}
+  <div class="tab-panel" data-panel="unit-economics">
+    {% include "_partials/_ember_unit_economics.html" %}
   </div>
   {% endif %}
 

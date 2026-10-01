@@ -2192,6 +2192,7 @@ def company(slug):
     cap = None        # Ember Capital (Projects tab) — Ember only
     verticals = sales = None  # Commercial tab — Ember only
     ember_budget = None  # Operating Budget (firm P&L) — Ember only, from Ember DB
+    ue = None         # Unit Economics scenario comparison — Ember only
     polaris = None    # Modelo Polaris toll-road model — Meta only
     if c["slug"] == "meta":
         polaris = load_polaris()
@@ -2207,6 +2208,12 @@ def company(slug):
         verticals = fetch_ember_verticals()
         sales = fetch_ember_sales()
         op = fetch_ember_operations()
+        # Unit Economics: every uploaded scenario's entity-level statement, as
+        # EmberApps builds it (view:unit_economics). No local fallback — the
+        # BVA-fed actuals and restated $/unit columns live only in EmberApps.
+        _uev = fetch_ember_view("unit_economics")
+        if _uev:
+            ue = dict(_uev[0], src_asof=(_uev[1].strftime("%Y-%m-%d %H:%M") if _uev[1] else None))
         # Operating Budget: prefer EmberApps' published view payload — it is the
         # exact object Ember's /budget page renders, so the two can't drift.
         # Fall back to reading the raw report + re-applying the overlay locally
@@ -2323,7 +2330,7 @@ def company(slug):
         ember_returns=ember_returns, summary=summary, fin=fin, leverage=leverage,
         valuation=valuation, cap=cap, hold=hold, exitr=exitr, fre_basis=fre_basis,
         verticals=verticals, sales=sales, ember_budget=ember_budget, polaris=polaris, ranman_debt=ranman_debt,
-        ranman_flujo=ranman_flujo,
+        ranman_flujo=ranman_flujo, ue=ue,
     )
 
 
