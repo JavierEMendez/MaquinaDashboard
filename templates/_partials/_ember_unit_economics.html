@@ -1,7 +1,8 @@
 {# EMBER · Unit Economics — every uploaded scenario of an entity side by side.
    Port of EmberApps' Unit Economics page at entity level: where Ember compares
    two scenarios at a time, this lays them all out against one baseline (the
-   entity's default unless another is picked). Data = `ue`, EmberApps'
+   original underwriting when the entity has one, else its default, unless
+   another is picked). Data = `ue`, EmberApps'
    view:unit_economics payload — each scenario's entity statement exactly as
    Ember's page builds it (BVA-fed actuals, $/unit restated on each scenario's
    own units), so nothing here re-derives a figure. Ids/classes namespaced ue-. #}
@@ -95,15 +96,27 @@
   ];
   const COST_SUMMARY = new Set(['gross costs', 'net costs', 'operations & overhead', 'financing']);
 
-  // Selection is a per-viewer convenience; the page works without storage.
-  const KEY = 'mq-ue-sel';
-  let saved = {};
-  try { saved = JSON.parse(localStorage.getItem(KEY) || '{}') || {}; } catch (e) { saved = {}; }
-  const state = {community: null, entity: null, base: null, basis: 'total'};
-  state.community = (comms.find(c => c.key === saved.community) || comms[0]).key;
-  if (BASES.some(b => b[0] === saved.basis)) state.basis = saved.basis;
+  // A community's namesake entity (Grand Prairie Development in Grand Prairie)
+  // leads its entity list and opens by default; the rest keep Ember's order.
+  const namesake = (c, e) => {
+    const n = e.name.toLowerCase();
+    return n.startsWith(c.label.toLowerCase()) || n === c.key.toLowerCase();
+  };
+  for (const c of comms) c.entities.sort((a, b) => namesake(c, b) - namesake(c, a));
+  // Entities open against their original underwriting (imported as
+  // "Original UW") when they have one, else against Ember's default.
+  const originalUW = (e) => e.scenarios.find(s => /original|underwrit|\buw\b/i.test(s.name));
+
+  // Every visit opens on the defaults above; only the basis is remembered,
+  // a per-viewer convenience the page works without.
+  const KEY = 'mq-ue-basis';
+  const state = {community: comms[0].key, entity: null, base: null, basis: 'total'};
+  try {
+    const b = localStorage.getItem(KEY);
+    if (BASES.some(x => x[0] === b)) state.basis = b;
+  } catch (e) {}
   function persist() {
-    try { localStorage.setItem(KEY, JSON.stringify({community: state.community, entity: state.entity, basis: state.basis})); } catch (e) {}
+    try { localStorage.setItem(KEY, state.basis); } catch (e) {}
   }
 
   // ── formatting (Ember's money convention: whole dollars, em-dash for empty) ──
@@ -179,17 +192,15 @@
     const c = comm();
     $('ue-comm-wrap').style.display = comms.length > 1 ? '' : 'none';
     pills($('ue-comm'), comms.map(x => [x.key, esc(x.label)]), c.key, (v) => {
-      state.community = v; state.entity = null; state.base = null; persist(); renderAll();
+      state.community = v; state.entity = null; state.base = null; renderAll();
     });
-    if (!c.entities.some(e => e.name === state.entity)) {
-      state.entity = (c.entities.find(e => e.name === saved.entity) || c.entities[0]).name;
-    }
+    if (!c.entities.some(e => e.name === state.entity)) state.entity = c.entities[0].name;
     pills($('ue-ent'), c.entities.map(e => [e.name,
       `${esc(e.name)}<small>${e.scenarios.length}</small>`]), state.entity, (v) => {
-      state.entity = v; state.base = null; persist(); renderAll();
+      state.entity = v; state.base = null; renderAll();
     });
     const e = entity();
-    if (!e.scenarios.some(s => s.name === state.base)) state.base = e.scenarios[0].name;
+    if (!e.scenarios.some(s => s.name === state.base)) state.base = (originalUW(e) || e.scenarios[0]).name;
     const sel = $('ue-base');
     sel.innerHTML = e.scenarios.map(s => `<option value="${esc(s.name)}"${s.name === state.base ? ' selected' : ''}>` +
       `${esc(s.name)}${s.is_default ? ' (default)' : ''}</option>`).join('');
