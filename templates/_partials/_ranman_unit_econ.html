@@ -4,9 +4,10 @@
    the model's own monthly cash flow adds up to. Next to them, the same model's
    expected close a month earlier and at the end of last year, and any other
    current model that carries the development (an alternative program).
-   Modelled on Ember's Unit Economics: one baseline, every other column with its
-   difference, in total, per unit or as % of sales. Below: how the expected
-   margin has moved month by month, and each etapa's month-end cash.
+   Two of them at a time, A against B (Proforma firmado vs Cierre previsto to
+   start), with the difference, in total, per unit or as % of sales; the etapas
+   table follows the same pair. Below: how the expected margin has moved month
+   by month, and each etapa's month-end cash.
    Expects `bp` (ranman_bp, from app.load_ranman_bp), `ranman_desarrollos`,
    `ranman_plazas`. Classes and ids namespaced ru-. #}
 <style>
@@ -29,11 +30,14 @@
 .ru .ru-note{font-size:12px;color:var(--mq-subtle);line-height:1.55}
 .ru .ru-empty{font-size:12.5px;color:var(--mq-subtle);margin:0}
 /* scenario cards */
-.ru .ru-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:16px;margin-bottom:22px}
-.ru .ru-sc{cursor:pointer;min-height:0;gap:6px;transition:border-color .14s;text-align:left;font:inherit;color:inherit}
-.ru .ru-sc:hover{border-color:var(--mq-line-2)}
-.ru .ru-sc:focus-visible{outline:2px solid var(--mq-accent);outline-offset:2px}
-.ru .ru-sc.is-base{border-color:var(--mq-accent);box-shadow:0 0 0 1px var(--mq-accent),var(--mq-shadow-card)}
+.ru .ru-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:16px;margin-bottom:22px}
+.ru .ru-sc{min-height:0;gap:6px;text-align:left}
+.ru .ru-sc.is-a{border-color:var(--mq-accent);box-shadow:0 0 0 1px var(--mq-accent),var(--mq-shadow-card)}
+.ru .ru-sc.is-b{border-color:var(--mq-c6);box-shadow:0 0 0 1px var(--mq-c6),var(--mq-shadow-card)}
+.ru .ru-ab{display:inline-flex;align-items:center;justify-content:center;min-width:20px;height:20px;padding:0 5px;border-radius:5px;font-size:10.5px;font-weight:800;margin-right:8px;background:var(--mq-accent);color:#fff;vertical-align:1px}
+.ru .is-b .ru-ab{background:var(--mq-c6)}
+.ru .is-d .ru-ab{background:var(--mq-ink-2)}
+.ru .ru-swap{align-self:flex-end;padding:7px 12px;font-size:15px;line-height:1.1}
 .ru .ru-sc .kpi-label{color:var(--mq-ink-2);font-size:13px;font-weight:700;line-height:1.3}
 .ru .ru-sc-cap{font-size:11px;color:var(--mq-subtle);text-transform:uppercase;letter-spacing:.06em;font-weight:600}
 .ru .ru-sc-line{font-size:12.5px;color:var(--mq-muted);font-variant-numeric:tabular-nums}
@@ -56,10 +60,11 @@
 .ru .tag.warn{color:var(--mq-warn)}
 .ru .dt tr.ru-tot td{background:var(--mq-surface-2);font-weight:700;color:var(--mq-ink-2);border-top:1px solid var(--mq-line-2)}
 .ru .dt tr.ru-gr td{background:var(--mq-surface-2);color:var(--mq-subtle);font-size:10.5px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;padding-top:8px;padding-bottom:8px}
-.ru #ru-tbl{min-width:760px}
-.ru #ru-tbl th.ru-sch{white-space:normal;min-width:112px;max-width:160px;vertical-align:bottom;line-height:1.3}
-.ru #ru-tbl th.ru-sch.is-base{color:var(--mq-accent)}
-.ru #ru-tbl th.ru-dh{color:var(--mq-subtle);font-weight:600;vertical-align:bottom;white-space:normal;min-width:78px;line-height:1.3}
+.ru #ru-tbl{min-width:620px}
+.ru #ru-tbl th.ru-sch{white-space:normal;min-width:130px;max-width:200px;vertical-align:bottom;line-height:1.3}
+.ru #ru-tbl th.ru-sch.is-a{color:var(--mq-accent)} .ru #ru-tbl th.ru-sch.is-b{color:var(--mq-c6)}
+.ru #ru-tbl th.ru-dh{color:var(--mq-subtle);font-weight:600;vertical-align:bottom;white-space:normal;min-width:90px;line-height:1.3}
+.ru #ru-tbl th.ru-dh span{display:block;font-size:10px;font-weight:500;text-transform:none;letter-spacing:0}
 .ru #ru-tbl td.ru-d{color:var(--mq-subtle);font-size:12px}
 .ru #ru-tbl td.ru-d.pos{color:var(--mq-good)} .ru #ru-tbl td.ru-d.neg{color:var(--mq-bad)}
 .ru #ru-tbl td.ru-v.neg{color:var(--mq-bad)}
@@ -111,7 +116,9 @@
   </div>
   <div class="ru-controls">
     <div class="ru-ctl"><label class="fld-label" for="ru-etapa">Etapa</label><select class="input" id="ru-etapa"></select></div>
-    <div class="ru-ctl"><label class="fld-label" for="ru-base">Comparar contra</label><select class="input" id="ru-base"></select></div>
+    <div class="ru-ctl"><label class="fld-label" for="ru-a">Versión A</label><select class="input" id="ru-a"></select></div>
+    <button class="btn btn-sm ru-swap" type="button" id="ru-swap" title="Intercambiar A y B" aria-label="Intercambiar A y B">⇄</button>
+    <div class="ru-ctl"><label class="fld-label" for="ru-b">Versión B</label><select class="input" id="ru-b"></select></div>
     <div class="ru-ctl"><span class="fld-label">Base</span>
       <div class="pillgroup" role="group" aria-label="Base" id="ru-basis">
         <button class="pill" type="button" data-v="total" aria-pressed="true">Total</button>
@@ -131,7 +138,7 @@
 
   <section class="card mb-24" style="padding:0;overflow:hidden;" id="ru-etWrap">
     <div class="ru-head"><div><div class="card-title">Etapas del desarrollo</div>
-      <div class="card-sub">Margen antes de impuestos firmado y previsto hoy, y cuánto se movió el término. Clic en una etapa para verla sola.</div></div></div>
+      <div class="card-sub" id="ru-etSub">Clic en una etapa para verla sola.</div></div></div>
     <div class="table-scroll" style="border:none;border-top:1px solid var(--mq-line);border-radius:0;"><table class="data-table dt" id="ru-et" style="min-width:980px;"></table></div>
   </section>
 
@@ -285,7 +292,7 @@ $('port').addEventListener('keydown', e => { if (e.key!=='Enter' && e.key!==' ')
 $('est').addEventListener('click', e => { const b = e.target.closest('button[data-v]'); if (!b) return; est = b.dataset.v; store('est', est); portafolio(); pinta(); });
 
 /* ==================== one development ==================== */
-const sel = {k: null, etapa: '', base: 'proforma', basis: 'total'};
+const sel = {k: null, etapa: '', a: recall('a') || 'proforma', b: recall('b') || 'cierre', basis: 'total'};
 { const b = recall('basis'); if (['total','unidad','pct'].includes(b)) sel.basis = b; }
 
 // the columns: the three views of today's BP, the same model a month earlier
@@ -296,10 +303,12 @@ function columnas(){
   const hoy = D.etapas.filter(e => sel.etapa ? e.n === sel.etapa : pasa(e));
   const fechas = (es, cual) => { const i = es.map(e => e.fechas[cual][0]).filter(Boolean).sort(), t = es.map(e => e.fechas[cual][1]).filter(Boolean).sort();
     return {ini: i[0] || null, fin: t[t.length-1] || null, todas: es.every(e => e.fechas[cual][1])}; };
+  // one etapa of today's BP -> its statement in an earlier cut or another model (matched by name)
+  const porNombre = lista => { const m = {}; lista.forEach(x => m[compacto(x.n)] = x.c); return e => m[compacto(e.n)] || null; };
   const cols = [
-    {id:'proforma', lab:'Proforma firmado', cap:'aprobado al arrancar cada etapa', a:suma(hoy, e => e.esc.proforma), f:fechas(hoy, 'proforma')},
-    {id:'cierre', lab:'Cierre previsto', cap:`BP de hoy · real a ${mes(D.corte)}`, a:suma(hoy, e => e.esc.cierre), f:fechas(hoy, 'flujos')},
-    {id:'flujos', lab:'Resultados flujos', cap:'lo que suma el flujo mensual del BP', a:suma(hoy, e => e.esc.flujos), f:fechas(hoy, 'flujos')},
+    {id:'proforma', lab:'Proforma firmado', corto:'firmado', cap:'aprobado al arrancar cada etapa', a:suma(hoy, e => e.esc.proforma), f:fechas(hoy, 'proforma'), de: e => e.esc.proforma},
+    {id:'cierre', lab:'Cierre previsto', corto:'previsto', cap:`BP de hoy · real a ${mes(D.corte)}`, a:suma(hoy, e => e.esc.cierre), f:fechas(hoy, 'flujos'), de: e => e.esc.cierre},
+    {id:'flujos', lab:'Resultados flujos', corto:'flujos', cap:'lo que suma el flujo mensual del BP', a:suma(hoy, e => e.esc.flujos), f:fechas(hoy, 'flujos'), de: e => e.esc.flujos},
   ];
   // the loader keeps the full statement only for these two cuts (h.completo)
   const H = D.historia.filter(h => h.corte < D.corte && h.completo);
@@ -308,12 +317,12 @@ function columnas(){
   [[prev, 'el BP del mes anterior'], [dic !== prev ? dic : null, 'el BP al cierre del año pasado']].forEach(([h, cap]) => {
     if (!h) return;
     const a = suma(h.etapas.filter(mismo), e => e.c);
-    if (a) cols.push({id:'h'+h.corte, lab:`Cierre previsto · ${mes(h.corte)}`, cap:cap + (h.slug !== D.principal ? ` (${h.modelo})` : ''), a});
+    if (a) cols.push({id:'h'+h.corte, lab:`Cierre previsto · ${mes(h.corte)}`, corto:`previsto ${mes(h.corte)}`, cap:cap + (h.slug !== D.principal ? ` (${h.modelo})` : ''), a, de: porNombre(h.etapas)});
   });
   D.escenarios.forEach(s => {
     const es = s.etapas.filter(mismo);
     const a = suma(es, e => e.c);
-    if (a) cols.push({id:'e'+s.slug, lab:`Cierre previsto · ${s.modelo}`, cap:`${s.estudio ? 'estudio' : 'otro modelo'} · real a ${mes(s.corte)}`, a});
+    if (a) cols.push({id:'e'+s.slug, lab:`Cierre previsto · ${s.modelo}`, corto:s.modelo, cap:`${s.estudio ? 'estudio' : 'otro modelo'} · real a ${mes(s.corte)}`, a, de: porNombre(s.etapas)});
   });
   return cols;
 }
@@ -342,7 +351,11 @@ $('plz').addEventListener('click', e => { const b = e.target.closest('button[dat
   const k = KS.find(x => (plazaDe(x)||'') === b.dataset.v); if (k) elegir(k); });
 $('des').addEventListener('click', e => { const b = e.target.closest('button[data-v]'); if (b) elegir(b.dataset.v); });
 $('etapa').addEventListener('change', e => { sel.etapa = e.target.value; pinta(); });
-$('base').addEventListener('change', e => { sel.base = e.target.value; pinta(); });
+// A and B are never the same version: picking B's version as A swaps them
+const elige = (lado, v) => { const otro = lado === 'a' ? 'b' : 'a'; if (v === sel[otro]) sel[otro] = sel[lado]; sel[lado] = v; store('a', sel.a); store('b', sel.b); pinta(); };
+$('a').addEventListener('change', e => elige('a', e.target.value));
+$('b').addEventListener('change', e => elige('b', e.target.value));
+$('swap').addEventListener('click', () => { [sel.a, sel.b] = [sel.b, sel.a]; store('a', sel.a); store('b', sel.b); pinta(); });
 $('basis').addEventListener('click', e => { const b = e.target.closest('button[data-v]'); if (!b) return; sel.basis = b.dataset.v; store('basis', sel.basis); pinta(); });
 
 function elegir(k, scroll){
@@ -357,10 +370,12 @@ function pinta(){
   if (sel.etapa && !D.etapas.some(e => e.n === sel.etapa)) sel.etapa = '';
   controles();
   const cols = columnas();
-  if (!cols.some(c => c.id === sel.base)) sel.base = 'proforma';
-  const base = cols.find(c => c.id === sel.base) || cols[0];
-  const orden = [base, ...cols.filter(c => c !== base)];
-  $('base').innerHTML = cols.map(c => `<option value="${esc(c.id)}"${c.id===base.id?' selected':''}>${esc(c.lab)}</option>`).join('');
+  const ids = new Set(cols.map(c => c.id));
+  if (!ids.has(sel.a)) sel.a = 'proforma';
+  if (!ids.has(sel.b) || sel.b === sel.a) sel.b = sel.a === 'cierre' ? 'proforma' : 'cierre';
+  const A = cols.find(c => c.id === sel.a), B = cols.find(c => c.id === sel.b);
+  const opciones = v => cols.map(c => `<option value="${esc(c.id)}"${c.id===v?' selected':''}>${esc(c.lab)}</option>`).join('');
+  $('a').innerHTML = opciones(sel.a); $('b').innerHTML = opciones(sel.b);
 
   const E = sel.etapa ? D.etapas.find(e => e.n === sel.etapa) : null;
   const plaza = plazaDe(sel.k);
@@ -372,68 +387,79 @@ function pinta(){
   $('title').textContent = `Estado de resultados de vida · ${E ? E.n : nombreDe(sel.k)}`;
   $('basisNote').textContent = (sel.basis === 'pct' ? 'Cada renglón como % de las ventas de su columna; las diferencias, en puntos porcentuales.'
     : sel.basis === 'unidad' ? 'Miles de pesos por unidad, cada columna sobre sus propias unidades (lotes o departamentos).'
-    : 'Millones de pesos, de vida de la etapa (real a la fecha más lo que falta).') + ` Diferencias contra ${base.lab.toLowerCase()}.`;
+    : 'Millones de pesos, de vida de la etapa (real a la fecha más lo que falta).') + ' La diferencia es B − A.';
 
-  // scenario cards
-  const mb = margen(base.a);
-  $('cards').innerHTML = orden.map(c => {
-    const m = margen(c.a), u = c.a.u;
-    const dU = c.a.v.uair - base.a.v.uair, dM = (m!=null && mb!=null) ? m - mb : null;
-    const delta = c === base ? '<span class="ru-sc-cap">Base de la comparación</span>'
-      : `UAIR <span class="${dU<0?'neg':'pos'}">${sg(dU)}${fx(Math.abs(dU))} mdp</span> · margen <span class="${dM<0?'neg':'pos'}">${dM==null?'—':sg(dM)+fx(Math.abs(dM*100),1)+' pp'}</span>`;
-    return `<button type="button" class="kpi ru-sc${c===base?' is-base':''}" data-id="${esc(c.id)}" aria-pressed="${c===base}" title="Comparar contra ${esc(c.lab)}">
-      <div class="kpi-top"><span class="kpi-label">${esc(c.lab)}</span></div>
-      <span class="ru-sc-cap">${esc(c.cap)}${c.a.n !== base.a.n ? ` · ${c.a.n} etapa${c.a.n===1?'':'s'} (base ${base.a.n})` : ''}</span>
+  // A, B and what changes from A to B
+  const card = (c, rol) => { const m = margen(c.a), u = c.a.u;
+    return `<div class="kpi ru-sc is-${rol}"><div class="kpi-top"><span class="kpi-label"><span class="ru-ab">${rol.toUpperCase()}</span>${esc(c.lab)}</span></div>
+      <span class="ru-sc-cap">${esc(c.cap)}</span>
       <span class="ru-sc-line">Ventas <b>${fx(c.a.v.ventas)}</b> mdp${u ? ` · <b>${f0(u)}</b> unidades` : ''}</span>
-      <span class="ru-sc-line">UAIR <b class="${c.a.v.uair<0?'neg':''}">${fx(c.a.v.uair)}</b> mdp · <b class="${m<0?'neg':''}">${pc(m)}</b>${u ? ` · ${f0(c.a.v.uair/u*1000)} mil $/u` : ''}</span>
-      <span class="ru-sc-delta">${delta}</span></button>`;
-  }).join('');
+      <span class="ru-sc-line">UAIR <b class="${c.a.v.uair<0?'neg':''}">${fx(c.a.v.uair)}</b> mdp · <b class="${m<0?'neg':''}">${pc(m)}</b>${u ? ` · ${f0(c.a.v.uair/u*1000)} mil $/u` : ''}</span></div>`; };
+  const dif = (x, y, fmt, unidad) => { if (!ok(x) || !ok(y)) return '—'; const d = y - x; return `<b class="${d < 0 ? 'neg' : (d > 0 ? 'pos' : '')}">${sg(d)}${fmt(Math.abs(d))}</b>${unidad || ''}`; };
+  const mA = margen(A.a), mB = margen(B.a);
+  const uA = A.a.u ? A.a.v.uair / A.a.u * 1000 : null, uB = B.a.u ? B.a.v.uair / B.a.u * 1000 : null;
+  const dVp = A.a.v.ventas ? (B.a.v.ventas / A.a.v.ventas - 1) : null;
+  $('cards').innerHTML = card(A, 'a') + card(B, 'b') +
+    `<div class="kpi ru-sc is-d"><div class="kpi-top"><span class="kpi-label"><span class="ru-ab">B − A</span>Diferencia</span></div>
+      <span class="ru-sc-cap">${A.a.n !== B.a.n ? `ojo: A suma ${A.a.n} etapa${A.a.n===1?'':'s'} y B ${B.a.n}` : `las mismas ${A.a.n} etapa${A.a.n===1?'':'s'}`}</span>
+      <span class="ru-sc-line">Ventas ${dif(A.a.v.ventas, B.a.v.ventas, fx, ' mdp')}${ok(dVp) ? ` (${sg(dVp)}${fx(Math.abs(dVp*100),1)}%)` : ''}</span>
+      <span class="ru-sc-line">UAIR ${dif(A.a.v.uair, B.a.v.uair, fx, ' mdp')} · margen ${dif(mA, mB, d => fx(d*100, 1), ' pp')}</span>
+      <span class="ru-sc-line">UAIR por unidad ${dif(uA, uB, f0, ' mil $')}</span></div>`;
 
   // statement
-  const visible = k => k === 'mantenimiento' || k === 'fin_mezz' ? orden.some(c => Math.abs(c.a.v[k]||0) > 0.0005) : true;
-  let h = `<thead><tr><th>Concepto</th>` + orden.map((c,i) => `<th class="ru-sch${i?'':' is-base'}">${esc(c.lab)}</th>${i?`<th class="ru-dh">Δ vs ${esc(base.lab.split(' · ')[0].toLowerCase())}</th>`:''}`).join('') + `</tr></thead><tbody>`;
-  const ncols = orden.length * 2;
-  const info = (lab, f) => { h += `<tr class="ru-info"><td>${lab}</td>` + orden.map((c,i) => `<td>${f(c)}</td>${i?'<td class="ru-d"></td>':''}`).join('') + '</tr>'; };
+  const visible = k => k === 'mantenimiento' || k === 'fin_mezz' ? [A, B].some(c => Math.abs(c.a.v[k]||0) > 0.0005) : true;
+  const conPct = sel.basis !== 'pct';          // in % of sales the difference is already in points
+  const ncols = conPct ? 5 : 4;
+  let h = `<thead><tr><th>Concepto</th><th class="ru-sch is-a"><span class="ru-ab">A</span>${esc(A.lab)}</th><th class="ru-sch is-b"><span class="ru-ab">B</span>${esc(B.lab)}</th>` +
+    `<th class="ru-dh">Δ<span>B − A</span></th>${conPct ? '<th class="ru-dh">Δ %<span>sobre A</span></th>' : ''}</tr></thead><tbody>`;
+  const pctD = (x, y) => (ok(x) && ok(y) && Math.abs(x) > 1e-9) ? (y - x) / Math.abs(x) : null;
+  const fmtP = d => !ok(d) || Math.abs(d) < 0.0005 ? '—' : `${sg(d)}${fx(Math.abs(d*100), 1)}%`;
+  // a descriptive row: A, B and, when it is a number, B − A in the same format
+  const info = (lab, f, num, fd) => { const x = num ? num(A) : null, y = num ? num(B) : null, d = (ok(x) && ok(y)) ? y - x : null;
+    h += `<tr class="ru-info"><td>${lab}</td><td>${f(A)}</td><td>${f(B)}</td><td class="ru-d">${d == null || Math.abs(d) < 1e-9 ? '' : sg(d) + fd(Math.abs(d))}</td>${conPct ? '<td class="ru-d"></td>' : ''}</tr>`; };
   h += `<tr class="ru-band"><td colspan="${ncols}">Etapa${E ? '' : 's'}</td></tr>`;
-  info('Etapas', c => f0(c.a.n));
-  info('Unidades', c => f0(c.a.u));
-  info('Precio promedio por unidad <span class="tag">mdp</span>', c => c.a.u ? fx(c.a.v.ventas / c.a.u, 2) : '—');
+  info('Etapas', c => f0(c.a.n), c => c.a.n, f0);
+  info('Unidades', c => f0(c.a.u), c => c.a.u, f0);
+  info('Precio promedio por unidad <span class="tag">mdp</span>', c => c.a.u ? fx(c.a.v.ventas / c.a.u, 2) : '—', c => c.a.u ? c.a.v.ventas / c.a.u : null, d => fx(d, 2));
   info('Inicio', c => c.f ? mes(c.f.ini) : '—');
   info('Término', c => c.f ? mes(c.f.fin) : '—');
   FILAS.forEach(([k, t]) => {
     if (k === 'band'){ h += `<tr class="ru-band"><td colspan="${ncols}">${t}</td></tr>`; return; }
     if (!visible(k)) return;
     const cls = t === 1 ? 'ru-sub' : (t === 's' ? 'ru-strong' : (t === 'a' ? 'ru-strong ru-accent' : 'ru-strong'));
-    const vb = enBase(base.a, k);
-    h += `<tr class="${cls}"><td>${esc(NOM[k] || k)}</td>` + orden.map((c,i) => { const v = enBase(c.a, k);
-      const d = (v!=null && vb!=null) ? v - vb : null;
-      return `<td class="ru-v ${v<0?'neg':''}">${fmtB(v)}</td>` + (i ? `<td class="ru-d ${tonoD(k, d)}">${fmtD(d)}</td>` : ''); }).join('') + '</tr>';
+    const va = enBase(A.a, k), vb = enBase(B.a, k);
+    const d = (va != null && vb != null) ? vb - va : null;
+    h += `<tr class="${cls}"><td>${esc(NOM[k] || k)}</td><td class="ru-v ${va<0?'neg':''}">${fmtB(va)}</td><td class="ru-v ${vb<0?'neg':''}">${fmtB(vb)}</td>` +
+      `<td class="ru-d ${tonoD(k, d)}">${fmtD(d)}</td>${conPct ? `<td class="ru-d ${tonoD(k, d)}">${fmtP(pctD(va, vb))}</td>` : ''}</tr>`;
   });
   $('tbl').innerHTML = h + '</tbody>';
 
-  etapasTabla(D);
+  etapasTabla(D, A, B);
   evolucion(D, E);
   caja(D, E);
   detalle(E);
 }
-$('cards').addEventListener('click', e => { const b = e.target.closest('button[data-id]'); if (!b) return; sel.base = b.dataset.id; pinta(); });
 
-function etapasTabla(D){
+function etapasTabla(D, A, B){
   const td = (v, cls) => `<td class="${cls||''}">${v}</td>`;
   const lista = D.etapas.filter(e => pasa(e) || e.n === sel.etapa);
   $('etWrap').hidden = D.etapas.length < 2 && !sel.etapa;
-  $('et').innerHTML = `<thead><tr><th class="l">Etapa</th><th class="l">Estatus</th><th>Unidades</th><th>Ventas<span class="sub2">firmado</span></th><th>Ventas<span class="sub2">previsto</span></th>` +
-    `<th>UAIR<span class="sub2">% firmado</span></th><th>UAIR<span class="sub2">% previsto</span></th><th>Margen<span class="sub2">vs firmado</span></th><th>UAIR<span class="sub2">mdp previsto</span></th>` +
-    `<th>UAIR por unidad<span class="sub2">miles de $</span></th><th>Término<span class="sub2">firmado</span></th><th>Término<span class="sub2">flujo</span></th><th>Atraso<span class="sub2">meses</span></th></tr></thead><tbody>` +
-    lista.map(e => { const p = e.esc.proforma, c = e.esc.cierre;
-      const mp = p.ventas ? p.uair/p.ventas : null, mc = c.ventas ? c.uair/c.ventas : null;
+  const ca = esc(A.corto), cb = esc(B.corto);
+  $('etSub').textContent = `Margen antes de impuestos en A (${A.lab.toLowerCase()}) y en B (${B.lab.toLowerCase()}), y cuánto se movió el término del firmado al flujo. Clic en una etapa para verla sola.`;
+  $('et').innerHTML = `<thead><tr><th class="l">Etapa</th><th class="l">Estatus</th><th>Unidades</th><th>Ventas<span class="sub2">A · ${ca}</span></th><th>Ventas<span class="sub2">B · ${cb}</span></th>` +
+    `<th>UAIR<span class="sub2">% A</span></th><th>UAIR<span class="sub2">% B</span></th><th>Margen<span class="sub2">B − A</span></th><th>UAIR<span class="sub2">mdp B</span></th>` +
+    `<th>UAIR por unidad<span class="sub2">miles de $ · B</span></th><th>Término<span class="sub2">firmado</span></th><th>Término<span class="sub2">flujo</span></th><th>Atraso<span class="sub2">meses</span></th></tr></thead><tbody>` +
+    lista.map(e => { const a = A.de(e), b = B.de(e);
+      const ma = a && a.ventas ? a.uair/a.ventas : null, mb = b && b.ventas ? b.uair/b.ventas : null;
       const at = meses(e.fechas.proforma[1], e.fechas.flujos[1]);
-      const d = (mp!=null && mc!=null) ? mc - mp : null;
+      const d = (ma!=null && mb!=null) ? mb - ma : null;
+      const sinV = (x, y) => x && y && y.ventas === 0 && x.ventas;
       return `<tr class="pick${e.n===sel.etapa?' is-sel':''}" data-n="${esc(e.n)}" tabindex="0" role="button" aria-label="Ver ${esc(e.n)}">` +
-        td(esc(e.n) + (c.ventas === 0 && p.ventas ? '<span class="tag warn">sin ventas en el cierre</span>' : ''), 'l') + td(esc(e.estatus || '—'), 'l') +
-        td(e.u == null ? '—' : (e.u % 1 ? fx(e.u, 1) : f0(e.u))) + td(fx(p.ventas)) + td(fx(c.ventas)) + td(pc(mp)) + td(pc(mc), mc<0?'neg':'') +
+        td(esc(e.n) + (sinV(a, b) ? '<span class="tag warn">B sin ventas</span>' : (sinV(b, a) ? '<span class="tag warn">A sin ventas</span>' : '')), 'l') + td(esc(e.estatus || '—'), 'l') +
+        td(e.u == null ? '—' : (e.u % 1 ? fx(e.u, 1) : f0(e.u))) + td(a ? fx(a.ventas) : '—', a ? '' : 'zero') + td(b ? fx(b.ventas) : '—', b ? '' : 'zero') +
+        td(pc(ma), ma<0?'neg':'') + td(pc(mb), mb<0?'neg':'') +
         td(d==null ? '—' : `${sg(d)}${fx(Math.abs(d*100),1)} pp`, d==null ? '' : (d < -0.0005 ? 'neg' : (d > 0.0005 ? 'pos' : 'zero'))) +
-        td(fx(c.uair), c.uair<0?'neg':'') + td(e.u ? f0(c.uair/e.u*1000) : '—', c.uair<0?'neg':'') +
+        td(b ? fx(b.uair) : '—', b && b.uair<0?'neg':'') + td(b && e.u ? f0(b.uair/e.u*1000) : '—', b && b.uair<0?'neg':'') +
         td(mes(e.fechas.proforma[1])) + td(mes(e.fechas.flujos[1])) + td(at==null ? '—' : (at > 0 ? '+'+at : String(at)), at > 0 ? 'neg' : (at < 0 ? 'pos' : 'zero')) + '</tr>'; }).join('') + '</tbody>';
 }
 $('et').addEventListener('click', e => { const tr = e.target.closest('tr.pick'); if (!tr) return; sel.etapa = sel.etapa === tr.dataset.n ? '' : tr.dataset.n; pinta(); });
