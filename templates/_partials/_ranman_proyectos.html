@@ -5,9 +5,9 @@
    project-level statement hidden in the Flujo y PLP workbook, with the
    consolidated PLP's own per-development sales and UAIR beside it — the two
    differ where land and macrolote sales are booked only in the consolidated
-   view, and the page shows by how much. Between the two, Unit economics from
-   the BPs (_ranman_unit_econ.html, when `ranman_bp` is loaded). Expects `rr`
-   (ranman_rep). Classes and ids namespaced rp-. #}
+   view, and the page shows by how much. The BPs' unit economics have a tab
+   of their own (_ranman_unit_econ.html). Expects `rr` (ranman_rep). Classes
+   and ids namespaced rp-. #}
 {% set ed = rr.get('edo_resultados') %}{% set pp = rr.get('plp_proyectos') %}
 <style>
 .rp .rp-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(176px,1fr));gap:18px;margin-bottom:18px}
@@ -109,7 +109,6 @@
   </div>
   {% endif %}
 
-  {% if ranman_bp %}{% set bp = ranman_bp %}{% include '_partials/_ranman_unit_econ.html' %}{% endif %}
 
   {% if pp %}
   <div class="rp-sec" id="rp-desAncla">Desarrollo · estado de resultados y flujo</div>
@@ -167,8 +166,8 @@
   </section>
   {% endif %}
 
-  {% if not (ed or pp or so or ranman_bp) %}
-  <div class="card mb-24"><p class="rp-empty">Todavía no hay datos por proyecto. Se cargan con el paquete mensual de Ranman (Estado de Resultados por Proyecto, Flujo y PLP y los BPs){% if is_admin %} desde la pestaña Data{% endif %}.</p></div>
+  {% if not (ed or pp or so) %}
+  <div class="card mb-24"><p class="rp-empty">Todavía no hay datos por proyecto. Se cargan con el paquete mensual de Ranman (Estado de Resultados por Proyecto y Flujo y PLP){% if is_admin %} desde la pestaña Data{% endif %}.</p></div>
   {% endif %}
 </div>
 

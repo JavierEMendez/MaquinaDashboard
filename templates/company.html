@@ -65,7 +65,8 @@
     <button class="tab" data-tab="ev">Enterprise Value Analysis</button>
     {% else %}
     <button class="tab" data-tab="commercial">Commercial</button>
-    {% if c.slug == 'ranman' %}<button class="tab" data-tab="ranman-projects">Projects</button>{% endif %}
+    {% if c.slug == 'ranman' %}<button class="tab" data-tab="ranman-projects">Projects</button>
+    <button class="tab" data-tab="ranman-ue">Unit Economics</button>{% endif %}
     <button class="tab" data-tab="operations">{{ 'Cashflow & PLP' if c.slug == 'ranman' else 'Operations' }}</button>
     <button class="tab" data-tab="finance">Finance</button>
     {% if cap %}<button class="tab" data-tab="projects">Projects</button>{% endif %}
@@ -786,6 +787,11 @@
   {% if c.slug == 'ranman' %}
   <div class="tab-panel" data-panel="ranman-projects">
     {% set rr = ranman_rep %}{% include '_partials/_ranman_proyectos.html' %}
+  </div>
+  {# ───────── RANMAN · Unit Economics (the BP models, etapa by etapa) ───────── #}
+  <div class="tab-panel" data-panel="ranman-ue">
+    {% if ranman_bp %}{% set bp = ranman_bp %}{% include '_partials/_ranman_unit_econ.html' %}
+    {% else %}<div class="card mb-24"><span class="subtle" style="font-size:12.5px;">Unit Economics se arma con los BPs de Ranman (<code>NN BP &lt;PLAZA&gt; V02.xlsx</code>, carpeta «5 BPs» de cada mes). Todavía no hay ninguno cargado{% if is_admin %}: súbelos desde la pestaña Data o con <code>python tools/ranman_sync.py --months 14 --only bp</code>{% endif %}.</span></div>{% endif %}
   </div>
   {% if is_admin %}
   {# ───────── RANMAN · Data (admin): the monthly package ───────── #}

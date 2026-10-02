@@ -1110,7 +1110,7 @@ def _meses_entre(a, b):
 
 
 def load_ranman_bp():
-    """The business plans, by development, for the Projects tab's Unit Economics:
+    """The business plans, by development, for the Ranman Unit Economics tab:
     {corte, corte_label, modelos, desarrollos: {k: {principal, modelo, corte,
     etapas (newest cut, in full), escenarios (other current models with the same
     development), historia (its principal model's cut each month), saldos,
