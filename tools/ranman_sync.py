@@ -15,6 +15,7 @@ and Python with `requests` and `openpyxl` (pip install -r requirements.txt).
     python tools/ranman_sync.py                   # send it
     python tools/ranman_sync.py --months 12       # look further back
     python tools/ranman_sync.py --force           # resend even if unchanged
+    python tools/ranman_sync.py --months 34 --only aaa,sabana   # load those reports' history
     python tools/ranman_sync.py --root "D:\\OneDrive\\Archivos Ranman"
 
 Exit code 1 when a file was rejected or the server couldn't be reached, so a
@@ -60,20 +61,30 @@ def meses(raiz: Path, n: int):
     out.sort(reverse=True)
     llenos = []
     for y, m, carpeta in out:
-        if any(p.is_file() for p in carpeta.rglob('*')):
+        if next(archivos(carpeta), None) is not None:
             llenos.append((y, m, carpeta))
             if len(llenos) == n:
                 break
     return llenos
 
 
+def archivos(carpeta: Path):
+    """Every file under a month folder, never entering backup / scenario /
+    paperwork sub-folders: deep inside the BP backups the paths pass Windows'
+    260-character limit, and nothing there is a deliverable anyway."""
+    def poda(d):
+        return any(o in ranman_package._norm(d) for o in ranman_package.OMITE_CARPETA)
+    for base, dirs, files in os.walk(carpeta, topdown=True, onerror=lambda e: None):
+        dirs[:] = sorted(d for d in dirs if not poda(d))
+        for f in sorted(files):
+            yield Path(base) / f
+
+
 def candidatos(raiz: Path, n: int):
     """[(path, relative path, kind, periodo)] for every deliverable worth sending."""
     for y, m, carpeta in meses(raiz, n):
         periodo = '%d-%02d' % (y, m)
-        for p in sorted(carpeta.rglob('*')):
-            if not p.is_file():
-                continue
+        for p in archivos(carpeta):
             rel = p.relative_to(raiz).as_posix()
             if ranman_package.omitir_ruta(rel):
                 continue
@@ -96,8 +107,14 @@ def main():
     ap.add_argument('--dry-run', action='store_true', help='list what would be sent, send nothing')
     ap.add_argument('--force', action='store_true', help='send even what was already sent unchanged')
     ap.add_argument('--state', default=str(STATE), help='where to remember what was sent (default %(default)s)')
+    ap.add_argument('--only', help='send only these deliverables, comma-separated (e.g. aaa,sabana) — '
+                                   'for loading one report\'s history without resending the rest')
     a = ap.parse_args()
     state = Path(a.state)
+    solo = {k.strip() for k in a.only.split(',')} if a.only else None
+    if solo and not solo <= set(ranman_package.ENTREGABLE):
+        sys.exit('--only: unknown deliverable(s) %s; use any of %s'
+                 % (', '.join(sorted(solo - set(ranman_package.ENTREGABLE))), ', '.join(ranman_package.ENTREGABLE)))
 
     raiz = Path(a.root) if a.root else raiz_por_defecto()
     if not raiz or not raiz.is_dir():
@@ -111,6 +128,8 @@ def main():
 
     pendientes = []
     for p, rel, kind, periodo in candidatos(raiz, a.months):
+        if solo and kind not in solo:
+            continue
         if not a.force and estado.get(rel) == huella(p):
             continue
         pendientes.append((p, rel, kind, periodo))

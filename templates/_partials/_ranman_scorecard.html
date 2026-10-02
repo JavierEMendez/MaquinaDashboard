@@ -1,0 +1,203 @@
+{# RANMAN · Dashboard — Ranman's own monthly scorecard («Reporte AAA», page 1)
+   in the house style: headline tiles, the trend of every cut loaded (Jan-2024
+   on), the full scorecard of the latest month (units, returns, P&L, margins,
+   balance, cash flow, debt by bank, ratios, Z-score) and Ranman's commentary.
+   Expects `rr` (ranman_rep, uses rr.aaa) and `hist` (ranman_hist). Classes and
+   ids namespaced rs-. #}
+{% set aa = rr.get('aaa') %}
+<style>
+.rs .rs-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:18px;margin-bottom:24px}
+.rs .kpi{min-height:0}
+.rs .kpi-value small{font-size:13px;font-weight:500;color:var(--mq-subtle);margin-left:4px;letter-spacing:0}
+.rs .kpi-value.accent{color:var(--mq-accent)}
+.rs .rs-grid{display:grid;gap:18px;grid-template-columns:repeat(12,1fr);align-items:start;margin-bottom:24px}
+.rs .rs-grid > .card{grid-column:span 12;min-width:0}
+@media(min-width:900px){.rs .rs-grid > .rs-col6{grid-column:span 6}}
+.rs .card-head{margin-bottom:14px}
+.rs .rs-sec{font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--mq-subtle);margin:6px 0 12px}
+.rs .rs-legend{display:flex;flex-wrap:wrap;gap:8px 18px;margin-top:12px;font-size:12.5px;color:var(--mq-ink)}
+.rs .rs-legend span{display:inline-flex;align-items:center;gap:8px}
+.rs .rs-sw{width:9px;height:9px;border-radius:50%;flex:none;display:inline-block}
+.rs .rs-ln{display:inline-block;width:16px;height:0;border-top:2px solid var(--mq-ink);flex:none}
+.rs .rs-ln.dash{border-top-style:dashed}
+.rs .rs-empty{font-size:12.5px;color:var(--mq-subtle);margin:0}
+/* the scorecard: two columns of section tables, like page 1 of the report */
+.rs .rs-cols{display:grid;gap:18px;grid-template-columns:1fr;align-items:start}
+@media(min-width:1100px){.rs .rs-cols{grid-template-columns:1.15fr 1fr}}
+.rs .rs-cols > div{display:grid;gap:18px;min-width:0}
+.rs .sc{min-width:0}
+.rs .sc .table-scroll{max-height:none}
+.rs .sc table{font-size:12.5px}
+.rs .sc th,.rs .sc td{padding:7px 10px}
+.rs .sc th:first-child,.rs .sc td:first-child{text-align:left;white-space:normal;min-width:150px}
+.rs .sc thead th{white-space:normal;line-height:1.25}
+.rs .sc td.real{font-weight:600;color:var(--mq-ink-2)}
+.rs .sc td.ok{color:var(--mq-good)} .rs .sc td.warn{color:var(--mq-warn)} .rs .sc td.bad{color:var(--mq-bad)}
+.rs .sc td.zero{color:var(--mq-subtle)}
+.rs .sc tr.tot td{font-weight:700;background:var(--mq-surface-2)}
+.rs ol.rs-com{margin:0;padding-left:20px;display:grid;gap:8px;font-size:13.5px;line-height:1.5;color:var(--mq-ink);max-width:110ch}
+.rs ol.rs-com li::marker{color:var(--mq-subtle);font-variant-numeric:tabular-nums}
+</style>
+
+<div class="rs mb-24" id="rs">
+  {% if aa %}
+  <div class="row wrap" style="gap:8px;margin-bottom:16px;align-items:center;">
+    <span class="badge good" title="{{ aa.archivo }}">● Reporte AAA · cierre al {{ aa.as_of_label }}</span>
+    <span class="badge">Cifras en mdp</span>
+    {% if hist %}<span class="subtle" style="font-size:12px;">{{ hist.meses|length }} cierres mensuales cargados, desde {{ hist.meses[0] }}</span>{% endif %}
+  </div>
+  <div class="rs-kpis" id="rs-kpis"></div>
+
+  {% if hist and hist.meses|length > 1 %}
+  <div class="rs-sec">Tendencia mes a mes</div>
+  <div class="rs-grid">
+    <section class="card rs-col6"><div class="card-head"><div><div class="card-title">Firmas por mes</div>
+      <div class="card-sub">Real contra el plan del mes. El reporte trae el plan mensual desde octubre de 2024.</div></div></div>
+      <div id="rs-chFirmas"></div><div class="rs-legend" id="rs-lgFirmas"></div></section>
+    <section class="card rs-col6"><div class="card-head"><div><div class="card-title">Ventas netas por mes</div>
+      <div class="card-sub">mdp, real contra el plan del mes.</div></div></div>
+      <div id="rs-chVentas"></div><div class="rs-legend" id="rs-lgVentas"></div></section>
+    <section class="card rs-col6"><div class="card-head"><div><div class="card-title">UAIR por mes</div>
+      <div class="card-sub">Utilidad antes de impuestos, mdp, real contra el plan del mes.</div></div></div>
+      <div id="rs-chUair"></div><div class="rs-legend" id="rs-lgUair"></div></section>
+    <section class="card rs-col6"><div class="card-head"><div><div class="card-title">Deuda con costo y apalancamiento</div>
+      <div class="card-sub">Saldo de deuda con costo (mdp, izquierda) y deuda neta / EBITDA (veces, derecha). La razón usa el EBITDA acumulado del año, así que en enero descansa en un solo mes y se dispara: la escala derecha se recorta a 0–20×.</div></div></div>
+      <div id="rs-chDeuda"></div><div class="rs-legend" id="rs-lgDeuda"></div></section>
+  </div>
+  {% endif %}
+
+  <div class="rs-sec">Scorecard del mes</div>
+  <div class="rs-cols mb-24"><div id="rs-izq"></div><div id="rs-der"></div></div>
+
+  {% if aa.data.comentarios %}
+  <section class="card mb-24">
+    <div class="card-head"><div><div class="card-title">Comentarios de Ranman</div>
+      <div class="card-sub">Tal como vienen en el reporte del mes.</div></div></div>
+    <ol class="rs-com">{% for c in aa.data.comentarios %}<li>{{ c }}</li>{% endfor %}</ol>
+  </section>
+  {% endif %}
+  {% else %}
+  <div class="card mb-24"><p class="rs-empty">Todavía no hay un reporte AAA cargado. Es el scorecard mensual de Ranman; se carga con el paquete mensual{% if is_admin %} desde la pestaña Data{% endif %}.</p></div>
+  {% endif %}
+</div>
+
+{% if aa %}
+<script>
+document.addEventListener('DOMContentLoaded', function(){
+const AA = {{ aa.data | tojson }};
+const H = {{ hist | tojson }};
+const $ = id => document.getElementById('rs-' + id);
+if (!$('kpis')) return;
+const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[ch]));
+const norm = s => String(s||'').normalize('NFKD').replace(/[̀-ͯ]/g,'').replace(/\s+/g,' ').trim().toLowerCase();
+const fx = (v, d=1) => (v==null||!isFinite(v)?'—':v.toLocaleString('es-MX',{minimumFractionDigits:d,maximumFractionDigits:d}));
+const f0 = v => (v==null||!isFinite(v)?'—':Math.round(v).toLocaleString('es-MX'));
+const pc = (v, d=1) => (v==null||!isFinite(v)?'—':(v*100).toFixed(d)+'%');
+const MES = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+const lbl = s => { const [y,m] = s.split('-'); return MES[+m-1]+'-'+y.slice(2); };
+const TONO = {good:'pos', bad:'neg', blue:'accent'};
+const kpiHTML = k => `<div class="kpi"><div class="kpi-top"><span class="kpi-label">${k.lab}</span></div><div class="kpi-value ${TONO[k.cls]||''}">${k.val}${k.u?`<small>${k.u}</small>`:''}</div><div class="kpi-foot"><span class="kpi-sub">${k.sub||''}</span></div></div>`;
+
+/* ---- reading the report: a section, a row by its label, a column by its header ---- */
+const COL = [[/^target$/,'target'], [/^real mes$/,'rm'], [/^plan mes$/,'pm'], [/^real acum$/,'ra'], [/^plan \d{4} acum$/,'pa'],
+             [/^% var$/,'var'], [/^acum$/,'acum'], [/^real$/,'real']];
+const ck = c => { const n = norm(c); const h = COL.find(([rx]) => rx.test(n)); return h ? h[1] : null; };
+const SEC = Object.fromEntries((AA.secciones||[]).map(s => [s.id, s]));
+function v(sec, fila, col){ const s = SEC[sec]; if (!s) return null;
+  const f = s.filas.find(r => norm(r.n).startsWith(norm(fila))); if (!f) return null;
+  const j = s.cols.map(ck).indexOf(col); return j < 0 ? null : f.v[j]; }
+const varTxt = (r, p, u, d) => (r==null || p==null) ? '' : `plan ${d===0?f0(p):fx(p,d)}${u} · ${r-p>=0?'+':''}${p ? pc((r-p)/Math.abs(p)) : '—'}`;
+
+/* ---- headline tiles ---- */
+(function(){
+  const fr = v('variables','firmadas','ra'), fp = v('variables','firmadas','pa');
+  const vr = v('resultados','ventas netas','ra'), vp = v('resultados','ventas netas','pa');
+  const ur = v('resultados','uair','ra'), up = v('resultados','uair','pa');
+  const mr = v('margenes','margen bruto','ra'), mp = v('margenes','margen bruto','pa'), mt = v('margenes','margen bruto','target');
+  const dt = v('deuda','total','real'), nd = v('razones_deuda','net debt','real');
+  const ndT = (() => { const s = SEC.razones_deuda; if (!s) return null; const f = s.filas.find(r => norm(r.n).startsWith('net debt')); const j = s.cols.map(norm).indexOf('target'); return f && j>=0 ? f.v[j] : null; })();
+  const caja = v('flujo','saldo ranman vivienda','rm'), op = v('flujo','caja operativa','rm'), corp = v('flujo','tesoreria corporativa','rm');
+  const ge = v('variables','viviendas en gestoria','rm'), gp = v('variables','viviendas en gestoria','pm');
+  const ro = v('rendimientos','roic','ra'), roT = v('rendimientos','roic','target');
+  const k = [
+    fr!=null && {lab:'Firmas en el año', val:f0(fr), cls:'blue', sub:varTxt(fr, fp, '', 0)},
+    vr!=null && {lab:'Ventas netas en el año', val:fx(vr), u:'mdp', sub:varTxt(vr, vp, ' mdp', 1)},
+    ur!=null && {lab:'UAIR en el año', val:fx(ur), u:'mdp', cls:ur<0?'bad':'good', sub:varTxt(ur, up, ' mdp', 1)},
+    mr!=null && {lab:'Margen bruto en el año', val:pc(mr), sub:`plan ${pc(mp)} · objetivo ${pc(mt,0)}`},
+    dt!=null && {lab:'Deuda con costo', val:fx(dt), u:'mdp', sub: nd!=null ? `deuda neta / EBITDA ${fx(nd,2)}×${ndT!=null?' · objetivo '+fx(ndT,2)+'×':''}` : ''},
+    caja!=null && {lab:'Caja al cierre', val:fx(caja), u:'mdp', sub:`operativa ${fx(op)} · tesorería central ${fx(corp)}`},
+    ge!=null && {lab:'Viviendas en gestoría', val:f0(ge), sub: gp!=null ? `plan ${f0(gp)} · vendidas en trámite de crédito` : 'vendidas en trámite de crédito'},
+    ro!=null && {lab:'ROIC en el año', val:pc(ro), cls: roT!=null && ro<roT ? 'bad' : '', sub: roT!=null ? `objetivo ${pc(roT,0)}` : ''},
+  ].filter(Boolean);
+  $('kpis').innerHTML = k.map(kpiHTML).join('');
+})();
+
+/* ---- trends ---- */
+if (H && H.meses && H.meses.length > 1) (function(){
+  const L = H.meses.map(lbl), S = H.series;
+  function combo(host, bars, lineas, o){
+    o = o || {};
+    MQC.mount($(host), 270, () => {
+      const ds = bars.map(b => ({type:'bar', label:b.name, data:b.vals, order:2, borderWidth:0, maxBarThickness:22, yAxisID:'y',
+        backgroundColor: b.vals.map(x => MQC.alpha(x!=null && x<0 && b.neg ? b.neg : b.color, 0.75))}));
+      lineas.forEach(l => ds.push({type:'line', label:l.name, data:l.vals, order:1, yAxisID:l.eje||'y', borderColor:MQC.color(l.color),
+        backgroundColor:'transparent', borderWidth:2, borderDash:l.dash||[], pointRadius:0, pointHoverRadius:3, tension:.25, spanGaps:false}));
+      const scales = {x:{grid:{display:false}, ticks:{color:MQ.muted(), maxRotation:0, autoSkipPadding:14}},
+                      y:{beginAtZero:true, grid:{color:MQ.grid()}, ticks:{color:MQ.muted(), callback:o.yFmt||f0}}};
+      if (lineas.some(l => l.eje==='y2')) scales.y2 = Object.assign({position:'right', beginAtZero:true, grid:{display:false}, ticks:{color:MQ.muted(), callback: x => fx(x,0)+'×'}}, o.y2 || {});
+      return {type:'bar', data:{labels:L, datasets:ds}, options:{responsive:true, maintainAspectRatio:false,
+        interaction:{mode:'index', intersect:false}, scales,
+        plugins:{legend:{display:false}, tooltip:{callbacks:{label: c => `${c.dataset.label}: ${c.dataset.yAxisID==='y2' ? fx(c.parsed.y,2)+'×' : fx(c.parsed.y, o.dec==null?1:o.dec)}`}}}}};
+    });
+    $(host.replace('ch','lg')).innerHTML = bars.map(b => `<span><i class="rs-sw" style="background:var(${b.color})"></i>${esc(b.name)}</span>`).join('') +
+      lineas.map(l => `<span><i class="rs-ln${l.dash?' dash':''}" style="border-top-color:var(${l.color})"></i>${esc(l.name)}</span>`).join('');
+  }
+  combo('chFirmas', [{name:'Firmas reales', color:'--mq-c4', vals:S.firmas_rm}], [{name:'Plan del mes', color:'--mq-ink', vals:S.firmas_pm, dash:[5,4]}], {dec:0});
+  combo('chVentas', [{name:'Ventas netas', color:'--mq-c1', vals:S.ventas_rm}], [{name:'Plan del mes', color:'--mq-ink', vals:S.ventas_pm, dash:[5,4]}]);
+  combo('chUair', [{name:'UAIR', color:'--mq-good', neg:'--mq-bad', vals:S.uair_rm}], [{name:'Plan del mes', color:'--mq-ink', vals:S.uair_pm, dash:[5,4]}]);
+  combo('chDeuda', [], [{name:'Deuda con costo (mdp)', color:'--mq-c6', vals:S.deuda_total},
+                        {name:'Deuda neta / EBITDA', color:'--mq-c7', vals:S.nd_ebitda, eje:'y2'}], {y2:{min:0, max:20}});
+})();
+
+/* ---- the scorecard ---- */
+(function(){
+  const IZQ = ['variables','rendimientos','resultados','margenes','balance'], DER = ['flujo','deuda','razones_deuda','razones_fin','zscore'];
+  // which way is good, by row: plan variances are coloured only where the direction is unambiguous
+  const BAJO = /^(gastos|costo de ventas|gtos|financieros|pasivo total|net debt|pasivo\/activo)/;
+  const NEUTRO = /^(viviendas en gestoria|inv\.|activo total|inventarios)/;
+  const esVar = c => /^(% var|var vs)/.test(norm(c));
+  const fmt = (s, f, j) => { const x = f.v[j]; if (x==null) return '—';
+    if (f.p && f.p[j]) return pc(x);
+    if (['razones_deuda','razones_fin','zscore'].includes(s.id)) return fx(x, 2);
+    if (s.id==='variables' && !/mdp/i.test(f.n)) return f0(x);
+    return fx(x); };
+  const tonoVar = (fila, x) => { const n = norm(fila); if (x==null || NEUTRO.test(n)) return '';
+    const bueno = BAJO.test(n) ? x < 0 : x > 0; return Math.abs(x) < 0.005 ? '' : (bueno ? 'ok' : 'bad'); };
+  // ratio tables: the real value against its target
+  const tonoReal = (s, f) => { const cols = s.cols.map(norm), jr = cols.indexOf('real'), jt = cols.indexOf('target');
+    if (jr<0 || jt<0 || f.v[jr]==null || f.v[jt]==null) return '';
+    const bajo = BAJO.test(norm(f.n)); const r = f.v[jr], t = f.v[jt];
+    return (bajo ? r <= t : r >= t) ? 'ok' : 'bad'; };
+  const tabla = s => {
+    const cols = s.cols;
+    const realIdx = cols.map((c,j) => /^real( mes| acum)?$/.test(norm(c)) ? j : -1).filter(j => j>=0);
+    const filas = s.filas.map(f => {
+      const tot = /^total$|^resultado/.test(norm(f.n));
+      return `<tr class="${tot?'tot':''}"><td>${esc(f.n)}</td>` + cols.map((c,j) => {
+        let cls = realIdx.includes(j) ? 'real' : '';
+        if (esVar(c)) cls += ' ' + tonoVar(f.n, f.v[j]);
+        if (norm(c)==='real' && ['razones_deuda','razones_fin'].includes(s.id)) cls += ' ' + tonoReal(s, f);
+        if (s.id==='zscore' && /^resultado/.test(norm(f.n)) && f.v[j]!=null) cls += ' ' + (f.v[j] >= 2.9 ? 'ok' : (f.v[j] <= 1.23 ? 'bad' : 'warn'));
+        if (f.v[j]==null) cls += ' zero';
+        return `<td class="${cls.trim()}">${fmt(s, f, j)}</td>`; }).join('') + '</tr>'; }).join('');
+    const nota = s.id==='zscore' ? '<div class="card-sub" style="padding:10px 14px 12px;">Resultado de 2.90 o más: riesgo de quiebra bajo; 1.23 o menos: alto.</div>' : '';
+    return `<section class="card sc" style="padding:0;overflow:hidden;"><div class="card-head" style="padding:16px 16px 0;margin-bottom:10px;"><div><div class="card-title" style="font-size:14px;">${esc(s.titulo)}</div></div></div>` +
+      `<div class="table-scroll" style="border:none;border-top:1px solid var(--mq-line);border-radius:0;"><table class="data-table"><thead><tr><th></th>${cols.map(c=>`<th>${esc(c)}</th>`).join('')}</tr></thead><tbody>${filas}</tbody></table></div>${nota}</section>`;
+  };
+  $('izq').innerHTML = IZQ.filter(k => SEC[k]).map(k => tabla(SEC[k])).join('');
+  $('der').innerHTML = DER.filter(k => SEC[k]).map(k => tabla(SEC[k])).join('');
+})();
+// Theme flips rebuild the charts through MQ's registry (static/mq_charts.js).
+});
+</script>
+{% endif %}

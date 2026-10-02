@@ -5,7 +5,7 @@
    (firmas by development) and Pipeline (units left by coto and quarter).
    Expects `rf` (ranman_flujo, may be None) and `rr` (ranman_rep). In the house
    style of the other Ranman tabs; classes and ids namespaced rc-. #}
-{% set be = rr.get('breakeven') %}{% set pi = rr.get('pipeline') %}{% set pp = rr.get('plp_proyectos') %}
+{% set be = rr.get('breakeven') %}{% set pi = rr.get('pipeline') %}{% set pp = rr.get('plp_proyectos') %}{% set sa = rr.get('sabana') %}{% set aa = rr.get('aaa') %}
 <style>
 .rc .rc-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(176px,1fr));gap:18px;margin-bottom:18px}
 .rc .kpi{min-height:0}
@@ -27,6 +27,7 @@
 .rc .dt td.l,.rc .dt th.l{text-align:left}
 .rc .dt .zero{color:var(--mq-subtle)}
 .rc .dt thead th .sub2{display:block;font-size:10px;font-weight:500;letter-spacing:0;text-transform:none;color:var(--mq-subtle);margin-top:2px}
+.rc .dt td .sub2{display:block;font-size:11px;margin-top:2px;font-weight:600}
 .rc .dt td .sub{display:block;font-size:11px;color:var(--mq-subtle);margin-top:2px;white-space:normal;max-width:340px}
 .rc .dt tr.grp{cursor:pointer} .rc .dt tr.grp td{background:var(--mq-surface-2);font-weight:600;color:var(--mq-ink-2)}
 .rc .dt tr.grp:focus-visible{outline:2px solid var(--mq-accent);outline-offset:-2px}
@@ -47,6 +48,7 @@
     {% if rf %}<span class="badge good">● Flujo y PLP al {{ rf.as_of_label }}</span>{% endif %}
     {% if be %}<span class="badge" title="{{ be.archivo }}">Breakeven al {{ be.as_of_label }}</span>{% endif %}
     {% if pi %}<span class="badge" title="{{ pi.archivo }}">Pipeline al {{ pi.as_of_label }}</span>{% endif %}
+    {% if sa %}<span class="badge" title="{{ sa.archivo }}">Sábana al {{ sa.as_of_label }}</span>{% endif %}
     <span class="badge">Unidades y mdp</span>
   </div>
 
@@ -59,6 +61,24 @@
         <div class="card-sub" id="rc-rmNota">Firmas del PLP consolidado (renglón 5): sólidas las reales, tenues las proyectadas.</div></div></div>
       <div id="rc-chRitmo"></div>
       <div class="rc-legend" id="rc-lgRitmo"></div>
+    </section>
+  </div>
+  {% endif %}
+
+  {% if sa %}
+  <div class="rc-sec">Ritmo por desarrollo · Sábana Operativa</div>
+  <div class="rc-kpis" id="rc-saKpis"></div>
+  <div class="rc-grid">
+    <section class="card" style="padding:0;overflow:hidden;">
+      <div class="card-head" style="padding:22px 22px 0;"><div><div class="card-title">Plan contra real, por desarrollo</div>
+        <div class="card-sub" id="rc-saNota">Acumulado del año al mes de la Sábana. Firmas son viviendas individualizadas; en los desarrollos de lotes, la cobranza de lotes equivalente. A la derecha, el pronóstico de Ranman para el año completo contra el plan anual.</div></div></div>
+      <div class="table-scroll" style="border:none;border-top:1px solid var(--mq-line);border-radius:0;"><table class="data-table dt" id="rc-tblSa"></table></div>
+    </section>
+    <section class="card">
+      <div class="card-head"><div><div class="card-title">Producción por mes</div>
+        <div class="card-sub">Inicios y términos de obra de todos los desarrollos: barras sólidas lo real, tenues el pronóstico; rayas, el plan.</div></div></div>
+      <div id="rc-chProd"></div>
+      <div class="rc-legend" id="rc-lgProd"></div>
     </section>
   </div>
   {% endif %}
@@ -97,7 +117,7 @@
   </div>
   {% endif %}
 
-  {% if not (rf or be or pi) %}
+  {% if not (rf or be or pi or sa) %}
   <div class="card mb-24"><p class="rc-empty">Todavía no hay datos comerciales. Se cargan con el paquete mensual de Ranman (Flujo y PLP, Breakeven y Pipeline){% if is_admin %} desde la pestaña Data{% endif %}.</p></div>
   {% endif %}
 </div>
@@ -109,6 +129,10 @@ const ASOF = {{ (rf.as_of if rf else None) | tojson }};
 const BE = {{ (be.data if be else None) | tojson }};
 const PI = {{ (pi.data if pi else None) | tojson }};
 const PP = {{ (pp.data if pp else None) | tojson }};
+const SA = {{ (sa.data if sa else None) | tojson }};
+const DES = {{ ranman_desarrollos | tojson }};
+// the AAA's units table, to check the Sábana's firmas against it
+const AAAF = {{ ({'asOf': aa.data.asOf, 'secciones': (aa.data.secciones | selectattr('id', 'equalto', 'variables') | list)} if aa else None) | tojson }};
 if (!document.getElementById('rc')) return;
 const $ = id => document.getElementById('rc-' + id);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[ch]));
@@ -203,6 +227,65 @@ if (PLP && ASOF) (function(){
   if (!conBe && BE) $('rmNota').textContent += ` El breakeven cargado es de ${BE.anio}, no se compara con ${A0}.`;
 })();
 
+/* ==================== SÁBANA: PLAN CONTRA REAL POR DESARROLLO ==================== */
+if (SA) (function(){
+  const N = SA.meses_reales, MESF = MES[N-1] || '';
+  const sum = (a, n) => (a||[]).slice(0, n).reduce((x,y)=>x+(y||0), 0);
+  const met = (d, k, lado, n) => d.m[k] ? sum(d.m[k][lado], n) : null;
+  const D = SA.desarrollos;
+  const T = k => ({real: D.reduce((a,d)=>a+(met(d,k,'real',N)||0),0), plan: D.reduce((a,d)=>a+(met(d,k,'plan',N)||0),0),
+                   anioR: D.reduce((a,d)=>a+(met(d,k,'real',12)||0),0), anioP: D.reduce((a,d)=>a+(met(d,k,'plan',12)||0),0)});
+  const F = T('firmas'), A = T('apartados'), I = T('inicios'), Te = T('terminos');
+  const rv = (r, p) => p ? `${r-p>=0?'+':''}${f0(r-p)} contra el plan (${f0(p)}) · ${pct(r/p)}` : 'sin plan para el periodo';
+  // the AAA of the same month counts the same firmas: say whether they agree
+  let cuadre = '';
+  if (AAAF && AAAF.asOf && AAAF.asOf.slice(0,7) === SA.asOf.slice(0,7) && AAAF.secciones[0]) {
+    const s = AAAF.secciones[0], f = s.filas.find(r => r.n.toLowerCase().startsWith('firmadas'));
+    const j = s.cols.findIndex(c => /^real acum$/i.test(c.trim()));
+    if (f && j >= 0 && f.v[j] != null) cuadre = Math.abs(f.v[j] - F.real) < 0.5 ? ` · cuadra con el AAA (${f0(f.v[j])})` : ` · el AAA dice ${f0(f.v[j])}`;
+  }
+  $('saKpis').innerHTML = [
+    {lab:`Firmas ene–${MESF}`, val:f0(F.real), cls:'blue', sub: rv(F.real, F.plan) + cuadre},
+    {lab:`Apartados ene–${MESF}`, val:f0(A.real), sub: rv(A.real, A.plan)},
+    {lab:'Inicios de obra', val:f0(I.real), sub: rv(I.real, I.plan)},
+    {lab:'Términos de obra', val:f0(Te.real), sub: rv(Te.real, Te.plan)},
+    {lab:`Firmas pronosticadas ${SA.anio}`, val:f0(F.anioR), cls: F.anioR >= F.anioP ? 'good' : 'bad', sub:`plan anual ${f0(F.anioP)} · ${pct(F.anioP ? F.anioR/F.anioP : null)}`},
+  ].map(kpiHTML).join('');
+
+  const celda = (d, k) => { const r = met(d,k,'real',N), p = met(d,k,'plan',N);
+    if (r==null && p==null) return '<td class="zero">—</td>';
+    if (!p) return `<td>${f0(r)}<span class="sub2">sin plan</span></td>`;
+    return `<td>${f0(r)} <span class="zero">/ ${f0(p)}</span><span class="sub2 ${tono(r/p)}">${pct(r/p)}</span></td>`; };
+  const cumpl = d => { const r = met(d,'firmas','real',N), p = met(d,'firmas','plan',N);
+    if (!p) return '<td class="zero">—</td>';
+    const x = r/p, t = tono(x), w = Math.min(100, x/1.6*100);
+    return `<td><span class="cov"><span class="${t}">${pct(x)}</span><span class="trk"><span class="fil ${t}" style="width:${w}%"></span><span class="mk" style="left:${100/1.6}%"></span></span></span></td>`; };
+  const anio = d => { const r = met(d,'firmas','real',12), p = met(d,'firmas','plan',12);
+    return `<td>${f0(r)} <span class="zero">/ ${f0(p)}</span>${p ? `<span class="sub2 ${tono(r/p)}">${pct(r/p)}</span>` : ''}</td>`; };
+  const filas = D.slice().sort((a,b) => a.plaza.localeCompare(b.plaza) || (met(b,'firmas','plan',12)||0) - (met(a,'firmas','plan',12)||0));
+  const nom = d => (DES[d.k] ? DES[d.k][0] : d.n) + (d.lotes ? ' · lotes' : '');
+  $('tblSa').innerHTML = `<thead><tr><th class="l">Desarrollo</th><th>Apartados<span class="sub2">real / plan</span></th><th>Firmas<span class="sub2">real / plan</span></th><th>Cumplimiento de firmas</th><th>Inicios<span class="sub2">real / plan</span></th><th>Términos<span class="sub2">real / plan</span></th><th>Firmas ${SA.anio}<span class="sub2">pronóstico / plan</span></th></tr></thead><tbody>` +
+    filas.map(d => `<tr><td class="l">${esc(nom(d))}<span class="sub">${esc(PLAZA[d.plaza]||d.plaza)} · ${esc(d.n)}${d.lotes ? ' · firmas = cobranza de lotes equivalente' : ''}</span></td>${celda(d,'apartados')}${celda(d,'firmas')}${cumpl(d)}${celda(d,'inicios')}${celda(d,'terminos')}${anio(d)}</tr>`).join('') +
+    `</tbody><tfoot><tr><td class="l">Total</td><td>${f0(A.real)} <span class="zero">/ ${f0(A.plan)}</span></td><td>${f0(F.real)} <span class="zero">/ ${f0(F.plan)}</span></td><td>${pct(F.plan ? F.real/F.plan : null)}</td><td>${f0(I.real)} <span class="zero">/ ${f0(I.plan)}</span></td><td>${f0(Te.real)} <span class="zero">/ ${f0(Te.plan)}</span></td><td>${f0(F.anioR)} <span class="zero">/ ${f0(F.anioP)}</span></td></tr></tfoot>`;
+  $('saNota').textContent = `Acumulado de enero a ${MESF} de ${SA.anio}. Firmas son viviendas individualizadas; en los desarrollos de lotes, la cobranza de lotes equivalente. A la derecha, el pronóstico de Ranman para el año completo (real hasta ${MESF}, proyección después) contra el plan anual.`;
+
+  // production by month: starts and completions, real then forecast, against the plan
+  const mes = (k, lado) => Array.from({length:12}, (_, i) => D.reduce((a,d) => a + ((((d.m[k]||{})[lado]) || [])[i] || 0), 0));
+  const etq = MES.map(m => m+'-'+String(SA.anio).slice(2));
+  const series = [{name:'Inicios', color:'--mq-c2', vals:mes('inicios','real')}, {name:'Términos', color:'--mq-c3', vals:mes('terminos','real')}];
+  const planes = [{name:'Plan de inicios', color:'--mq-c2', vals:mes('inicios','plan')}, {name:'Plan de términos', color:'--mq-c3', vals:mes('terminos','plan')}];
+  MQC.mount($('chProd'), 280, () => ({type:'bar', data:{labels:etq, datasets:
+      series.map(s => ({type:'bar', label:s.name, data:s.vals, order:2, borderWidth:0, maxBarThickness:22,
+        backgroundColor:s.vals.map((v,i)=>MQC.alpha(s.color, i < N ? 0.78 : 0.3))}))
+      .concat(planes.map(l => ({type:'line', label:l.name, data:l.vals, order:1, borderColor:MQC.color(l.color), backgroundColor:'transparent',
+        borderWidth:2, borderDash:[5,4], pointRadius:0, pointHoverRadius:3, tension:.25})))},
+    options:{responsive:true, maintainAspectRatio:false, interaction:{mode:'index', intersect:false},
+      scales:{x:{grid:{display:false}, ticks:{color:MQ.muted(), maxRotation:0}}, y:{beginAtZero:true, grid:{color:MQ.grid()}, ticks:{color:MQ.muted(), callback:f0}}},
+      plugins:{legend:{display:false}, tooltip:{callbacks:{label: c => `${c.dataset.label}: ${f0(c.parsed.y)}`,
+        afterBody: it => it.length && it[0].dataIndex >= N ? ['(pronóstico)'] : []}}}}}));
+  $('lgProd').innerHTML = series.map(s => `<span>${sw(s.color)}${s.name}</span>`).join('') + planes.map(l => `<span><i class="rc-ln dash" style="border-top-color:var(${l.color})"></i>${l.name}</span>`).join('');
+})();
+
 /* ==================== BREAKEVEN POR DESARROLLO ==================== */
 if (BE) (function(){
   const A = BE.anio, F0 = BE.be0.filas, F10 = BE.be10.filas;
@@ -237,7 +320,6 @@ if (BE) (function(){
     const r = real/need, t = tono(r), w = Math.min(100, r/1.6*100);
     return `<span class="cov"><span class="${t}">${pct(r)}</span><span class="trk"><span class="fil ${t}" style="width:${w}%"></span><span class="mk" style="left:${100/1.6}%"></span></span></span>`;
   };
-  const DES = {{ ranman_desarrollos | tojson }};
   $('tblBe').innerHTML = `<thead><tr><th class="l">Desarrollo</th><th>UAIR 0%<span class="sub2">u/mes</span></th><th>UAIR 10%<span class="sub2">u/mes</span></th><th>Firmas reales<span class="sub2">u/mes</span></th><th>Cobertura del 0%</th><th>Ventas de equilibrio<span class="sub2">mdp en ${A}</span></th></tr></thead><tbody>` +
     filas.map(g => `<tr><td class="l">${esc(DES[g.k] ? DES[g.k][0] : g.nombres.join(' + '))}<span class="sub">${esc(g.plaza||'')}${g.nombres.length>1?' · incluye '+esc(g.nombres.slice(1).join(', ')):''}${g.etapas.length?' · '+esc(g.etapas.join(', ')):''}</span></td>` +
       `<td>${fx(g.ut0/12)}</td><td>${fx(g.ut10/12)}</td><td>${g.real==null?'<span class="zero">—</span>':fx(g.real)}</td><td>${cov(g.real, g.ut0/12)}</td><td>${fx(g.pt0)}</td></tr>`).join('') +

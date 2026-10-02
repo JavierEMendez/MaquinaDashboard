@@ -251,6 +251,9 @@
         <div class="card-sub">Total operating revenue, {{ chart.years[0] }}–{{ chart.years[-1] }} (USD).</div></div></div>
       <div class="chart-wrap" style="height:300px;"><canvas id="chart-summary"></canvas></div>
     </div>
+    {% elif c.slug == 'ranman' %}
+    {# Ranman's own monthly scorecard (Reporte AAA) replaces the seeded KPI cards and chart. #}
+    {% set rr = ranman_rep %}{% set hist = ranman_hist %}{% include '_partials/_ranman_scorecard.html' %}
     {% else %}
     <div class="grid grid-4 mb-24">{% for it in dashboard_kpis %}{{ kpicard(it) }}{% endfor %}</div>
     <div class="card">
@@ -646,7 +649,8 @@
       {% endif %}
     </div>
     {% endif %}
-    {{ category_panel('Operations') }}
+    {# Ranman's seeded Operations KPIs were placeholders; the Flujo y PLP above is the real thing. #}
+    {% if c.slug != 'ranman' %}{{ category_panel('Operations') }}{% endif %}
   </div>
   <div class="tab-panel" data-panel="finance">
     {# Project Returns & Promotes — moved here from Commercial (returns/carry
@@ -723,7 +727,7 @@
       </div>
     </div>
     {% endif %}
-    {{ category_panel('Finance') }}
+    {% if c.slug != 'ranman' %}{{ category_panel('Finance') }}{% endif %}
     {% if ember_loans %}
     <div class="card mt-24">
       <div class="row wrap between" style="gap:8px;align-items:center;margin-bottom:16px;">

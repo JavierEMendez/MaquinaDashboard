@@ -276,7 +276,7 @@ CREATE TABLE IF NOT EXISTS ranman_flujo_plp (
 
 -- RANMAN monthly package: every other parsed deliverable, one JSON payload per
 -- (kind, cut date) as ranman_package / ranman_flujo_parser build it — kind is
--- edo_resultados | breakeven | pipeline | plp_proyectos. Latest file for a cut wins.
+-- edo_resultados | breakeven | pipeline | plp_proyectos | aaa | sabana. Latest file for a cut wins.
 CREATE TABLE IF NOT EXISTS ranman_reports (
     kind TEXT NOT NULL,
     as_of DATE NOT NULL,
@@ -479,6 +479,15 @@ def ranman_reports_latest(kinds) -> dict:
     rows = cur.fetchall()
     cur.close(); conn.close()
     return {r["kind"]: r for r in rows}
+
+
+def ranman_reports_all(kind: str) -> list:
+    """Every stored cut of one kind, oldest first: [{as_of, data}]."""
+    conn = get_db(); cur = conn.cursor()
+    cur.execute("SELECT as_of, data FROM ranman_reports WHERE kind = %s ORDER BY as_of", (kind,))
+    rows = cur.fetchall()
+    cur.close(); conn.close()
+    return rows
 
 
 def ranman_reports_index() -> list:

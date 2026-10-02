@@ -30,6 +30,7 @@ import kmz_parser
 import ranman_deuda_parser
 import ranman_flujo_parser
 import ranman_package
+import ranman_aaa
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "maquina-dev-secret-change-me")
@@ -890,10 +891,12 @@ def load_ranman_flujo():
 # recognised by name (ranman_package.clasifica); each parser checks the file
 # against its own totals and nothing that fails is stored. Every file is logged
 # so the Data tab can show what arrived for each month.
-RANMAN_REPORTS = ("edo_resultados", "breakeven", "pipeline", "plp_proyectos")
+RANMAN_REPORTS = ("edo_resultados", "breakeven", "pipeline", "plp_proyectos", "aaa", "sabana")
 _RANMAN_PARSERS = {"edo_resultados": ranman_package.parse_edo_resultados,
                    "breakeven": ranman_package.parse_breakeven,
-                   "pipeline": ranman_package.parse_pipeline}
+                   "pipeline": ranman_package.parse_pipeline,
+                   "aaa": ranman_aaa.parse_aaa,
+                   "sabana": ranman_package.parse_sabana}
 _MESES_ES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"]
 
 
@@ -1041,6 +1044,17 @@ def load_ranman_reports():
     return out
 
 
+def load_ranman_aaa_historia():
+    """Every AAA cut -> the month-by-month series the Dashboard charts. None when none is loaded."""
+    try:
+        rows = db.ranman_reports_all("aaa")
+    except Exception as e:
+        app.logger.warning("ranman AAA history load failed: %s", e)
+        return None
+    cortes = [(r["as_of"], _jl(r["data"])) for r in rows if isinstance(_jl(r["data"]), dict)]
+    return ranman_aaa.historia(cortes) if cortes else None
+
+
 def load_ranman_package():
     """Admin Data tab: what is loaded per parsed deliverable, which files arrived
     for the last four reporting months, the recent upload log, and sync status."""
@@ -1055,9 +1069,9 @@ def load_ranman_package():
     for r in idx:
         fechas.setdefault(r["kind"], []).append(str(r["as_of"])[:10])
     cargado = []
-    for key, label in (("flujo", "Flujo y PLP"), ("plp_proyectos", "PLP by development (PLP - Soporte)"),
+    for key, label in (("aaa", "AAA scorecard"), ("flujo", "Flujo y PLP"), ("plp_proyectos", "PLP by development (PLP - Soporte)"),
                        ("riesgos", "Cuadro de Riesgos"), ("edo_resultados", "Edo. Resultados por Proyecto"),
-                       ("breakeven", "Breakeven"), ("pipeline", "Pipeline")):
+                       ("breakeven", "Breakeven"), ("pipeline", "Pipeline"), ("sabana", "Sábana Operativa")):
         fs = sorted(fechas.get(key, []))
         cargado.append(dict(key=key, label=label, n=len(fs), first=_lbl_es(fs[0]) if fs else None,
                             last=_lbl_es(fs[-1]) if fs else None))
@@ -2422,10 +2436,12 @@ def company(slug):
     ranman_flujo = None  # Flujo y PLP tablero — Ranman only
     ranman_rep = {}      # monthly package: Edo. Resultados, Breakeven, Pipeline, PLP by development
     ranman_pkg = None    # Data tab (admin): what's loaded and what arrived
+    ranman_hist = None   # AAA scorecard month by month (Dashboard trends)
     if c["slug"] == "ranman":
         ranman_debt = load_ranman_debt()
         ranman_flujo = load_ranman_flujo()
         ranman_rep = load_ranman_reports()
+        ranman_hist = load_ranman_aaa_historia()
         if session.get("is_admin"):
             ranman_pkg = load_ranman_package()
     if c["slug"] == "ember":
@@ -2557,7 +2573,7 @@ def company(slug):
         ember_returns=ember_returns, summary=summary, fin=fin, leverage=leverage,
         valuation=valuation, cap=cap, hold=hold, exitr=exitr, fre_basis=fre_basis,
         verticals=verticals, sales=sales, ember_budget=ember_budget, polaris=polaris, ranman_debt=ranman_debt,
-        ranman_flujo=ranman_flujo, ue=ue, ranman_rep=ranman_rep, ranman_pkg=ranman_pkg,
+        ranman_flujo=ranman_flujo, ue=ue, ranman_rep=ranman_rep, ranman_pkg=ranman_pkg, ranman_hist=ranman_hist,
         ranman_patrones=ranman_package.patrones_js() if c["slug"] == "ranman" else None,
         ranman_enviables=sorted(ranman_package.ENVIABLES) if c["slug"] == "ranman" else None,
         ranman_omite=dict(carpeta=list(ranman_package.OMITE_CARPETA), nombre=list(ranman_package.OMITE_NOMBRE)),

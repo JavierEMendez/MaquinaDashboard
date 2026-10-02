@@ -106,8 +106,9 @@ Ranman uploads a monthly package to OneDrive (`Archivos Ranman/<year>/<n>_<Month
 numbers have drifted over the years) and parses the ones the dashboard reads:
 Flujo y PLP (`ranman_flujo_parser.py`, including the hidden *PLP - Soporte*
 sheet by development), Cuadro de Riesgos (`ranman_deuda_parser.py`),
-Edo. Resultados por Proyecto, Breakeven and Pipeline. Each file is checked
-against its own totals before anything is stored.
+Edo. Resultados por Proyecto, Breakeven, Pipeline, the Sábana Operativa and the
+AAA scorecard PDF (`ranman_aaa.py`, which rebuilds page 1's tables from the
+positioned text). Each file is checked against its own totals before anything is stored.
 
 Three ways in, all through `POST /api/ranman/package`:
 

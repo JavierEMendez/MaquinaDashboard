@@ -13,6 +13,7 @@ file's own totals don't add up and nothing should be stored):
     parse_edo_resultados  «Estado de Resultados al dd-mm-aa.xlsx»   lifetime P&L by etapa
     parse_breakeven       «Breakeven al dd-mm-aa.xlsx»              units / pesos to reach UAIR 0% and 10%
     parse_pipeline        «Pipeline al dd-mm-aa.xlsx»               units still to sell, by coto and quarter
+    parse_sabana          «NNN PLAN OPERATIVO <año>_<MES>_….xlsx»   plan vs real by development, month by month
 Amounts come in pesos (Edo. Resultados) or thousands (Breakeven, Pipeline
 prices) and are stored in mdp, like the other Ranman tableros.
 """
@@ -84,10 +85,10 @@ ENTREGABLES = [
     ('riesgos',        4,  'Cuadro de Riesgos',            r'^cuadro de riesgos ranman .*\.xls[xm]$',                'riesgos', True),
     ('bp',             5,  'BPs',                          r'^(\d{2} )?bp .*\.xlsx$',                                None, False),
     ('pipeline',       6,  'Pipeline',                     r'^pipeline al \d{2}-\d{2}-\d{2}.*\.xlsx$',               'dma', True),
-    ('aaa',            7,  'AAA',                          r'^reporte aaa .*\.pdf$',                                 'mes', False),
+    ('aaa',            7,  'AAA',                          r'^reporte aaa .*\.pdf$',                                 'mes', True),
     ('breakeven',      8,  'Breakeven',                    r'^breakeven al \d{2}-\d{2}-\d{2}.*\.xlsx$',              'dma', True),
     ('reservas',       9,  'Reservas Territoriales',       r'^tabla reservas territoriales.*\.xlsx$',                None, False),
-    ('sabana',         10, 'Sábana Operativa',             r'plan operativo \d{4}_[a-z]+_.*\.xlsx$',                 'mes', False),
+    ('sabana',         10, 'Sábana Operativa',             r'plan operativo \d{4}_[a-z]+_.*\.xlsx$',                 'mes', True),
     ('aportaciones',   11, 'Aportaciones MAQUINA',         r'^aportaciones maquina al \d{2}-\d{2}-\d{2}.*\.xlsx$',   'dma', False),
     ('prestamos',      12, 'Préstamo entre proyectos',     r'^control de prestamos entre proyectos.*\.xlsx$',        'dma', False),
     ('ccc',            13, 'Control de Créditos CCC',      r'^control de ccc al \d{2}-\d{2}-\d{2}.*\.xlsx$',         'dma', False),
@@ -479,4 +480,102 @@ def parse_pipeline(file_bytes: bytes, filename: str, as_of: str):
     lines.append('cotos vs Total, por trimestre: dif máx %.2f unidades' % dif)
     data = {'archivo': filename, 'asOf': as_of, 'trimestres': [t for _, t in trims][:ult + 1],
             'filas': out, 'total': total}
+    return data, bool(ok), lines
+
+
+# ── «NNN PLAN OPERATIVO <año>_<MES>_…_FINAL <MES>.xlsx» (Sábana Operativa) ──
+# One sheet per plaza («QRO (2026)», « SLP (2026)», «AGS (2026)», «CEL (2026)»).
+# Row 1 marks each year's two blocks — PLAN OPERATIVO (the plan) and YTD (real
+# for the months flagged H in row 4, Ranman's forecast for those flagged P) —
+# row 2 carries the year, row 3 the months. Column B opens a block of rows:
+# «RESUMEN <desarrollo>» holds apartados, individualizaciones (or lot-sale
+# equivalents), construction starts and completions. The first RESUMEN of a
+# plaza with several developments is the plaza's own summary. The INDICADORES
+# blocks are left out: their «real» side carries differences, not stocks, and
+# reading them needs Ranman to confirm what each one is.
+# Firmas here are homes individualised plus lot-sale equivalents; together they
+# are the AAA report's «Firmadas» (Aug-2026: 364 + 90 = 454, plan 462).
+_SAB_HOJAS = {'qro': 'QRO', 'slp': 'SLP', 'ags': 'AGS', 'cel': 'CEL', 'sma': 'SMA', 'gdl': 'GDL', 'cancun': 'CAN'}
+_SAB_UNICO = {'CEL': 'miranda'}          # a plaza whose only RESUMEN is its single development
+_SAB_METRICA = [(r'^apartados', 'apartados'), (r'^(individualizaciones|cobranza lotes)', 'firmas'),
+                (r'^inicios objetivo', 'inicios'), (r'^terminos objetivo', 'terminos'), (r'^entregas lotes', 'entregas')]
+
+
+def _sab_num(v):
+    return float(v) if isinstance(v, (int, float)) and not isinstance(v, bool) else 0.0
+
+
+def parse_sabana(file_bytes: bytes, filename: str, as_of: str):
+    anio = int(as_of[:4])
+    patron = re.compile(r'^([a-z]+) \(%d\)$' % anio)
+    wb = openpyxl.load_workbook(io.BytesIO(file_bytes), read_only=True, data_only=True)
+    plazas, desarrollos, lines, ok, meses_reales = [], [], [], True, None
+    try:
+        hojas = []
+        for ws in wb.worksheets:
+            m = patron.match(_norm(ws.title))
+            if ws.sheet_state == 'visible' and m and m.group(1) in _SAB_HOJAS:
+                hojas.append((_SAB_HOJAS[m.group(1)], ws))
+        if not hojas:
+            raise ValueError("%s: no plaza sheet for %d (expected names like 'QRO (%d)')" % (filename, anio, anio))
+        for plaza, ws in hojas:
+            r1, r2, _r3, r4 = (list(r) for r in ws.iter_rows(min_row=1, max_row=4, values_only=True))
+            pj = next((j for j, v in enumerate(r1) if v == 'PLAN OPERATIVO' and r2[j] == anio), None)
+            yj = next((j for j, v in enumerate(r1) if v == 'YTD' and r2[j] == anio), None)
+            if pj is None or yj is None:
+                raise ValueError("%s: sheet %s has no PLAN OPERATIVO / YTD block for %d" % (filename, ws.title, anio))
+            nh = sum(1 for x in r4[yj:yj + 12] if str(x or '').strip().upper() == 'H')
+            meses_reales = nh if meses_reales is None else min(meses_reales, nh)
+            bloques, actual = [], None
+            for row in ws.iter_rows(min_row=5, max_col=yj + 12, values_only=True):
+                b = row[1] if len(row) > 1 else None
+                c = row[2] if len(row) > 2 else None
+                if b not in (None, ''):
+                    t = re.sub(r'\s+', ' ', str(b)).strip()
+                    actual = {'n': t, 'm': {}} if _norm(t).startswith('resumen') else None
+                    if actual:
+                        bloques.append(actual)
+                if actual is None or c in (None, ''):
+                    continue
+                et = _norm(c)
+                clave = next((k for rx, k in _SAB_METRICA if re.match(rx, et)), None)
+                if not clave or clave in actual['m']:
+                    continue
+                actual['m'][clave] = {'plan': [_sab_num(row[j]) for j in range(pj, pj + 12)],
+                                      'real': [_sab_num(row[j]) for j in range(yj, yj + 12)]}
+                if clave == 'firmas':
+                    actual['lotes'] = 'lotes' in et or 'equiv' in et
+            con_datos = [bq for bq in bloques if any(any(v) for m in bq['m'].values() for v in (m['plan'], m['real']))]
+            for bq in con_datos:
+                nombre = re.sub(r'^resumen\s+', '', bq['n'], flags=re.I).strip()
+                k = clave_desarrollo(nombre)
+                es_plaza = k is None and len(con_datos) > 1 and plaza not in _SAB_UNICO
+                if k is None and plaza in _SAB_UNICO:
+                    k = _SAB_UNICO[plaza]
+                item = {'plaza': plaza, 'n': nombre, 'k': k, 'lotes': bool(bq.get('lotes')), 'm': bq['m']}
+                (plazas if es_plaza else desarrollos).append(item)
+    finally:
+        wb.close()
+    if not desarrollos:
+        raise ValueError("%s: no RESUMEN block with %d data" % (filename, anio))
+    # The month in the name («…_FINAL JUNIO») is the one that matches the AAA; the
+    # H flags in row 4 are sometimes left a month behind (Jun-2026 flags five).
+    nh = int(as_of[5:7]) if as_of[:4] == str(anio) else (meses_reales or 0)
+    if meses_reales is not None and meses_reales != nh:
+        lines.append('row 4 flags %d real months; the file name says %d — using %d' % (meses_reales, nh, nh))
+
+    def ytd(d, met, lado):
+        return sum((d['m'].get(met) or {}).get(lado, [0.0] * 12)[:nh])
+    # each plaza summary against its developments' homes (lot sales are reported apart)
+    for p in plazas:
+        hijos = [d for d in desarrollos if d['plaza'] == p['plaza'] and not d['lotes']]
+        for met in ('firmas', 'apartados'):
+            a, b = ytd(p, met, 'real'), sum(ytd(d, met, 'real') for d in hijos)
+            ok &= abs(a - b) <= max(2.0, 0.02 * abs(a))
+            lines.append('%-4s %-10s resumen de plaza vs desarrollos, real a la fecha: %g vs %g (dif %g)'
+                         % (p['plaza'], met, a, b, a - b))
+    total = {met: {lado: sum(ytd(d, met, lado) for d in desarrollos) for lado in ('plan', 'real')}
+             for met in ('apartados', 'firmas', 'inicios', 'terminos')}
+    data = {'archivo': filename, 'asOf': as_of, 'anio': anio, 'meses_reales': nh,
+            'desarrollos': desarrollos, 'plazas': plazas, 'total': total}
     return data, bool(ok), lines

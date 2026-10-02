@@ -141,7 +141,30 @@
   </div>
   {% endif %}
 
-  {% if not (ed or pp) %}
+  {% set aa = rr.get('aaa') %}
+  {% set so = aa.data.socios if aa else None %}
+  {% if so and so.cols %}
+  <div class="rp-sec">Socios de tierra</div>
+  <section class="card mb-24" style="padding:0;overflow:hidden;">
+    <div class="card-head" style="padding:22px 22px 0;"><div><div class="card-title">Pagos a los socios de tierra</div>
+      <div class="card-sub">Del reporte AAA al {{ aa.as_of_label }}: lo pagado y lo que falta por pagar a cada socio, el avance, el precio por m² y el peso del terreno en las ventas.</div></div></div>
+    <div class="table-scroll" style="border:none;border-top:1px solid var(--mq-line);border-radius:0;">
+      <table class="data-table dt" style="min-width:720px;">
+        <thead><tr><th class="l">Socio / desarrollo</th>{% for f in so.filas %}<th>{{ f.n }}</th>{% endfor %}</tr></thead>
+        <tbody>
+        {% for col in so.cols %}{% set j = loop.index0 %}
+          <tr><td class="l">{{ col }}</td>
+          {% for f in so.filas %}{% set x = f.v[j] %}
+            <td class="{{ 'zero' if x is none }}">{% if x is none %}—{% elif f.p[j] %}{{ '%.1f'|format(x * 100) }}%{% elif '$' in f.n %}{{ '{:,.0f}'.format(x) }}{% else %}{{ '{:,.1f}'.format(x) }}{% endif %}</td>
+          {% endfor %}</tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+  {% endif %}
+
+  {% if not (ed or pp or so) %}
   <div class="card mb-24"><p class="rp-empty">Todavía no hay datos por proyecto. Se cargan con el paquete mensual de Ranman (Estado de Resultados por Proyecto y Flujo y PLP){% if is_admin %} desde la pestaña Data{% endif %}.</p></div>
   {% endif %}
 </div>
