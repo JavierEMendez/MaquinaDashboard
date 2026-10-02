@@ -111,8 +111,12 @@ AAA scorecard PDF (`ranman_aaa.py`, which rebuilds page 1's tables from the
 positioned text) and the BP models (`ranman_bp.py`: each etapa's signed
 proforma, expected close and cash-flow result from the *Supuestos* sheet, plus
 month-end cash from *Saldos Finales*; one stored cut per model and month, shown
-on the Ranman page's Unit Economics tab). Each file is checked against its own
-totals before anything is stored.
+on the Ranman page's Unit Economics tab). `ranman_capital.py` reads the cash and
+capital files: Control de CCC and Aportaciones MAQUINA / Préstamos entre
+proyectos (Finance), Necesidad de Capital and Reinversión de Utilidades
+(Cashflow & PLP) and Reservas Territoriales (Strategy); the two undated ones,
+Reinversión and Reservas, take the month of their folder. Each file is checked
+against its own totals before anything is stored.
 
 Three ways in, all through `POST /api/ranman/package` (one file per request, up to 32 MB — the BP models reach 15 MB):
 

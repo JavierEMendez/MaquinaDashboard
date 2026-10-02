@@ -454,6 +454,8 @@
     {# ── Flujo y PLP — Valoran's tablero (origen y aplicación · deuda corporativa · PLP) ── #}
     {% set rf = ranman_flujo %}
     {% if rf %}{% include '_partials/_ranman_flujo_plp.html' %}{% endif %}
+    {# weekly liquidity (Necesidad de Capital) and equity recovery (Reinversión de utilidades) #}
+    {% set rr = ranman_rep %}{% set caph = ranman_caphist %}{% include '_partials/_ranman_liquidez.html' %}
     {% if is_admin %}
     <div class="card mb-24">
       <div class="row between wrap" style="gap:12px;align-items:flex-start;">
@@ -693,6 +695,8 @@
     {% if rd %}
     {% include '_partials/_ranman_riesgo.html' %}
     {% endif %}
+    {# corporate lines, Maquina's capital account, intercompany loans (monthly package) #}
+    {% set rr = ranman_rep %}{% set caph = ranman_caphist %}{% include '_partials/_ranman_capital.html' %}
     {% if is_admin %}
     <div class="card mb-24">
       <div class="row between wrap" style="gap:12px;align-items:flex-start;">
@@ -927,6 +931,8 @@
 
   {# ───────── Strategy ───────── #}
   <div class="tab-panel" data-panel="strategy">
+    {% if c.slug == 'ranman' %}{# land pipeline and projects under study (monthly package) #}
+    {% set rr = ranman_rep %}{% set bp = ranman_bp %}{% include '_partials/_ranman_reservas.html' %}{% endif %}
     {# ---- Investment & Control (hold / takeover / target) ---- #}
     {% set stl = 'font-size:10px;letter-spacing:0.12em;text-transform:uppercase;color:var(--mq-subtle);font-weight:700;' %}
     {% set stv = 'font-family:var(--font-num);font-size:18px;font-weight:600;color:var(--mq-ink-2);line-height:1.2;' %}

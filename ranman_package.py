@@ -14,7 +14,8 @@ file's own totals don't add up and nothing should be stored):
     parse_breakeven       «Breakeven al dd-mm-aa.xlsx»              units / pesos to reach UAIR 0% and 10%
     parse_pipeline        «Pipeline al dd-mm-aa.xlsx»               units still to sell, by coto and quarter
     parse_sabana          «NNN PLAN OPERATIVO <año>_<MES>_….xlsx»   plan vs real by development, month by month
-(the BPs and the AAA have modules of their own: ranman_bp, ranman_aaa)
+(the BPs, the AAA and the cash / capital files have modules of their own:
+ranman_bp, ranman_aaa, ranman_capital)
 Amounts come in pesos (Edo. Resultados) or thousands (Breakeven, Pipeline
 prices) and are stored in mdp, like the other Ranman tableros.
 """
@@ -82,18 +83,18 @@ def clave_desarrollo(texto):
 ENTREGABLES = [
     ('flujo',          1,  'Resumen de Flujos-PLP',        r'^flujo y plp dra - maquina - \d{2}-\d{2}-\d{2}\.xlsx$', 'dma', True),
     ('edo_resultados', 2,  'Edo. Resultados por Proyecto', r'^estado de resultados al \d{2}-\d{2}-\d{2}.*\.xlsx$',   'dma', True),
-    ('necesidad',      3,  'Necesidad de Capital',         r'^necesidad(es)? de capital al \d{2}-\d{2}-\d{2}.*\.xlsx$', 'amd', False),
+    ('necesidad',      3,  'Necesidad de Capital',         r'^necesidad(es)? de capital al \d{2}-\d{2}-\d{2}.*\.xlsx$', 'amd', True),
     ('riesgos',        4,  'Cuadro de Riesgos',            r'^cuadro de riesgos ranman .*\.xls[xm]$',                'riesgos', True),
     ('bp',             5,  'BPs',                          r'^(\d{2} )?bp .*\.xlsx$',                                None, True),
     ('pipeline',       6,  'Pipeline',                     r'^pipeline al \d{2}-\d{2}-\d{2}.*\.xlsx$',               'dma', True),
     ('aaa',            7,  'AAA',                          r'^reporte aaa .*\.pdf$',                                 'mes', True),
     ('breakeven',      8,  'Breakeven',                    r'^breakeven al \d{2}-\d{2}-\d{2}.*\.xlsx$',              'dma', True),
-    ('reservas',       9,  'Reservas Territoriales',       r'^tabla reservas territoriales.*\.xlsx$',                None, False),
+    ('reservas',       9,  'Reservas Territoriales',       r'^tabla reservas territoriales.*\.xlsx$',                None, True),
     ('sabana',         10, 'Sábana Operativa',             r'plan operativo \d{4}_[a-z]+_.*\.xlsx$',                 'mes', True),
-    ('aportaciones',   11, 'Aportaciones MAQUINA',         r'^aportaciones maquina al \d{2}-\d{2}-\d{2}.*\.xlsx$',   'dma', False),
-    ('prestamos',      12, 'Préstamo entre proyectos',     r'^control de prestamos entre proyectos.*\.xlsx$',        'dma', False),
-    ('ccc',            13, 'Control de Créditos CCC',      r'^control de ccc al \d{2}-\d{2}-\d{2}.*\.xlsx$',         'dma', False),
-    ('reinversion',    14, 'Reinversión de Utilidades',    r'^reinversion de utilidades.*\.xlsx$',                   None, False),
+    ('aportaciones',   11, 'Aportaciones MAQUINA',         r'^aportaciones maquina al \d{2}-\d{2}-\d{2}.*\.xlsx$',   'dma', True),
+    ('prestamos',      12, 'Préstamo entre proyectos',     r'^control de prestamos entre proyectos.*\.xlsx$',        'dma', True),
+    ('ccc',            13, 'Control de Créditos CCC',      r'^control de ccc al \d{2}-\d{2}-\d{2}.*\.xlsx$',         'dma', True),
+    ('reinversion',    14, 'Reinversión de Utilidades',    r'^reinversion de utilidades.*\.xlsx$',                   None, True),
     ('eeff',           15, 'Estados Financieros Firmados', r'(estados financieros|eeff).*\.pdf$',                    'mes', False),
     ('analiticas',     15, 'Analíticas (balanza)',         r'^(\d+\. )?(dra )?analiticas.*\.pdf$',                   'mes', False),
 ]
@@ -127,8 +128,21 @@ def _fecha(modo, nombre_norm: str, original: str):
             if not m:
                 return None
             a, b, c = (int(x) for x in m.groups())
-            d, mes, anio = (a, b, c) if modo == 'dma' else (c, b, a)
-            return dt.date(2000 + anio, mes, d).isoformat()
+            # The Necesidad de Capital went from «03-04-24» (day first) to
+            # «26-07-15» (year first) in 2025: of the two readings, the one in
+            # the expected order wins if it is a real date from 2023 on and not
+            # in the future.
+            hoy = dt.date.today()
+            lecturas = [(a, b, c), (c, b, a)] if modo == 'dma' else [(c, b, a), (a, b, c)]
+            for d, mes, anio in lecturas:
+                if not (1 <= mes <= 12 and 1 <= d <= 31):
+                    continue
+                # «al 31-06-25»: a day past the month's end means its last day
+                d = min(d, calendar.monthrange(2000 + anio, mes)[1])
+                f = dt.date(2000 + anio, mes, d)
+                if dt.date(2023, 1, 1) <= f <= hoy + dt.timedelta(days=62):
+                    return f.isoformat()
+            return None
         if modo == 'riesgos':
             return ranman_deuda_parser.fecha_de_nombre(original)
         if modo == 'mes':

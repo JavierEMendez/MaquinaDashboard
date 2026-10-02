@@ -1,0 +1,200 @@
+{# RANMAN · Strategy · growth — the land pipeline from «TABLA RESERVAS
+   TERRITORIALES AT.xlsx» (every site Ranman is looking at: stage 1 Definir
+   producto → 5 Firma de fideicomiso, or 6 No procede; plaza, surface, asking
+   and offered price, land contribution, guarantee, market and comments) and
+   the projects under study among the BP models (a model kept in a folder of
+   its own, ranman_bp.es_estudio). Expects `rr` (ranman_rep) and `bp`
+   (ranman_bp). Classes and ids namespaced rt-. #}
+{% set rt = rr.get('reservas') %}
+{% set estudios = [] %}{% if bp %}{% for k, d in bp.desarrollos.items() %}{% if d.estudio %}{% set _ = estudios.append(d) %}{% endif %}{% endfor %}{% endif %}
+{% if rt or estudios %}
+<style>
+.rt .rt-sec{font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--mq-subtle);margin:6px 0 12px}
+.rt .rt-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(176px,1fr));gap:18px;margin-bottom:18px}
+.rt .kpi{min-height:0}
+.rt .kpi-value small{font-size:13px;font-weight:500;color:var(--mq-subtle);margin-left:4px;letter-spacing:0}
+.rt .kpi-value.accent{color:var(--mq-accent)}
+.rt .rt-grid{display:grid;gap:18px;grid-template-columns:repeat(12,1fr);align-items:start;margin-bottom:24px}
+.rt .rt-grid > .card{grid-column:span 12;min-width:0}
+@media(min-width:1000px){.rt .rt-grid > .rt-col5{grid-column:span 5}.rt .rt-grid > .rt-col7{grid-column:span 7}}
+.rt .card-head{margin-bottom:14px}
+.rt .rt-note{font-size:12px;color:var(--mq-subtle);line-height:1.55}
+.rt .pill[aria-pressed="true"]{background:var(--mq-accent);color:#fff}
+.rt .pillgroup{flex-wrap:wrap;max-width:100%}
+.rt .rt-bar{display:flex;flex-wrap:wrap;gap:10px 16px;align-items:center;margin-bottom:14px}
+/* funnel */
+.rt .etp{display:grid;grid-template-columns:minmax(150px,200px) 1fr 120px;gap:12px;align-items:center;padding:7px 0;border-bottom:1px solid var(--mq-line);font-size:13px}
+.rt .etp:last-child{border-bottom:none}
+.rt .etp .n{color:var(--mq-ink);font-weight:600}
+.rt .etp .n span{display:block;font-size:11px;color:var(--mq-subtle);font-weight:500}
+.rt .etp .b{height:14px;border-radius:4px;background:var(--mq-surface-2);overflow:hidden}
+.rt .etp .b i{display:block;height:100%}
+.rt .etp .v{text-align:right;font-family:var(--font-num);font-variant-numeric:tabular-nums;color:var(--mq-ink)}
+.rt .etp .v small{display:block;color:var(--mq-subtle);font-size:11px}
+@media(max-width:620px){.rt .etp{grid-template-columns:1fr 90px}.rt .etp .b{grid-column:1 / -1;grid-row:2}}
+/* status pills */
+.rt .st{display:inline-block;font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:999px;white-space:nowrap}
+.rt .st.e1,.rt .st.e2{background:color-mix(in srgb,var(--mq-warn) 16%,var(--mq-surface));color:var(--mq-warn)}
+.rt .st.e3,.rt .st.e4{background:var(--mq-accent-soft);color:var(--mq-accent)}
+.rt .st.e5{background:color-mix(in srgb,var(--mq-good) 16%,var(--mq-surface));color:var(--mq-good)}
+.rt .st.e6{background:color-mix(in srgb,var(--mq-bad) 12%,var(--mq-surface));color:var(--mq-bad)}
+.rt .st.e0{background:var(--mq-surface-2);color:var(--mq-subtle)}
+/* sites table */
+.rt .table-scroll{max-height:none}
+.rt table.tt{min-width:980px}
+.rt table.tt td,.rt table.tt th{text-align:left;vertical-align:top}
+.rt table.tt td.r,.rt table.tt th.r{text-align:right}
+.rt table.tt td.txt{font-size:12px;color:var(--mq-muted);white-space:pre-line;max-width:260px}
+.rt table.tt tr.sitio{cursor:pointer}
+.rt table.tt tr.sitio:hover td{background:var(--mq-surface-2)}
+.rt table.tt tr.sitio:focus-visible{outline:2px solid var(--mq-accent);outline-offset:-2px}
+.rt table.tt tr.det td{background:var(--mq-surface-2);font-size:12.5px;color:var(--mq-ink);white-space:normal}
+.rt table.tt tr.det .cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px 22px}
+.rt table.tt tr.det b{display:block;font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--mq-subtle);margin-bottom:3px}
+.rt table.tt tr.det p{margin:0;white-space:pre-line;line-height:1.5}
+.rt table.tt tr.grp td{background:var(--mq-surface-2);color:var(--mq-subtle);font-size:10.5px;font-weight:700;letter-spacing:.12em;text-transform:uppercase}
+.rt .chev{display:inline-block;width:11px;font-size:9px;color:var(--mq-subtle);transform:rotate(-90deg);transition:transform .15s;margin-right:4px}
+.rt tr[aria-expanded="true"] .chev{transform:rotate(0)}
+.rt a.mapa{font-size:11.5px;font-weight:600;color:var(--mq-accent)}
+</style>
+
+<div class="rt mb-24" id="rt">
+  <div class="rt-sec">Crecimiento · reservas territoriales</div>
+  {% if rt %}
+  <div class="row wrap" style="gap:8px;margin-bottom:16px;align-items:center;">
+    <span class="badge good" title="{{ rt.archivo }}">● Reservas Territoriales · {{ rt.as_of_label[3:] }}</span>
+    <span class="badge">{{ rt.data.sitios | length }} sitios</span>
+  </div>
+  <div class="rt-kpis" id="rt-kpis"></div>
+  <div class="rt-grid">
+    <section class="card rt-col5">
+      <div class="card-head"><div><div class="card-title">Por etapa de negociación</div>
+        <div class="card-sub">Sitios y hectáreas en cada etapa, de definir el producto a firmar el fideicomiso.</div></div></div>
+      <div id="rt-embudo"></div>
+    </section>
+    <section class="card rt-col7">
+      <div class="card-head"><div><div class="card-title">Por plaza</div>
+        <div class="card-sub">Sitios en evaluación (etapas 1 a 5) y descartados en cada plaza.</div></div></div>
+      <div id="rt-plazas"></div>
+    </section>
+    <section class="card" style="padding:0;overflow:hidden;">
+      <div style="padding:22px 22px 0;">
+        <div class="card-head"><div><div class="card-title">Sitios</div>
+          <div class="card-sub">Clic en un sitio para ver los comentarios, la estrategia y lo que opina Ranman.</div></div></div>
+        <div class="rt-bar">
+          <div class="pillgroup" role="group" aria-label="Etapa" id="rt-fEst">
+            <button class="pill" type="button" data-v="activas" aria-pressed="true">En evaluación</button>
+            <button class="pill" type="button" data-v="no" aria-pressed="false">No procede</button>
+            <button class="pill" type="button" data-v="todas" aria-pressed="false">Todos</button>
+          </div>
+          <div class="pillgroup" role="group" aria-label="Plaza" id="rt-fPlz"></div>
+        </div>
+      </div>
+      <div class="table-scroll" style="border:none;border-top:1px solid var(--mq-line);border-radius:0;"><table class="data-table tt" id="rt-tbl"></table></div>
+    </section>
+  </div>
+  {% endif %}
+
+  {% if estudios %}
+  <section class="card mb-24" style="padding:0;overflow:hidden;">
+    <div class="card-head" style="padding:22px 22px 0;"><div><div class="card-title">Proyectos en estudio</div>
+      <div class="card-sub">BPs que Ranman guarda en una carpeta propia dentro de la plaza: proyectos que evalúa y que todavía no suman al portafolio. Detalle en la pestaña Unit Economics.</div></div></div>
+    <div class="table-scroll" style="border:none;border-top:1px solid var(--mq-line);border-radius:0;">
+      <table class="data-table tt" style="min-width:640px;">
+        <thead><tr><th>Modelo</th><th class="r">Etapas</th><th class="r">Unidades</th><th class="r">Ventas<br><small>mdp</small></th><th class="r">UAIR<br><small>mdp</small></th><th class="r">UAIR<br><small>% de ventas</small></th><th>Real a</th></tr></thead>
+        <tbody>
+        {% for d in estudios %}
+          {% set ns = namespace(v=0, u=0, n=0) %}
+          {% for e in d.etapas %}{% set ns.v = ns.v + (e.esc.cierre.ventas or 0) %}{% set ns.u = ns.u + (e.esc.cierre.uair or 0) %}{% set ns.n = ns.n + (e.u or 0) %}{% endfor %}
+          <tr><td title="{{ d.archivo }}">{{ d.modelo }}</td><td class="r">{{ d.etapas | length }}</td>
+            <td class="r">{{ '{:,.0f}'.format(ns.n) }}</td>
+            <td class="r">{{ '{:,.1f}'.format(ns.v) }}</td><td class="r">{{ '{:,.1f}'.format(ns.u) }}</td>
+            <td class="r">{{ ('%.1f%%'|format(ns.u / ns.v * 100)) if ns.v else '—' }}</td><td>{{ d.corte }}</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+  {% endif %}
+</div>
+
+{% if rt %}
+<script>
+document.addEventListener('DOMContentLoaded', function(){
+const RT = {{ rt.data | tojson }};
+if (!document.getElementById('rt')) return;
+const $ = id => document.getElementById('rt-' + id);
+const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[ch]));
+const ok = v => v != null && isFinite(v);
+const fx = (v, d=1) => ok(v) ? v.toLocaleString('es-MX',{minimumFractionDigits:d,maximumFractionDigits:d}) : '—';
+const ha = m2 => ok(m2) ? (m2 >= 10000 ? fx(m2/10000, 1) + ' ha' : fx(m2, 0) + ' m²') : '—';
+const store = (k,v) => { try{ localStorage.setItem('rt-'+k, v); }catch(e){} };
+const recall = k => { try{ return localStorage.getItem('rt-'+k); }catch(e){ return null; } };
+const TONO = {good:'pos', bad:'neg', blue:'accent'};
+const kpiHTML = k => `<div class="kpi"><div class="kpi-top"><span class="kpi-label">${k.lab}</span></div><div class="kpi-value ${TONO[k.cls]||''}">${k.val}${k.u?`<small>${k.u}</small>`:''}</div><div class="kpi-foot"><span class="kpi-sub">${k.sub||''}</span></div></div>`;
+const EST = Object.fromEntries(RT.estatus);
+const S = RT.sitios.map((s, i) => ({...s, i}));
+const activo = s => s.estatus && s.estatus < 6;
+const plazaDe = s => (s.grupo || s.plaza || '—').trim();
+const PLZS = [...new Set(S.map(plazaDe))];
+const stPill = s => `<span class="st e${s.estatus || 0}">${s.estatus ? s.estatus + ' · ' + esc(EST[s.estatus]) : 'Sin estatus'}</span>`;
+
+const act = S.filter(activo), avz = S.filter(s => s.estatus >= 3 && s.estatus <= 5);
+const sumHa = l => l.reduce((a,s) => a + (s.m2 || 0), 0);
+$('kpis').innerHTML = [
+  {lab:'Sitios en evaluación', val:String(act.length), u:`de ${S.length}`, cls:'blue', sub:`${ha(sumHa(act))} con superficie conocida · etapas 1 a 5`},
+  {lab:'Con carta de intención o más', val:String(avz.length), sub: avz.map(s => s.n).slice(0, 3).join(', ') + (avz.length > 3 ? '…' : '') || 'ninguno'},
+  {lab:'Definiendo producto o proforma', val:String(S.filter(s => s.estatus === 1 || s.estatus === 2).length), sub:'etapas 1 y 2'},
+  {lab:'No proceden', val:String(S.filter(s => s.estatus === 6).length), cls:'bad', sub:'descartados, se conservan en la tabla'},
+].map(kpiHTML).join('');
+
+const COL = {1:'--mq-warn', 2:'--mq-warn', 3:'--mq-accent', 4:'--mq-accent', 5:'--mq-good', 6:'--mq-bad'};
+const mx = Math.max(...[1,2,3,4,5,6].map(e => S.filter(s => s.estatus === e).length), 1);
+$('embudo').innerHTML = [1,2,3,4,5,6].map(e => { const l = S.filter(s => s.estatus === e);
+  return `<div class="etp"><span class="n">${e} · ${esc(EST[e])}<span>${esc(l.map(s => s.n).slice(0, 3).join(', '))}${l.length > 3 ? '…' : ''}</span></span>` +
+    `<span class="b"><i style="width:${(l.length/mx*100).toFixed(1)}%;background:var(${COL[e]})"></i></span><span class="v">${l.length} sitio${l.length===1?'':'s'}<small>${ha(sumHa(l))}</small></span></div>`; }).join('') +
+  (S.some(s => !s.estatus) ? `<div class="etp"><span class="n">Sin estatus<span>${esc(S.filter(s => !s.estatus).map(s => s.n).join(', '))}</span></span><span></span><span class="v">${S.filter(s => !s.estatus).length}</span></div>` : '');
+
+const mxP = Math.max(...PLZS.map(p => S.filter(s => plazaDe(s) === p).length), 1);
+$('plazas').innerHTML = PLZS.map(p => { const l = S.filter(s => plazaDe(s) === p), a = l.filter(activo), n = l.filter(s => s.estatus === 6);
+  return `<div class="etp"><span class="n">${esc(p)}<span>${a.length} en evaluación · ${n.length} no proceden</span></span>` +
+    `<span class="b" style="display:flex"><i style="width:${(a.length/mxP*100).toFixed(1)}%;background:var(--mq-accent)"></i><i style="width:${(n.length/mxP*100).toFixed(1)}%;background:color-mix(in srgb,var(--mq-bad) 45%,var(--mq-surface))"></i></span>` +
+    `<span class="v">${l.length} sitio${l.length===1?'':'s'}<small>${ha(sumHa(a))} en evaluación</small></span></div>`; }).join('');
+
+let fEst = recall('est') || 'activas', fPlz = recall('plz') || '';
+if (!['activas','no','todas'].includes(fEst)) fEst = 'activas';
+if (fPlz && !PLZS.includes(fPlz)) fPlz = '';
+const abiertos = new Set();
+$('fPlz').innerHTML = [['', 'Todas']].concat(PLZS.map(p => [p, p])).map(([v, t]) => `<button class="pill" type="button" data-v="${esc(v)}" aria-pressed="false">${esc(t)}</button>`).join('');
+const primeras = t => String(t || '').split('\n').filter(Boolean).slice(0, 2).join('\n');
+const mapa = u => /^https:\/\//.test(u || '') ? `<a class="mapa" href="${esc(u)}" target="_blank" rel="noopener noreferrer">Mapa ↗</a>` : '';
+function tabla(){
+  document.querySelectorAll('#rt-fEst .pill').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.v === fEst)));
+  document.querySelectorAll('#rt-fPlz .pill').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.v === fPlz)));
+  const pasa = s => (fEst === 'todas' || (fEst === 'no' ? s.estatus === 6 : !s.estatus || s.estatus < 6)) && (!fPlz || plazaDe(s) === fPlz);
+  let h = `<thead><tr><th>Sitio</th><th>Etapa</th><th class="r">Superficie</th><th>Valor</th><th class="r">Aportación<br><small>del terreno</small></th><th>Garantía</th><th>Mercado</th><th>Responsable</th></tr></thead><tbody>`;
+  let n = 0;
+  PLZS.forEach(p => { const l = S.filter(s => plazaDe(s) === p && pasa(s)).sort((a,b) => (a.estatus||0) - (b.estatus||0));
+    if (!l.length) return;
+    h += `<tr class="grp"><td colspan="8">${esc(p)} · ${l.length}</td></tr>`;
+    l.forEach(s => { n++; const ab = abiertos.has(s.i);
+      h += `<tr class="sitio" data-i="${s.i}" tabindex="0" role="button" aria-expanded="${ab}"><td><span class="chev" aria-hidden="true">&#9660;</span><b>${esc(s.n)}</b> ${mapa(s.mapa)}</td><td>${stPill(s)}</td>` +
+        `<td class="r">${ha(s.m2)}</td><td class="txt">${esc(primeras(s.valor_txt)) || '—'}</td><td class="r">${ok(s.aportacion) ? Math.round(s.aportacion*100) + '%' : '—'}</td>` +
+        `<td>${esc(s.garantia || '—')}</td><td class="txt">${esc(primeras(s.mercado)) || '—'}</td><td class="txt">${esc(primeras(s.responsable))}</td></tr>`;
+      if (ab) h += `<tr class="det"><td colspan="8"><div class="cols">` +
+        [['Comentarios', s.comentarios], ['Estrategia a seguir', s.estrategias], ['Comentarios Ranman', s.comentarios_ranman], ['Ubicación', s.ubicacion], ['Densidad autorizada', s.densidad], ['Mercado', s.mercado], ['Superficie (como viene)', s.superficie_txt], ['Valor (como viene)', s.valor_txt]]
+          .filter(([, t]) => t && String(t).trim()).map(([l, t]) => `<div><b>${l}</b><p>${esc(t)}</p></div>`).join('') + `</div></td></tr>`;
+    });
+  });
+  $('tbl').innerHTML = h + (n ? '' : '<tr><td colspan="8" style="color:var(--mq-subtle)">Ningún sitio con ese filtro.</td></tr>') + '</tbody>';
+}
+const flip = tr => { const i = +tr.dataset.i; abiertos.has(i) ? abiertos.delete(i) : abiertos.add(i); tabla(); const nv = $('tbl').querySelector(`tr.sitio[data-i="${i}"]`); if (nv) nv.focus(); };
+$('tbl').addEventListener('click', e => { if (e.target.closest('a')) return; const tr = e.target.closest('tr.sitio'); if (tr) flip(tr); });
+$('tbl').addEventListener('keydown', e => { if (e.key !== 'Enter' && e.key !== ' ') return; const tr = e.target.closest('tr.sitio'); if (!tr) return; e.preventDefault(); flip(tr); });
+$('fEst').addEventListener('click', e => { const b = e.target.closest('button[data-v]'); if (!b) return; fEst = b.dataset.v; store('est', fEst); tabla(); });
+$('fPlz').addEventListener('click', e => { const b = e.target.closest('button[data-v]'); if (!b) return; fPlz = b.dataset.v; store('plz', fPlz); tabla(); });
+tabla();
+});
+</script>
+{% endif %}
+{% endif %}

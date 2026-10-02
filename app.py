@@ -32,6 +32,7 @@ import ranman_flujo_parser
 import ranman_package
 import ranman_aaa
 import ranman_bp
+import ranman_capital
 
 RANMAN_MAX_BYTES = 32 * 1024 * 1024
 
@@ -908,12 +909,19 @@ def load_ranman_flujo():
 # recognised by name (ranman_package.clasifica); each parser checks the file
 # against its own totals and nothing that fails is stored. Every file is logged
 # so the Data tab can show what arrived for each month.
-RANMAN_REPORTS = ("edo_resultados", "breakeven", "pipeline", "plp_proyectos", "aaa", "sabana")
+RANMAN_REPORTS = ("edo_resultados", "breakeven", "pipeline", "plp_proyectos", "aaa", "sabana",
+                  "ccc", "aportaciones", "prestamos", "necesidad", "reinversion", "reservas")
 _RANMAN_PARSERS = {"edo_resultados": ranman_package.parse_edo_resultados,
                    "breakeven": ranman_package.parse_breakeven,
                    "pipeline": ranman_package.parse_pipeline,
                    "aaa": ranman_aaa.parse_aaa,
-                   "sabana": ranman_package.parse_sabana}
+                   "sabana": ranman_package.parse_sabana,
+                   "ccc": ranman_capital.parse_ccc,
+                   "aportaciones": ranman_capital.parse_aportaciones,
+                   "prestamos": ranman_capital.parse_prestamos,
+                   "necesidad": ranman_capital.parse_necesidad,
+                   "reinversion": ranman_capital.parse_reinversion,
+                   "reservas": ranman_capital.parse_reservas}
 _MESES_ES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"]
 
 
@@ -1034,6 +1042,10 @@ def _ranman_import_file(name, raw, periodo=None, user="admin", ruta=None):
         elif kind == "bp":
             res.update(_import_bp(name, raw, user, ruta))
         elif kind in _RANMAN_PARSERS:
+            if not as_of and ranman_package.ENTREGABLE[kind][4] is None and periodo:
+                # Reservas Territoriales and Reinversión carry no date: the month folder dates them
+                as_of = _fin_mes(periodo)
+                res["as_of"] = as_of
             if not as_of:
                 res["message"] = "Could not read the cut date from the file name."
             else:
@@ -1098,6 +1110,40 @@ def load_ranman_aaa_historia():
         return None
     cortes = [(r["as_of"], _jl(r["data"])) for r in rows if isinstance(_jl(r["data"]), dict)]
     return ranman_aaa.historia(cortes) if cortes else None
+
+
+def load_ranman_capital_historia():
+    """Week by week, for the liquidity and credit-line charts: the Necesidad de
+    Capital totals and what each CCC line still had to draw. {} when neither is loaded."""
+    out = {}
+    try:
+        nec = db.ranman_reports_all("necesidad")
+        ccc = db.ranman_reports_all("ccc")
+    except Exception as e:
+        app.logger.warning("ranman capital history load failed: %s", e)
+        return out
+    filas = []
+    for r in nec:
+        d = _jl(r["data"])
+        if not isinstance(d, dict):
+            continue
+        t, tn = d.get("total") or {}, d.get("total_necesidad") or {}
+        filas.append({"f": str(r["as_of"])[:10], "pagos": t.get("pagos"), "saldos": t.get("saldos"),
+                      "pagos_nec": tn.get("pagos"), "cubrir": tn.get("cubrir"), "necesidad": tn.get("necesidad"),
+                      "n_nec": len(d.get("necesitan") or [])})
+    if filas:
+        out["necesidad"] = filas[-52:]
+    lin = []
+    for r in ccc:
+        d = _jl(r["data"])
+        if isinstance(d, dict):
+            lin.append({"f": str(r["as_of"])[:10],
+                        "lineas": {l["nombre"]: {"dispuesto": l.get("dispuesto"), "pagado": l.get("pagado"),
+                                                 "por_disponer": l.get("por_disponer"), "disponible": l.get("disponible")}
+                                   for l in d.get("lineas") or []}})
+    if lin:
+        out["ccc"] = lin
+    return out
 
 
 _BP_CACHE = {}      # per worker; keyed by the stored cuts' count and last upload
@@ -1239,7 +1285,10 @@ def load_ranman_package():
     cargado = []
     for key, label in (("aaa", "AAA scorecard"), ("bp", "Business plans (%d models)" % len(modelos)), ("flujo", "Flujo y PLP"), ("plp_proyectos", "PLP by development (PLP - Soporte)"),
                        ("riesgos", "Cuadro de Riesgos"), ("edo_resultados", "Edo. Resultados por Proyecto"),
-                       ("breakeven", "Breakeven"), ("pipeline", "Pipeline"), ("sabana", "Sábana Operativa")):
+                       ("breakeven", "Breakeven"), ("pipeline", "Pipeline"), ("sabana", "Sábana Operativa"),
+                       ("ccc", "Control de CCC"), ("aportaciones", "Aportaciones MAQUINA"),
+                       ("prestamos", "Préstamos entre proyectos"), ("necesidad", "Necesidad de Capital"),
+                       ("reinversion", "Reinversión de Utilidades"), ("reservas", "Reservas Territoriales")):
         fs = sorted(fechas.get(key, []))
         cargado.append(dict(key=key, label=label, n=len(fs), first=_lbl_es(fs[0]) if fs else None,
                             last=_lbl_es(fs[-1]) if fs else None))
@@ -2605,13 +2654,15 @@ def company(slug):
     ranman_rep = {}      # monthly package: Edo. Resultados, Breakeven, Pipeline, PLP by development
     ranman_pkg = None    # Data tab (admin): what's loaded and what arrived
     ranman_hist = None   # AAA scorecard month by month (Dashboard trends)
-    ranman_bp = None     # business plans by development (Projects · Unit Economics)
+    ranman_bp = None     # business plans by development (Unit Economics tab)
+    ranman_caphist = {}  # weekly liquidity and CCC availability (Cashflow & PLP, Finance)
     if c["slug"] == "ranman":
         ranman_debt = load_ranman_debt()
         ranman_flujo = load_ranman_flujo()
         ranman_rep = load_ranman_reports()
         ranman_hist = load_ranman_aaa_historia()
         ranman_bp = load_ranman_bp()
+        ranman_caphist = load_ranman_capital_historia()
         if session.get("is_admin"):
             ranman_pkg = load_ranman_package()
     if c["slug"] == "ember":
@@ -2744,7 +2795,7 @@ def company(slug):
         valuation=valuation, cap=cap, hold=hold, exitr=exitr, fre_basis=fre_basis,
         verticals=verticals, sales=sales, ember_budget=ember_budget, polaris=polaris, ranman_debt=ranman_debt,
         ranman_flujo=ranman_flujo, ue=ue, ranman_rep=ranman_rep, ranman_pkg=ranman_pkg, ranman_hist=ranman_hist,
-        ranman_bp=ranman_bp,
+        ranman_bp=ranman_bp, ranman_caphist=ranman_caphist,
         ranman_patrones=ranman_package.patrones_js() if c["slug"] == "ranman" else None,
         ranman_enviables=sorted(ranman_package.ENVIABLES) if c["slug"] == "ranman" else None,
         ranman_omite=dict(carpeta=list(ranman_package.OMITE_CARPETA), nombre=list(ranman_package.OMITE_NOMBRE)),

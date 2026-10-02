@@ -1,0 +1,300 @@
+{# RANMAN · Finance · capital — what Ranman owes on its corporate lines and what
+   Maquina has put in. Líneas corporativas: «Control de CCC al dd-mm-aa» (the
+   Bancrea 48 and BBVA lines: draws, repayments from asset sales, what is left,
+   Plan Houston, balances by project and year) with each weekly cut's
+   availability from `caph.ccc`. Cuenta de capital MAQUINA: «Aportaciones
+   Maquina al dd-mm-aa» (every contribution by origin, use and project, and
+   Maquina's loans to Ranman). Préstamos entre proyectos: «Control de préstamos
+   entre proyectos» (lender by borrower, and the ledger). Expects `rr`
+   (ranman_rep) and `caph` (ranman_caphist). Classes and ids namespaced rq-. #}
+{% set qc = rr.get('ccc') %}{% set qa = rr.get('aportaciones') %}{% set qp = rr.get('prestamos') %}
+{% if qc or qa or qp %}
+<style>
+.rq .rq-sec{font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--mq-subtle);margin:6px 0 12px}
+.rq .rq-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(176px,1fr));gap:18px;margin-bottom:18px}
+.rq .kpi{min-height:0}
+.rq .kpi-value small{font-size:13px;font-weight:500;color:var(--mq-subtle);margin-left:4px;letter-spacing:0}
+.rq .kpi-value.accent{color:var(--mq-accent)}
+.rq .rq-grid{display:grid;gap:18px;grid-template-columns:repeat(12,1fr);align-items:start;margin-bottom:24px}
+.rq .rq-grid > .card{grid-column:span 12;min-width:0}
+@media(min-width:1000px){.rq .rq-grid > .rq-col6{grid-column:span 6}}
+.rq .card-head{margin-bottom:14px}
+.rq .rq-note{font-size:12px;color:var(--mq-subtle);line-height:1.55;margin-top:10px}
+.rq .rq-legend{display:flex;flex-wrap:wrap;gap:8px 18px;margin-top:12px;font-size:12.5px;color:var(--mq-ink)}
+.rq .rq-legend span{display:inline-flex;align-items:center;gap:8px}
+.rq .rq-sw{width:9px;height:9px;border-radius:50%;flex:none;display:inline-block}
+.rq .num{font-family:var(--font-num);font-variant-numeric:tabular-nums}
+/* a line: what is used, reserved and still free */
+.rq .linea{padding:14px 0;border-bottom:1px solid var(--mq-line)}
+.rq .linea:last-child{border-bottom:none;padding-bottom:0}
+.rq .linea .top{display:flex;justify-content:space-between;gap:12px;align-items:baseline;margin-bottom:8px}
+.rq .linea .nm{font-weight:700;color:var(--mq-ink-2);font-size:14px}
+.rq .linea .nm span{display:block;font-size:11.5px;font-weight:500;color:var(--mq-subtle)}
+.rq .linea .lim{font-size:12.5px;color:var(--mq-muted)}
+.rq .trk{display:flex;height:16px;border-radius:5px;overflow:hidden;background:var(--mq-surface-2)}
+.rq .trk i{display:block;height:100%;min-width:1px}
+.rq .linea dl{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px 16px;margin:10px 0 0}
+.rq .linea dt{font-size:10.5px;color:var(--mq-subtle);text-transform:uppercase;letter-spacing:.06em;font-weight:600}
+.rq .linea dd{margin:2px 0 0;font-family:var(--font-num);font-variant-numeric:tabular-nums;font-size:14px;color:var(--mq-ink);font-weight:600}
+/* horizontal bars by project / use */
+.rq .hb{display:grid;grid-template-columns:minmax(120px,190px) 1fr 76px;gap:10px;align-items:center;padding:5px 0;font-size:12.5px}
+.rq .hb .n{color:var(--mq-ink);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rq .hb .b{height:12px;border-radius:4px;background:var(--mq-surface-2);overflow:hidden}
+.rq .hb .b i{display:block;height:100%;background:var(--mq-accent)}
+.rq .hb .v{text-align:right;font-family:var(--font-num);font-variant-numeric:tabular-nums;color:var(--mq-ink)}
+@media(max-width:620px){.rq .hb{grid-template-columns:1fr 70px}.rq .hb .b{grid-column:1 / -1;grid-row:2}}
+/* tables */
+.rq .table-scroll{max-height:none}
+.rq table.qt{min-width:560px}
+.rq table.qt td.l,.rq table.qt th.l{text-align:left}
+.rq table.qt .zero{color:var(--mq-subtle)}
+.rq table.qt tr.tot td{background:var(--mq-surface-2);font-weight:700;color:var(--mq-ink-2);border-top:1px solid var(--mq-line-2)}
+.rq table.qt tr.grp td{background:var(--mq-surface-2);color:var(--mq-subtle);font-size:10.5px;font-weight:700;letter-spacing:.12em;text-transform:uppercase}
+.rq table.qt tr.hijo td:first-child{padding-left:30px;color:var(--mq-muted)}
+.rq table.qt td.neg{color:var(--mq-bad)} .rq table.qt td.pos{color:var(--mq-good)}
+.rq table.mx th{white-space:normal;min-width:84px;max-width:120px;vertical-align:bottom;line-height:1.25}
+.rq details.rq-det{margin-top:12px}
+.rq details.rq-det summary{cursor:pointer;font-size:12.5px;color:var(--mq-accent);font-weight:600}
+.rq .tag{font-size:10px;font-weight:600;padding:1px 7px;border-radius:999px;background:var(--mq-surface-2);color:var(--mq-subtle);margin-left:6px;vertical-align:1px;white-space:nowrap}
+</style>
+
+<div class="rq mb-24" id="rq">
+  {% if qc %}
+  <div class="rq-sec">Líneas corporativas · CCC</div>
+  <div class="row wrap" style="gap:8px;margin-bottom:16px;align-items:center;">
+    <span class="badge good" title="{{ qc.archivo }}">● Control de CCC al {{ qc.as_of_label }}</span>
+    <span class="badge">Cifras en mdp</span>
+  </div>
+  <div class="rq-grid">
+    <section class="card rq-col6">
+      <div class="card-head"><div><div class="card-title">Uso de cada línea</div>
+        <div class="card-sub">Lo dispuesto (neto de devoluciones), lo pagado con la venta de activos y lo que queda por disponer, como lo declara el archivo.</div></div></div>
+      <div id="rq-lineas"></div>
+      <div class="rq-legend"><span><i class="rq-sw" style="background:var(--mq-c1)"></i>Ocupado</span><span><i class="rq-sw" style="background:var(--mq-c4)"></i>Reservado</span><span><i class="rq-sw" style="background:var(--mq-good)"></i>Disponible</span></div>
+    </section>
+    <section class="card rq-col6">
+      <div class="card-head"><div><div class="card-title">Disposiciones y pagos por mes</div>
+        <div class="card-sub" id="rq-nMov"></div></div></div>
+      <div id="rq-chMov"></div>
+      <div class="rq-legend"><span><i class="rq-sw" style="background:var(--mq-c1)"></i>Disposiciones</span><span><i class="rq-sw" style="background:var(--mq-good)"></i>Pagos con venta de activos y devoluciones</span></div>
+      <div id="rq-dispWrap" style="margin-top:22px;">
+        <div class="card-title" style="font-size:14px;">Por disponer, corte a corte</div>
+        <div class="card-sub" id="rq-nDisp" style="margin-bottom:10px;"></div>
+        <div id="rq-chDisp"></div>
+      </div>
+    </section>
+    <section class="card rq-col6" style="padding:0;overflow:hidden;">
+      <div class="card-head" style="padding:22px 22px 0;"><div><div class="card-title" id="rq-planT">Plan Houston contra lo dispuesto</div>
+        <div class="card-sub">En qué se planeó usar cada línea y en qué se usó.</div></div></div>
+      <div class="table-scroll" style="border:none;border-top:1px solid var(--mq-line);border-radius:0;"><table class="data-table qt" id="rq-plan"></table></div>
+    </section>
+    <section class="card rq-col6" style="padding:0;overflow:hidden;">
+      <div class="card-head" style="padding:22px 22px 0;"><div><div class="card-title">Saldo por proyecto y por año</div>
+        <div class="card-sub">Lo que cada línea ha financiado en cada proyecto, y en qué año se dispuso.</div></div></div>
+      <div class="table-scroll" style="border:none;border-top:1px solid var(--mq-line);border-radius:0;"><table class="data-table qt" id="rq-proy"></table></div>
+      <div class="table-scroll" style="border:none;border-top:1px solid var(--mq-line);border-radius:0;"><table class="data-table qt" id="rq-anios"></table></div>
+    </section>
+  </div>
+  {% endif %}
+
+  {% if qa %}
+  <div class="rq-sec">Cuenta de capital MAQUINA</div>
+  <div class="row wrap" style="gap:8px;margin-bottom:16px;align-items:center;">
+    <span class="badge good" title="{{ qa.archivo }}">● Aportaciones MAQUINA al {{ qa.as_of_label }}</span>
+    {% if qp %}<span class="badge" title="{{ qp.archivo }}">Préstamos entre proyectos al {{ qp.as_of_label }}</span>{% endif %}
+  </div>
+  <div class="rq-kpis" id="rq-apKpis"></div>
+  <div class="rq-grid">
+    <section class="card rq-col6">
+      <div class="card-head"><div><div class="card-title">Aportaciones por mes</div>
+        <div class="card-sub" id="rq-nAp"></div></div></div>
+      <div id="rq-chAp"></div>
+    </section>
+    <section class="card rq-col6">
+      <div class="card-head"><div><div class="card-title">¿De dónde vino y en qué se usó?</div>
+        <div class="card-sub">Origen y destino de los {{ '%.1f'|format(qa.data.total) }} mdp aportados.</div></div></div>
+      <div id="rq-origen"></div>
+      <div style="height:14px"></div>
+      <div id="rq-tipo"></div>
+    </section>
+    <section class="card rq-col6">
+      <div class="card-head"><div><div class="card-title">Por proyecto</div>
+        <div class="card-sub">Destino de cada aportación por desarrollo, de mayor a menor.</div></div></div>
+      <div id="rq-apProy"></div>
+    </section>
+    <section class="card rq-col6" style="padding:0;overflow:hidden;">
+      <div class="card-head" style="padding:22px 22px 0;"><div><div class="card-title">Aplicación, como la agrupa Ranman</div>
+        <div class="card-sub">Hoja «Resumen» del archivo: proyectos en operación, deuda y proyectos no operativos, e inversión.</div></div></div>
+      <div class="table-scroll" style="border:none;border-top:1px solid var(--mq-line);border-radius:0;"><table class="data-table qt" id="rq-aplic"></table></div>
+      <div id="rq-prestM" style="padding:0 22px 20px;"></div>
+    </section>
+  </div>
+  {% endif %}
+
+  {% if qp %}
+  <div class="rq-sec">Préstamos entre proyectos</div>
+  <section class="card mb-24" style="padding:0;overflow:hidden;">
+    <div class="card-head" style="padding:22px 22px 0;"><div><div class="card-title">Quién le prestó a quién</div>
+      <div class="card-sub" id="rq-nMx"></div></div></div>
+    <div class="table-scroll" style="border:none;border-top:1px solid var(--mq-line);border-radius:0;"><table class="data-table qt mx" id="rq-mx"></table></div>
+    <div style="padding:0 22px 20px;">
+      <details class="rq-det"><summary>Ver los movimientos (hoja «Integración»)</summary>
+        <div class="table-scroll" style="margin-top:10px;"><table class="data-table qt" id="rq-ledger"></table></div></details>
+      <div class="rq-note" id="rq-otros"></div>
+    </div>
+  </section>
+  {% endif %}
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function(){
+const QC = {{ (qc.data if qc else None) | tojson }};
+const QA = {{ (qa.data if qa else None) | tojson }};
+const QP = {{ (qp.data if qp else None) | tojson }};
+const CH = {{ (caph or {}) | tojson }};
+if (!document.getElementById('rq')) return;
+const $ = id => document.getElementById('rq-' + id);
+const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[ch]));
+const ok = v => v != null && isFinite(v);
+const fx = (v, d=1) => ok(v) ? v.toLocaleString('es-MX',{minimumFractionDigits:d,maximumFractionDigits:d}) : '—';
+const pc = (v, d=0) => ok(v) ? (v*100).toFixed(d)+'%' : '—';
+const MES = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+const mes = ym => ym ? `${MES[+ym.slice(5,7)-1]} ${ym.slice(2,4)}` : '—';
+const fecha = iso => iso ? `${+iso.slice(8,10)} ${MES[+iso.slice(5,7)-1]} ${iso.slice(2,4)}` : '—';
+const TONO = {good:'pos', bad:'neg', blue:'accent'};
+const kpiHTML = k => `<div class="kpi"><div class="kpi-top"><span class="kpi-label">${k.lab}</span></div><div class="kpi-value ${TONO[k.cls]||''}">${k.val}${k.u?`<small>${k.u}</small>`:''}</div><div class="kpi-foot"><span class="kpi-sub">${k.sub||''}</span></div></div>`;
+const hbars = (items, color) => { const mx = Math.max(...items.map(x => Math.abs(x.v)), 1e-9);
+  return items.map(x => `<div class="hb"><span class="n" title="${esc(x.n)}">${esc(x.n)}</span><span class="b"><i style="width:${(Math.abs(x.v)/mx*100).toFixed(1)}%;background:var(${x.c||color||'--mq-accent'})"></i></span><span class="v">${fx(x.v)}${x.p!=null?` <span style="color:var(--mq-subtle)">${pc(x.p)}</span>`:''}</span></div>`).join(''); };
+// month labels from first to last 'YYYY-MM'
+const rango = (a, b) => { const out = []; let y = +a.slice(0,4), m = +a.slice(5,7); const Y = +b.slice(0,4), M = +b.slice(5,7);
+  while (y < Y || (y === Y && m <= M)){ out.push(`${y}-${String(m).padStart(2,'0')}`); m++; if (m > 12){ m = 1; y++; } } return out; };
+
+/* ==================== Líneas corporativas (CCC) ==================== */
+if (QC) (function(){
+  $('lineas').innerHTML = QC.lineas.map(l => {
+    const lim = l.limite, por = l.por_disponer || 0, res = (l.reservado||[]).reduce((a,r) => a + r.v, 0), disp = l.disponible != null ? l.disponible : por - res;
+    const ocup = lim ? Math.max(0, lim - por) : null;
+    const tot = lim || (l.dispuesto + por) || 1;
+    const seg = [[ocup, '--mq-c1', 'Ocupado'], [res, '--mq-c4', 'Reservado'], [disp, '--mq-good', 'Disponible']].filter(s => s[0] > 0.0005);
+    const ventas = l.movs.filter(m => m.pago && !m.devolucion).map(m => (m.n.match(/\(([^)]+)\)/) || [])[1]).filter(Boolean);
+    return `<div class="linea"><div class="top"><span class="nm">${esc(l.nombre)}<span>${esc(l.titulo)}</span></span><span class="lim">límite ${lim ? fx(lim, 0)+' mdp' : '—'}</span></div>
+      <div class="trk" role="img" aria-label="${esc(l.nombre)}: ${seg.map(s => s[2]+' '+fx(s[0])).join(', ')}">${seg.map(s => `<i style="width:${(s[0]/tot*100).toFixed(2)}%;background:var(${s[1]})" title="${s[2]}: ${fx(s[0])} mdp"></i>`).join('')}</div>
+      <dl><div><dt>Dispuesto</dt><dd>${fx(l.dispuesto)}</dd></div>
+        <div><dt>Pagado con ventas</dt><dd>${fx(l.pagado)}</dd></div>
+        <div><dt>Por disponer</dt><dd>${fx(por)}</dd></div>
+        ${res > 0.0005 ? `<div><dt>Reservado</dt><dd title="${esc((l.reservado||[]).map(r => r.n).join(', '))}">${fx(res)}</dd></div>` : ''}
+        <div><dt>Disponible</dt><dd style="color:var(--mq-good)">${fx(disp)}</dd></div></dl>
+      ${(l.reservado||[]).length || ventas.length ? `<div class="rq-note">${(l.reservado||[]).map(r => `Reservado para ${esc(r.n)}: ${fx(r.v)} mdp.`).join(' ')} ${ventas.length ? 'Pagos con la venta de ' + esc(ventas.join(', ')) + '.' : ''}</div>` : ''}</div>`;
+  }).join('');
+
+  // draws and payments by month, both lines together
+  const movs = QC.lineas.flatMap(l => l.movs.map(m => ({...m, linea: l.nombre})));
+  if (movs.length){
+    const ms = rango(movs.map(m => m.f).sort()[0].slice(0,7), QC.asOf.slice(0,7));
+    const dis = ms.map(() => 0), pag = ms.map(() => 0);
+    movs.forEach(m => { const i = ms.indexOf(m.f.slice(0,7)); if (i < 0) return; if (m.pago) pag[i] -= Math.abs(m.v); else dis[i] += Math.abs(m.v); });
+    const det = i => movs.filter(m => m.f.slice(0,7) === ms[i]);
+    MQC.bars($('chMov'), 240, ms.map(mes), [
+      {name:'Disposiciones', color:'--mq-c1', real:dis.map(v => v || null), proj:ms.map(() => null), tip: i => [`Disposiciones: ${fx(dis[i])} mdp`].concat(det(i).filter(m => !m.pago).map(m => `  ${m.linea} · ${m.n}: ${fx(Math.abs(m.v))}`).slice(0, 6))},
+      {name:'Pagos', color:'--mq-good', neg:'--mq-good', real:pag.map(v => v || null), proj:ms.map(() => null), tip: i => [`Pagos: ${fx(-pag[i])} mdp`].concat(det(i).filter(m => m.pago).map(m => `  ${m.linea} · ${m.n}: ${fx(Math.abs(m.v))}`))},
+    ], {yFmt: v => fx(v, 0), maxBar: 16, xTicks: 8});
+    $('nMov').textContent = `${mes(ms[0])} a ${mes(ms[ms.length-1])}, mdp. Hacia arriba lo que se dispuso; hacia abajo lo que se pagó a las líneas.`;
+  }
+  // availability, cut by cut
+  const H = (CH.ccc || []);
+  if (H.length > 1){
+    const nombres = [...new Set(H.flatMap(h => Object.keys(h.lineas)))];
+    MQC.line($('chDisp'), 170, H.map(h => fecha(h.f)), nombres.map((n,i) => ({name:n, color:MQC.CAT[i], vals:H.map(h => (h.lineas[n]||{}).por_disponer ?? null)})),
+      {yFmt: v => fx(v, 0), zero:true, xTicks: 6, tooltip:{callbacks:{label: c => `${c.dataset.label}: ${fx(c.raw)} mdp por disponer`}}});
+    $('nDisp').textContent = `${H.length} cortes semanales, ${fecha(H[0].f)} a ${fecha(H[H.length-1].f)}. ${nombres.map((n,i) => n).join(' y ')}.`;
+  } else $('dispWrap').hidden = true;
+
+  // Plan Houston
+  if (QC.plan){
+    $('planT').textContent = QC.plan.titulo + ' contra lo dispuesto';
+    let h = '<thead><tr><th class="l">Uso</th><th>Plan</th><th>Dispuesto</th><th>Diferencia</th></tr></thead><tbody>';
+    QC.plan.grupos.forEach(g => {
+      h += `<tr class="grp"><td class="l" colspan="4">${esc(g.n.replace(/^subtotal\s*/i, ''))}</td></tr>`;
+      g.filas.forEach(f => { const d = (f.dispuesto||0) - (f.plan||0);
+        h += `<tr><td class="l">${esc(f.n)}</td><td class="${f.plan ? '' : 'zero'}">${fx(f.plan)}</td><td>${fx(f.dispuesto)}</td><td class="${Math.abs(d) < 0.05 ? 'zero' : (d > 0 ? 'neg' : 'pos')}">${Math.abs(d) < 0.05 ? '—' : (d > 0 ? '+' : '−') + fx(Math.abs(d))}</td></tr>`; });
+      h += `<tr class="tot"><td class="l">${esc(g.n)}</td><td>${fx(g.plan)}</td><td>${fx(g.dispuesto)}</td><td></td></tr>`;
+    });
+    if (QC.plan.total) h += `<tr class="tot"><td class="l">Total CCC</td><td>${fx(QC.plan.total.plan)}</td><td>${fx(QC.plan.total.dispuesto)}</td><td></td></tr>`;
+    $('plan').innerHTML = h + '</tbody>';
+  }
+  const tabla = (t, el, primera) => { if (!t) return;
+    $(el).innerHTML = `<thead><tr><th class="l">${primera}</th>${t.cols.map(c => `<th>${esc(c.replace(/^cr[eé]dito\s*/i, ''))}</th>`).join('')}</tr></thead><tbody>` +
+      t.filas.map(f => `<tr class="${f.total ? 'tot' : ''}"><td class="l">${esc(f.n)}</td>${f.v.map(v => `<td class="${Math.abs(v||0) < 0.0005 ? 'zero' : ''}">${fx(v)}</td>`).join('')}</tr>`).join('') + '</tbody>'; };
+  tabla(QC.proyectos, 'proy', 'Proyecto');
+  tabla(QC.anios, 'anios', 'Dispuesto por año');
+})();
+
+/* ==================== Cuenta de capital MAQUINA ==================== */
+if (QA) (function(){
+  const A = QA.aportaciones, fs = A.map(a => a.f).sort();
+  const porAnio = {}; A.forEach(a => { const y = a.f.slice(0,4); porAnio[y] = (porAnio[y]||0) + (a.t || 0); });
+  const ult = fs[fs.length-1];
+  const meses = Math.round((new Date(QA.asOf) - new Date(ult)) / (30.44 * 864e5));
+  $('apKpis').innerHTML = [
+    {lab:'Aportado por MAQUINA', val:fx(QA.total), u:'mdp', cls:'blue', sub:`${A.length} aportaciones · ${fecha(fs[0])} a ${fecha(ult)}`},
+    ...Object.keys(porAnio).sort().map(y => ({lab:`En ${y}`, val:fx(porAnio[y]), u:'mdp', sub:`${A.filter(a => a.f.startsWith(y)).length} aportaciones`})),
+    {lab:'Última aportación', val:fecha(ult), sub: meses > 1 ? `hace ${meses} meses; el archivo no registra nada después` : 'este mes'},
+    QA.prestamos_total != null ? {lab:'Préstamos MAQUINA a Ranman', val:fx(QA.prestamos_total), u:'mdp', sub:`${QA.prestamos.length} préstamos, a devolver con eventos de liquidez`} : null,
+    QP ? {lab:'Préstamos entre proyectos', val:fx(QP.total.t), u:'mdp', sub:`saldo vigente al ${fecha(QP.asOf)}`} : null,
+  ].filter(Boolean).map(kpiHTML).join('');
+
+  // by month
+  const ms = rango(fs[0].slice(0,7), ult.slice(0,7));
+  const v = ms.map(m => A.filter(a => a.f.startsWith(m)).reduce((s,a) => s + (a.t||0), 0));
+  let acum = 0; const ac = v.map(x => acum += x);
+  MQC.bars($('chAp'), 240, ms.map(mes), [{name:'Aportaciones', color:'--mq-accent', real:v.map(x => x || null), proj:ms.map(() => null),
+    tip: i => [`Aportado: ${fx(v[i])} mdp`, `Acumulado: ${fx(ac[i])} mdp`]}], {yFmt: x => fx(x, 0), maxBar: 18, xTicks: 9});
+  $('nAp').textContent = `${mes(ms[0])} a ${mes(ms[ms.length-1])}, mdp. El acumulado llega a ${fx(QA.total)} mdp.`;
+
+  const suma = (campo, k) => A.reduce((s,a) => s + (a[campo][k]||0), 0);
+  const COL = ['--mq-c1','--mq-c7','--mq-c2','--mq-c3','--mq-c6','--mq-c4'];
+  $('origen').innerHTML = `<div class="card-sub" style="margin-bottom:6px;font-weight:600;color:var(--mq-ink-2)">Origen</div>` +
+    hbars(QA.origenes.map((o,i) => ({n:o, v:suma('origen', o), p:suma('origen', o)/QA.total, c:COL[i]})));
+  $('tipo').innerHTML = `<div class="card-sub" style="margin-bottom:6px;font-weight:600;color:var(--mq-ink-2)">Destino</div>` +
+    hbars(QA.tipos.map((o,i) => ({n:o, v:suma('tipo', o), p:suma('tipo', o)/QA.total, c:COL[i+2]})));
+  const proy = QA.proyectos.map(p => ({n:p.n, v:suma('proyecto', p.n)})).filter(p => p.v > 0.0005).sort((a,b) => b.v - a.v);
+  $('apProy').innerHTML = hbars(proy.map(p => ({...p, p:p.v/QA.total})));
+
+  // Ranman's own grouping, and Maquina's loans
+  let h = '<thead><tr><th class="l">Aplicación</th><th>mdp</th><th>%</th></tr></thead><tbody>';
+  const tot = QA.aplicacion.reduce((s,g) => s + (g.total || g.filas.reduce((a,f) => a + f.v, 0)), 0);
+  QA.aplicacion.forEach(g => { const gt = g.total || g.filas.reduce((a,f) => a + f.v, 0);
+    h += `<tr class="grp"><td class="l" colspan="3">${esc(g.n)}</td></tr>` + g.filas.map(f => `<tr class="hijo"><td class="l">${esc(f.n)}</td><td>${fx(f.v)}</td><td>${pc(f.v/tot, 1)}</td></tr>`).join('') +
+      `<tr class="tot"><td class="l">Total ${esc(g.n.toLowerCase())}</td><td>${fx(gt)}</td><td>${pc(gt/tot, 1)}</td></tr>`; });
+  if (QA.aplicacion.length) h += `<tr class="tot"><td class="l">Total aplicación</td><td>${fx(tot)}</td><td></td></tr>`;
+  $('aplic').innerHTML = h + '</tbody>';
+  if (QA.aplicacion.length && Math.abs(tot - QA.total) > 0.05)
+    $('aplic').insertAdjacentHTML('afterend', `<div class="rq-note" style="padding:0 22px">La hoja «Resumen» aplica ${fx(tot)} mdp; las aportaciones suman ${fx(QA.total)}. La diferencia (${fx(QA.total - tot)} mdp) no está asignada en ese resumen.</div>`);
+  if (QA.prestamos.length)
+    $('prestM').innerHTML = `<div class="card-title" style="font-size:14px;margin-top:18px;">Préstamos MAQUINA a Ranman</div><div class="card-sub" style="margin-bottom:8px">Hoja oculta «Préstamos»: se devuelven con eventos de liquidez.</div>` +
+      `<div class="table-scroll"><table class="data-table qt" style="min-width:0"><thead><tr><th class="l">Fecha</th><th class="l">Uso</th><th>mdp</th></tr></thead><tbody>` +
+      QA.prestamos.map(p => `<tr><td class="l">${fecha(p.f)}</td><td class="l">${esc(p.uso)}</td><td>${fx(p.v, 2)}</td></tr>`).join('') +
+      `<tr class="tot"><td class="l">Total</td><td></td><td>${fx(QA.prestamos_total, 2)}</td></tr></tbody></table></div>`;
+})();
+
+/* ==================== Préstamos entre proyectos ==================== */
+if (QP) (function(){
+  const P = QP.prestamistas, T = QP.total;
+  const celdas = v => v.map(x => `<td class="${Math.abs(x) < 0.0005 ? 'zero' : ''}">${Math.abs(x) < 0.0005 ? '—' : fx(x, 2)}</td>`).join('');
+  let h = `<thead><tr><th class="l">Recibió \\ Prestó</th>${P.map(p => `<th>${esc(p)}</th>`).join('')}<th>Total</th></tr></thead><tbody>`;
+  QP.deudores.forEach(d => {
+    h += `<tr${d.hijos.length ? ' style="font-weight:600"' : ''}><td class="l">${esc(d.n)}</td>${celdas(d.v)}<td>${fx(d.t, 2)}</td></tr>`;
+    d.hijos.forEach(c => h += `<tr class="hijo"><td class="l">${esc(c.n)}</td>${celdas(c.v)}<td>${fx(c.t, 2)}</td></tr>`);
+  });
+  h += `<tr class="tot"><td class="l">Total</td>${celdas(T.v)}<td>${fx(T.t, 2)}</td></tr></tbody>`;
+  $('mx').innerHTML = h;
+  const may = P.map((p,i) => ({p, v:T.v[i]})).sort((a,b) => b.v - a.v)[0];
+  $('nMx').textContent = `Saldo vigente de ${fx(T.t, 1)} mdp al ${fecha(QP.asOf)}, en mdp. Cada fila es un proyecto que recibió; cada columna, uno que prestó. El que más ha prestado: ${may.p} (${fx(may.v, 1)} mdp).`;
+  $('ledger').innerHTML = '<thead><tr><th class="l">Fecha</th><th class="l">Prestó</th><th class="l">Recibió</th><th>mdp</th></tr></thead><tbody>' +
+    QP.movimientos.map(m => `<tr><td class="l">${fecha(m.f)}</td><td class="l">${esc(m.presta)}</td><td class="l">${esc(m.recibe)}</td><td class="${m.v < 0 ? 'pos' : ''}">${fx(m.v, 2)}</td></tr>`).join('') +
+    `<tr class="tot"><td class="l" colspan="3">Total (los negativos son devoluciones)</td><td>${fx(QP.movimientos.reduce((s,m) => s + m.v, 0), 2)}</td></tr></tbody>`;
+  if (QP.otros) $('otros').textContent = `${QP.otros.titulo || 'Otros préstamos'}: ${QP.otros.movimientos.length} movimientos, saldo ${fx(QP.otros.total || 0, 2)} mdp (hoja «Otros»).`;
+})();
+});
+</script>
+{% endif %}

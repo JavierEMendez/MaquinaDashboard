@@ -1,0 +1,213 @@
+{# RANMAN · Cashflow & PLP · liquidity and equity recovery. Liquidez de la
+   semana: «Necesidad de Capital al aa-mm-dd» (each project's payments this
+   week against the cash it holds, and which ones need an intercompany loan),
+   with every weekly file's totals from `caph.necesidad`. Recuperación de
+   equity: «Reinversión de utilidades» (when each coto frees its profits for
+   reinvestment, month by month to 2035, in Ranman's three versions). Expects
+   `rr` (ranman_rep) and `caph` (ranman_caphist). Classes and ids namespaced rl-. #}
+{% set ln = rr.get('necesidad') %}{% set lr = rr.get('reinversion') %}
+{% if ln or lr %}
+<style>
+.rl .rl-sec{font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--mq-subtle);margin:6px 0 12px}
+.rl .rl-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(176px,1fr));gap:18px;margin-bottom:18px}
+.rl .kpi{min-height:0}
+.rl .kpi-value small{font-size:13px;font-weight:500;color:var(--mq-subtle);margin-left:4px;letter-spacing:0}
+.rl .kpi-value.accent{color:var(--mq-accent)}
+.rl .rl-grid{display:grid;gap:18px;grid-template-columns:repeat(12,1fr);align-items:start;margin-bottom:24px}
+.rl .rl-grid > .card{grid-column:span 12;min-width:0}
+@media(min-width:1000px){.rl .rl-grid > .rl-col6{grid-column:span 6}}
+.rl .card-head{margin-bottom:14px}
+.rl .rl-note{font-size:12px;color:var(--mq-subtle);line-height:1.55;margin-top:10px}
+.rl .rl-legend{display:flex;flex-wrap:wrap;gap:8px 18px;margin-top:12px;font-size:12.5px;color:var(--mq-ink)}
+.rl .rl-legend span{display:inline-flex;align-items:center;gap:8px}
+.rl .rl-sw{width:9px;height:9px;border-radius:50%;flex:none;display:inline-block}
+.rl .pill[aria-pressed="true"]{background:var(--mq-accent);color:#fff}
+.rl .warnbox{display:flex;gap:10px;align-items:flex-start;background:color-mix(in srgb,var(--mq-warn) 12%,var(--mq-surface));border:1px solid color-mix(in srgb,var(--mq-warn) 35%,var(--mq-line));color:var(--mq-ink);border-radius:10px;padding:10px 14px;font-size:12.5px;margin-bottom:16px}
+.rl .table-scroll{max-height:none}
+.rl table.lt{min-width:620px}
+.rl table.lt td.l,.rl table.lt th.l{text-align:left}
+.rl table.lt .zero{color:var(--mq-subtle)}
+.rl table.lt td.neg{color:var(--mq-bad)} .rl table.lt td.pos{color:var(--mq-good)}
+.rl table.lt tr.tot td{background:var(--mq-surface-2);font-weight:700;color:var(--mq-ink-2);border-top:1px solid var(--mq-line-2)}
+.rl table.lt td.nota{font-size:11.5px;color:var(--mq-muted);white-space:normal;min-width:220px;text-align:left}
+.rl table.lt th .sub2{display:block;font-size:10px;font-weight:500;letter-spacing:0;text-transform:none;color:var(--mq-subtle);margin-top:2px}
+.rl .cov{display:inline-flex;align-items:center;gap:7px;justify-content:flex-end}
+.rl .cov .trk{width:64px;height:6px;border-radius:4px;background:var(--mq-surface-2);border:1px solid var(--mq-line);position:relative;overflow:hidden}
+.rl .cov .fil{position:absolute;inset:0 auto 0 0;background:var(--mq-accent)}
+.rl .cov.apretado .fil{background:var(--mq-warn)}
+</style>
+
+<div class="rl mb-24" id="rl">
+  {% if ln %}
+  <div class="rl-sec">Liquidez de la semana · Necesidad de Capital</div>
+  <div class="row wrap" style="gap:8px;margin-bottom:16px;align-items:center;">
+    <span class="badge good" title="{{ ln.archivo }}">● Necesidad de Capital al {{ ln.as_of_label }}</span>
+    <span class="badge">Cifras en mdp</span>
+  </div>
+  <div id="rl-stale"></div>
+  <div class="rl-kpis" id="rl-kpis"></div>
+  <div class="rl-grid">
+    <section class="card rl-col6" style="padding:0;overflow:hidden;">
+      <div class="card-head" style="padding:22px 22px 0;"><div><div class="card-title">Proyectos que necesitan préstamo</div>
+        <div class="card-sub">Los que no cubren con su saldo los pagos de la semana: lo que falta se presta entre proyectos.</div></div></div>
+      <div class="table-scroll" style="border:none;border-top:1px solid var(--mq-line);border-radius:0;"><table class="data-table lt" id="rl-nec"></table></div>
+    </section>
+    <section class="card rl-col6">
+      <div class="card-head"><div><div class="card-title">Semana a semana</div>
+        <div class="card-sub" id="rl-nHist"></div></div></div>
+      <div id="rl-chHist"></div>
+      <div class="rl-legend"><span><i class="rl-sw" style="background:var(--mq-c1)"></i>Saldos en bancos</span><span><i class="rl-sw" style="background:var(--mq-c7)"></i>Pagos de la semana</span><span><i class="rl-sw" style="background:var(--mq-bad)"></i>Necesidad de préstamo</span></div>
+    </section>
+    <section class="card" style="padding:0;overflow:hidden;">
+      <div class="card-head" style="padding:22px 22px 0;"><div><div class="card-title">Proyectos con saldo para cubrir sus pagos</div>
+        <div class="card-sub">De los más justos a los más holgados: qué parte de su saldo se va en los pagos de la semana.</div></div></div>
+      <div class="table-scroll" style="border:none;border-top:1px solid var(--mq-line);border-radius:0;"><table class="data-table lt" id="rl-cub"></table></div>
+    </section>
+  </div>
+  {% endif %}
+
+  {% if lr %}
+  <div class="rl-sec">Recuperación de equity · Reinversión de utilidades</div>
+  <div class="row wrap" style="gap:8px;margin-bottom:16px;align-items:center;">
+    <span class="badge good" title="{{ lr.archivo }}">● Reinversión de utilidades · {{ lr.as_of_label[3:] }}</span>
+    <div class="pillgroup" role="group" aria-label="Versión" id="rl-ver"></div>
+  </div>
+  <div class="rl-kpis" id="rl-reKpis"></div>
+  <div class="rl-grid">
+    <section class="card rl-col6">
+      <div class="card-head"><div><div class="card-title">Equity por recuperar, acumulado</div>
+        <div class="card-sub" id="rl-nRe"></div></div></div>
+      <div id="rl-chRe"></div>
+      <div class="rl-legend" id="rl-lgRe"></div>
+    </section>
+    <section class="card rl-col6">
+      <div class="card-head"><div><div class="card-title">Por desarrollo</div>
+        <div class="card-sub" id="rl-nReP"></div></div></div>
+      <div id="rl-chReP"></div>
+      <div class="rl-legend" id="rl-lgReP"></div>
+    </section>
+    <section class="card" style="padding:0;overflow:hidden;">
+      <div class="card-head" style="padding:22px 22px 0;"><div><div class="card-title">Cada coto</div>
+        <div class="card-sub">Cuándo empieza a liberar y cuánto libera a diciembre de 2035 en cada versión. Los de saldo final negativo no liberan.</div></div></div>
+      <div class="table-scroll" style="border:none;border-top:1px solid var(--mq-line);border-radius:0;"><table class="data-table lt" id="rl-cotos"></table></div>
+      <div class="rl-note" id="rl-notas" style="padding:0 22px 20px;"></div>
+    </section>
+  </div>
+  {% endif %}
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function(){
+const LN = {{ (ln.data if ln else None) | tojson }};
+const LR = {{ (lr.data if lr else None) | tojson }};
+const CH = {{ (caph or {}) | tojson }};
+const DES = {{ ranman_desarrollos | tojson }};
+if (!document.getElementById('rl')) return;
+const $ = id => document.getElementById('rl-' + id);
+const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[ch]));
+const ok = v => v != null && isFinite(v);
+const fx = (v, d=1) => ok(v) ? v.toLocaleString('es-MX',{minimumFractionDigits:d,maximumFractionDigits:d}) : '—';
+const pc = (v, d=0) => ok(v) ? (v*100).toFixed(d)+'%' : '—';
+const MES = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+const mes = ym => ym ? `${MES[+ym.slice(5,7)-1]} ${ym.slice(2,4)}` : '—';
+const fecha = iso => iso ? `${+iso.slice(8,10)} ${MES[+iso.slice(5,7)-1]} ${iso.slice(2,4)}` : '—';
+const store = (k,v) => { try{ localStorage.setItem('rl-'+k, v); }catch(e){} };
+const recall = k => { try{ return localStorage.getItem('rl-'+k); }catch(e){ return null; } };
+const TONO = {good:'pos', bad:'neg', blue:'accent'};
+const kpiHTML = k => `<div class="kpi"><div class="kpi-top"><span class="kpi-label">${k.lab}</span></div><div class="kpi-value ${TONO[k.cls]||''}">${k.val}${k.u?`<small>${k.u}</small>`:''}</div><div class="kpi-foot"><span class="kpi-sub">${k.sub||''}</span></div></div>`;
+const sw = c => `<i class="rl-sw" style="background:${MQC.color(c)}"></i>`;
+// a small amount reads better in thousands of pesos than as «0.0 mdp»
+const chico = v => ok(v) && Math.abs(v) < 0.1 && Math.abs(v) > 0.00005;
+const kpiMdp = v => chico(v) ? {val:fx(Math.abs(v)*1000, 1), u:'miles de $'} : {val:fx(Math.abs(v||0)), u:'mdp'};
+
+/* ==================== Liquidez de la semana ==================== */
+if (LN) (function(){
+  const T = LN.total, N = LN.total_necesidad, nec = LN.necesitan || [];
+  const pagos = (T.pagos||0) + ((N && N.pagos) || 0), saldos = (T.saldos||0) + ((N && N.cubrir) || 0);
+  const falta = N && N.necesidad != null ? N.necesidad : nec.reduce((s,x) => s + (x.necesidad||0), 0);
+  const dias = Math.round((Date.now() - new Date(LN.asOf + 'T00:00:00')) / 864e5);
+  if (dias > 21) $('stale').innerHTML = `<div class="warnbox"><span>⚑</span><div>La última Necesidad de Capital es del ${fecha(LN.asOf)}, hace ${Math.round(dias/7)} semanas. Ranman la manda cada semana; las de después no han llegado.</div></div>`;
+  $('kpis').innerHTML = [
+    {lab:'Pagos de la semana', val:fx(pagos), u:'mdp', cls:'blue', sub:`${LN.cubiertos.length + nec.length} proyectos y plazas`},
+    {lab:'Saldo en bancos', val:fx(saldos), u:'mdp', sub:`cubre ${pc(saldos ? Math.min(pagos/saldos, 9.99) : null)} en pagos`},
+    {lab:'Holgura después de pagar', val:fx(T.despues), u:'mdp', cls:'good', sub:'de los proyectos que se cubren solos'},
+    {lab:'Necesidad de préstamo', ...kpiMdp(falta), cls:falta < -0.00005 ? 'bad' : '', sub: nec.length ? `${nec.length} proyecto${nec.length===1?'':'s'}: ${nec.map(x => x.n).slice(0,3).join(', ')}${nec.length>3?'…':''}` : 'ningún proyecto la necesita'},
+  ].map(kpiHTML).join('');
+
+  $('nec').innerHTML = nec.length
+    ? `<thead><tr><th class="l">Proyecto</th><th>Pagos</th><th>A cubrir<span class="sub2">con su saldo</span></th><th>Necesidad<span class="sub2">de préstamo</span></th>${nec.some(x => x.nota) ? '<th class="l">Para qué</th>' : ''}</tr></thead><tbody>` +
+      nec.map(x => `<tr><td class="l">${esc(x.n)}</td><td>${fx(x.pagos, 3)}</td><td class="${x.cubrir ? '' : 'zero'}">${fx(x.cubrir, 3)}</td><td class="neg">${fx(Math.abs(x.necesidad||0), 3)}</td>${nec.some(y => y.nota) ? `<td class="nota">${esc(x.nota||'')}</td>` : ''}</tr>`).join('') +
+      (N ? `<tr class="tot"><td class="l">Total</td><td>${fx(N.pagos, 3)}</td><td>${fx(N.cubrir, 3)}</td><td>${fx(Math.abs(N.necesidad||0), 3)}</td>${nec.some(y => y.nota) ? '<td></td>' : ''}</tr>` : '') + '</tbody>'
+    : '<tbody><tr><td class="l" style="color:var(--mq-subtle)">Esta semana todos los proyectos cubren sus pagos con su saldo.</td></tr></tbody>';
+
+  const cub = LN.cubiertos.slice().sort((a,b) => (a.saldos ? a.pagos/a.saldos : 0) > (b.saldos ? b.pagos/b.saldos : 0) ? -1 : 1);
+  $('cub').innerHTML = `<thead><tr><th class="l">Proyecto</th><th>Pagos</th><th>Saldos</th><th>Después de pagos</th><th>Pagos / saldo</th></tr></thead><tbody>` +
+    cub.map(x => { const r = x.saldos ? x.pagos / x.saldos : null;
+      return `<tr><td class="l">${esc(x.n)}</td><td>${fx(x.pagos, 2)}</td><td>${fx(x.saldos, 2)}</td><td class="${(x.despues||0) < 0.0005 ? 'zero' : ''}">${fx(x.despues, 2)}</td>` +
+        `<td><span class="cov${r != null && r > 0.95 ? ' apretado' : ''}">${pc(r)}<span class="trk"><span class="fil" style="width:${Math.max(0, Math.min(1, r||0))*100}%"></span></span></span></td></tr>`; }).join('') +
+    `<tr class="tot"><td class="l">Total</td><td>${fx(T.pagos, 2)}</td><td>${fx(T.saldos, 2)}</td><td>${fx(T.despues, 2)}</td><td>${pc(T.saldos ? T.pagos/T.saldos : null)}</td></tr></tbody>`;
+
+  const H = CH.necesidad || [];
+  if (H.length > 1){
+    const lab = H.map(h => fecha(h.f));
+    MQC.line($('chHist'), 240, lab, [
+      {name:'Saldos en bancos', color:'--mq-c1', vals:H.map(h => (h.saldos||0) + (h.cubrir||0))},
+      {name:'Pagos de la semana', color:'--mq-c7', vals:H.map(h => (h.pagos||0) + (h.pagos_nec||0))},
+      {name:'Necesidad de préstamo', color:'--mq-bad', vals:H.map(h => Math.abs(h.necesidad||0))},
+    ], {yFmt: v => fx(v, 0), zero:true, xTicks:8, tooltip:{callbacks:{label: c => `${c.dataset.label}: ${fx(c.raw)} mdp`}}});
+    $('nHist').textContent = `${H.length} semanas, ${fecha(H[0].f)} a ${fecha(H[H.length-1].f)}, mdp. Las semanas cuyo archivo no cuadraba consigo mismo no están.`;
+  } else MQC.clear($('chHist'), '<p class="rl-note">Hace falta más de una semana cargada para ver la tendencia.</p>');
+})();
+
+/* ==================== Recuperación de equity ==================== */
+if (LR) (function(){
+  const VS = LR.versiones, S = LR.serie || {meses: [], v: {}};
+  let ver = recall('ver'); if (!VS.includes(ver)) ver = VS[VS.length-1];
+  const ind = n => (LR.indicadores.find(i => i.n.toLowerCase().startsWith(n)) || {v:{}}).v;
+  const finVer = v => { const s = S.v[v]; return s && s.length ? s[s.length-1] : ind('equity por recuperar acumulado por proyecto')[v]; };
+  const alCierre = (v, y) => { const s = S.v[v] || []; const i = S.meses.lastIndexOf(`${y}-12`); return i >= 0 ? s[i] : null; };
+  const nomK = k => DES[k] ? DES[k][0] : null;
+
+  $('ver').innerHTML = VS.map(v => `<button class="pill" type="button" data-v="${v}" aria-pressed="${v===ver}">Versión ${v.slice(1)}<small style="margin-left:4px;opacity:.75">${fx(finVer(v), 0)}</small></button>`).join('');
+  $('ver').addEventListener('click', e => { const b = e.target.closest('button[data-v]'); if (!b) return; ver = b.dataset.v; store('ver', ver); pinta(); });
+
+  function pinta(){
+    document.querySelectorAll('#rl-ver .pill').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.v===ver)));
+    const anios = [...new Set(S.meses.map(m => m.slice(0,4)))].slice(0, 4);
+    $('reKpis').innerHTML = [
+      {lab:`Equity por recuperar a 2035 · ${ver}`, val:fx(finVer(ver), 0), u:'mdp', cls:'blue', sub: VS.filter(v => v !== ver).map(v => `${v}: ${fx(finVer(v), 0)}`).join(' · ')},
+      ...anios.map(y => ({lab:`Recuperable al cierre de ${y}`, val:fx(alCierre(ver, y), 0), u:'mdp', sub:`acumulado, ${pc(finVer(ver) ? (alCierre(ver, y)||0)/finVer(ver) : null)} del total`})),
+    ].map(kpiHTML).join('');
+
+    // the three versions over time
+    const step = S.meses.length > 60 ? 3 : 1;
+    const idx = S.meses.map((m,i) => i).filter(i => i % step === 0 || i === S.meses.length-1);
+    MQC.line($('chRe'), 250, idx.map(i => mes(S.meses[i])), VS.map((v,k) => ({name:`Versión ${v.slice(1)}`, color:MQC.CAT[k], vals:idx.map(i => (S.v[v]||[])[i] ?? null)})),
+      {yFmt: v => fx(v, 0), zero:true, xTicks:8, tooltip:{callbacks:{label: c => `${c.dataset.label}: ${fx(c.raw, 1)} mdp`}}});
+    $('lgRe').innerHTML = VS.map((v,k) => `<span>${sw(MQC.CAT[k])}Versión ${v.slice(1)}${v===ver?' (la elegida)':''}</span>`).join('');
+    $('nRe').textContent = `Lo que se puede sacar para reinvertir, acumulado mes a mes, ${mes(S.meses[0])} a ${mes(S.meses[S.meses.length-1])}, mdp.`;
+
+    // by development, the chosen version
+    const P = LR.proyectos || {meses: [], filas: []};
+    const filas = P.filas.filter(f => (f.v[ver]||[]).some(x => Math.abs(x) > 0.05));
+    const idp = P.meses.map((m,i) => i).filter(i => i % step === 0 || i === P.meses.length-1);
+    MQC.area($('chReP'), 250, idp.map(i => mes(P.meses[i])), filas.map((f,k) => ({name:f.n, color:MQC.CAT[k % 8], vals:idp.map(i => f.v[ver][i])})),
+      {total:'Total', yFmt: v => fx(v, 0), xTicks:8, tooltip:{callbacks:{label: c => `${c.dataset.label}: ${fx(c.raw, 1)} mdp`}}});
+    $('lgReP').innerHTML = filas.map((f,k) => `<span>${sw(MQC.CAT[k % 8])}${esc(f.n)}</span>`).join('');
+    $('nReP').textContent = `Versión ${ver.slice(1)}: lo que libera cada desarrollo, acumulado.`;
+
+    // each coto
+    const cotos = LR.cotos.slice().sort((a,b) => ((a.v[ver]||{}).desde || '9999') < ((b.v[ver]||{}).desde || '9999') ? -1 : 1);
+    $('cotos').innerHTML = `<thead><tr><th class="l">Coto</th>${VS.map(v => `<th>Desde<span class="sub2">${v}</span></th><th>Libera<span class="sub2">${v}, a 2035</span></th>`).join('')}<th>Saldo final<span class="sub2">${ver}</span></th></tr></thead><tbody>` +
+      cotos.map(c => { const s = (c.v[ver]||{}).saldo;
+        return `<tr><td class="l">${esc(c.n)}</td>${VS.map(v => { const x = c.v[v] || {};
+          return `<td class="${x.desde ? '' : 'zero'}">${x.desde ? mes(x.desde) : 'no libera'}</td><td class="${Math.abs(x.libera||0) < 0.05 ? 'zero' : ''}">${fx(x.libera)}</td>`; }).join('')}` +
+          `<td class="${s < 0 ? 'neg' : ''}">${fx(s)}</td></tr>`; }).join('') +
+      `<tr class="tot"><td class="l">Total</td>${VS.map(v => `<td></td><td>${fx(cotos.reduce((a,c) => a + ((c.v[v]||{}).libera||0), 0))}</td>`).join('')}<td>${fx(cotos.reduce((a,c) => a + ((c.v[ver]||{}).saldo||0), 0))}</td></tr></tbody>`;
+  }
+  $('notas').innerHTML = (LR.notas || []).map(n => esc(n)).join('<br>');
+  pinta();
+})();
+});
+</script>
+{% endif %}
