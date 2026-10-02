@@ -273,6 +273,35 @@ CREATE TABLE IF NOT EXISTS ranman_flujo_plp (
     uploaded_by TEXT,
     uploaded_at TIMESTAMP DEFAULT NOW()
 );
+
+-- RANMAN monthly package: every other parsed deliverable, one JSON payload per
+-- (kind, cut date) as ranman_package / ranman_flujo_parser build it — kind is
+-- edo_resultados | breakeven | pipeline | plp_proyectos. Latest file for a cut wins.
+CREATE TABLE IF NOT EXISTS ranman_reports (
+    kind TEXT NOT NULL,
+    as_of DATE NOT NULL,
+    archivo TEXT,
+    data JSONB NOT NULL,
+    uploaded_by TEXT,
+    uploaded_at TIMESTAMP DEFAULT NOW(),
+    PRIMARY KEY (kind, as_of)
+);
+
+-- Every file the package upload saw (browser or tools/ranman_sync.py), parsed
+-- or not, so the Data tab can show what arrived for each month.
+CREATE TABLE IF NOT EXISTS ranman_package_log (
+    id BIGSERIAL PRIMARY KEY,
+    archivo TEXT NOT NULL,
+    kind TEXT,
+    as_of DATE,
+    periodo TEXT,                 -- YYYY-MM of the folder it came from, when known
+    status TEXT NOT NULL,         -- imported | received | skipped | error
+    message TEXT,
+    size_bytes BIGINT,
+    uploaded_by TEXT,
+    uploaded_at TIMESTAMP DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS ranman_package_log_ts ON ranman_package_log (uploaded_at DESC);
 """
 
 
@@ -428,6 +457,66 @@ def ranman_flujo_latest():
     row = cur.fetchone()
     cur.close(); conn.close()
     return row
+
+
+# ── Ranman / monthly package ─────────────────────────────────────────────────
+def save_ranman_report(kind: str, as_of: str, archivo: str, data_json: str, uploaded_by: str) -> None:
+    """Upsert one parsed deliverable (latest file for a kind and date wins)."""
+    conn = get_db(); cur = conn.cursor()
+    cur.execute("INSERT INTO ranman_reports (kind, as_of, archivo, data, uploaded_by) "
+                "VALUES (%s, %s, %s, %s, %s) ON CONFLICT (kind, as_of) DO UPDATE SET "
+                "archivo = EXCLUDED.archivo, data = EXCLUDED.data, "
+                "uploaded_by = EXCLUDED.uploaded_by, uploaded_at = NOW()",
+                (kind, as_of, archivo, data_json, uploaded_by))
+    conn.commit(); cur.close(); conn.close()
+
+
+def ranman_reports_latest(kinds) -> dict:
+    """kind -> the latest row {as_of, archivo, data, uploaded_at} for each kind asked for."""
+    conn = get_db(); cur = conn.cursor()
+    cur.execute("SELECT DISTINCT ON (kind) kind, as_of, archivo, data, uploaded_at FROM ranman_reports "
+                "WHERE kind = ANY(%s) ORDER BY kind, as_of DESC", (list(kinds),))
+    rows = cur.fetchall()
+    cur.close(); conn.close()
+    return {r["kind"]: r for r in rows}
+
+
+def ranman_reports_index() -> list:
+    """Every stored cut without its payload: [{kind, as_of, archivo, uploaded_at}]."""
+    conn = get_db(); cur = conn.cursor()
+    cur.execute("SELECT kind, as_of, archivo, uploaded_at FROM ranman_reports ORDER BY kind, as_of")
+    rows = cur.fetchall()
+    cur.close(); conn.close()
+    return rows
+
+
+def log_ranman_package(archivo, kind, as_of, periodo, status, message, size_bytes, uploaded_by) -> None:
+    conn = get_db(); cur = conn.cursor()
+    cur.execute("INSERT INTO ranman_package_log (archivo, kind, as_of, periodo, status, message, size_bytes, uploaded_by) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+                (archivo, kind, as_of, periodo, status, (message or "")[:2000], size_bytes, uploaded_by))
+    conn.commit(); cur.close(); conn.close()
+
+
+def ranman_package_log(limit: int = 400) -> list:
+    conn = get_db(); cur = conn.cursor()
+    cur.execute("SELECT archivo, kind, as_of, periodo, status, message, size_bytes, uploaded_by, uploaded_at "
+                "FROM ranman_package_log ORDER BY uploaded_at DESC, id DESC LIMIT %s", (limit,))
+    rows = cur.fetchall()
+    cur.close(); conn.close()
+    return rows
+
+
+def ranman_stored_cuts() -> dict:
+    """The cut dates already stored by the two original Ranman tables, so the
+    Data tab can count them alongside the package's own reports."""
+    conn = get_db(); cur = conn.cursor()
+    cur.execute("SELECT as_of FROM ranman_flujo_plp ORDER BY as_of")
+    flujo = [r["as_of"] for r in cur.fetchall()]
+    cur.execute("SELECT fecha FROM ranman_debt_cortes ORDER BY fecha")
+    riesgos = [r["fecha"] for r in cur.fetchall()]
+    cur.close(); conn.close()
+    return {"flujo": flujo, "riesgos": riesgos}
 
 
 def get_setting(key: str):

@@ -1,0 +1,183 @@
+{# RANMAN · Data (admin) — load and check the monthly package. A whole month
+   folder (or any files) is filtered in the browser with the same name rules
+   the server uses (ranman_package.ENTREGABLES), then sent one file per request
+   to /api/ranman/package so the 8 MB cap holds. Below: what's loaded, what
+   arrived for each of the last four months, the automatic sync, and the recent
+   log. Expects `pk` (ranman_pkg), `ranman_patrones`, `ranman_enviables`,
+   `ranman_omite`. Classes and ids namespaced rk-. #}
+<style>
+.rk .rk-grid{display:grid;gap:18px;grid-template-columns:repeat(12,1fr);align-items:start}
+.rk .rk-grid > .card{grid-column:span 12;min-width:0}
+@media(min-width:1000px){.rk .rk-grid > .rk-col5{grid-column:span 5}.rk .rk-grid > .rk-col7{grid-column:span 7}}
+.rk .card-head{margin-bottom:14px}
+.rk .rk-pick{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.rk .rk-pick label.btn{cursor:pointer}
+.rk .rk-pick input[type=file]{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}
+.rk .rk-pick label.btn:focus-within{outline:2px solid var(--mq-accent);outline-offset:2px}
+.rk .rk-prog{font-size:12.5px;color:var(--mq-muted)}
+.rk .table-scroll{max-height:none}
+.rk .dt td.l,.rk .dt th.l{text-align:left}
+.rk .dt td.msg{text-align:left;white-space:normal;min-width:240px;max-width:520px;font-size:12px;color:var(--mq-muted)}
+.rk .dt td.f{text-align:left;white-space:normal;min-width:200px;max-width:340px;word-break:break-word;font-size:12px}
+.rk .st{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-weight:600;padding:2px 9px;border-radius:999px;white-space:nowrap}
+.rk .st::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor}
+.rk .st.imported{color:var(--mq-good);background:var(--mq-good-soft)}
+.rk .st.received{color:var(--mq-accent);background:var(--mq-accent-soft)}
+.rk .st.error{color:var(--mq-bad);background:var(--mq-bad-soft)}
+.rk .st.skipped,.rk .st.pending,.rk .st.none{color:var(--mq-subtle);background:var(--mq-surface-2)}
+.rk .st.sending{color:var(--mq-warn);background:color-mix(in srgb,var(--mq-warn) 14%,transparent)}
+.rk .grid4 td{text-align:center}
+.rk .grid4 td small{display:block;font-size:10.5px;color:var(--mq-subtle);margin-top:3px}
+.rk pre{background:var(--mq-surface-2);border:1px solid var(--mq-line);border-radius:var(--mq-radius-sm);padding:10px 12px;font-size:12px;overflow-x:auto;margin:8px 0 0;font-family:var(--font-mono)}
+.rk ol{margin:6px 0 0;padding-left:18px;display:grid;gap:6px;font-size:13px;color:var(--mq-ink)}
+.rk .muted2{font-size:12.5px;color:var(--mq-muted)}
+</style>
+
+<div class="rk mb-24" id="rk">
+  <div class="rk-grid">
+    <section class="card">
+      <div class="card-head"><div><div class="card-title">Upload the monthly package</div>
+        <div class="card-sub">Pick a whole month folder from <code>Archivos Ranman\&lt;year&gt;\&lt;n&gt;_&lt;Month&gt;</code>, or any files. Files are recognised by name; backups, scenarios and draw slips are left out, and so are the BPs until their parser exists. Each file is sent on its own, checked against its own totals and logged below. Flujo y PLP, Cuadro de Riesgos, Edo. Resultados, Breakeven and Pipeline are read today; the rest are recorded as received.</div></div></div>
+      <div class="rk-pick">
+        <label class="btn btn-primary btn-sm">Choose a month folder<input type="file" id="rk-dir" webkitdirectory multiple></label>
+        <label class="btn btn-ghost btn-sm">Choose files<input type="file" id="rk-files" multiple accept=".xlsx,.xlsm,.pdf"></label>
+        <span class="rk-prog" id="rk-prog" aria-live="polite"></span>
+        <button class="btn btn-ghost btn-sm" type="button" id="rk-reload" hidden>Reload to see the new data</button>
+      </div>
+      <div class="table-scroll" id="rk-resWrap" hidden style="margin-top:14px;"><table class="data-table dt" id="rk-res"></table></div>
+    </section>
+
+    {% if pk %}
+    <section class="card rk-col5" style="padding:0;overflow:hidden;">
+      <div class="card-head" style="padding:22px 22px 0;"><div><div class="card-title">What's loaded</div>
+        <div class="card-sub">The deliverables the dashboard reads, with the cuts stored for each.</div></div></div>
+      <div class="table-scroll" style="border:none;border-top:1px solid var(--mq-line);border-radius:0;">
+        <table class="data-table dt">
+          <thead><tr><th class="l">Deliverable</th><th>Cuts</th><th>First</th><th>Latest</th></tr></thead>
+          <tbody>
+          {% for r in pk.cargado %}
+            <tr><td class="l">{{ r.label }}</td><td>{{ r.n }}</td><td>{{ r.first or '—' }}</td><td>{% if r.last %}<strong>{{ r.last }}</strong>{% else %}<span class="st none">none</span>{% endif %}</td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="card rk-col7" style="padding:0;overflow:hidden;">
+      <div class="card-head" style="padding:22px 22px 0;"><div><div class="card-title">Arrivals by month</div>
+        <div class="card-sub">By the folder each file came from (or its cut date when uploaded on its own). Earlier uploads made through the per-tab cards before this log existed don't appear here.</div></div></div>
+      <div class="table-scroll" style="border:none;border-top:1px solid var(--mq-line);border-radius:0;">
+        <table class="data-table dt grid4">
+          <thead><tr><th class="l">Deliverable</th>{% for p in pk.periodos_lbl %}<th style="text-align:center">{{ p }}</th>{% endfor %}</tr></thead>
+          <tbody>
+          {% for f in pk.filas %}
+            <tr><td class="l">{{ f.num }} · {{ f.label }}{% if not f.parsed %}<span class="subtle" style="font-size:11px;"> · not read yet</span>{% endif %}</td>
+              {% for c in f.celdas %}
+              <td title="{{ c.archivo or '' }}">{% if c.status %}<span class="st {{ c.status }}">{{ {'imported':'Imported','received':'Received','error':'Error','skipped':'Skipped'}[c.status] }}</span>{% if c.as_of %}<small>{{ c.as_of }}{% if c.n > 1 %} · {{ c.n }} files{% endif %}</small>{% endif %}{% else %}<span class="subtle">—</span>{% endif %}</td>
+              {% endfor %}</tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="card-head"><div><div class="card-title">Automatic sync</div>
+        <div class="card-sub">{% if pk.sync.enabled %}<span class="st imported">Enabled</span> The server accepts files from <code>tools/ranman_sync.py</code>.{% if pk.sync.last %} Last sync upload {{ pk.sync.last }}.{% else %} No sync upload yet.{% endif %}{% else %}<span class="st none">Not set up</span> Set <code>RANMAN_SYNC_TOKEN</code> on the Railway service to turn it on.{% endif %}</div></div></div>
+      <div class="muted2">The script runs on a computer that has the Ranman OneDrive folder synced. It walks the last few month folders, sends only new or changed deliverables to <code>/api/ranman/package</code>, and remembers what it sent.</div>
+      <ol>
+        <li>Pick a long random token, set it as <code>RANMAN_SYNC_TOKEN</code> on Railway, and set the same value on the computer that will run the sync.</li>
+        <li>Set <code>RANMAN_SYNC_URL</code> on that computer to <code>{{ pk.sync.url }}</code>.</li>
+        <li>Try it: <pre>python tools/ranman_sync.py --dry-run</pre> then without <code>--dry-run</code> to send.</li>
+        <li>Schedule it daily, for example with Windows Task Scheduler running the same command.</li>
+      </ol>
+    </section>
+
+    <section class="card" style="padding:0;overflow:hidden;">
+      <div class="card-head" style="padding:22px 22px 0;"><div><div class="card-title">Recent uploads</div>
+        <div class="card-sub">The last {{ pk.recientes|length }} files the package upload saw, newest first.</div></div></div>
+      <div class="table-scroll" style="border:none;border-top:1px solid var(--mq-line);border-radius:0;">
+        <table class="data-table dt">
+          <thead><tr><th class="l">When</th><th class="l">File</th><th class="l">Deliverable</th><th>Cut</th><th class="l">Status</th><th class="l">Detail</th><th class="l">By</th></tr></thead>
+          <tbody>
+          {% for r in pk.recientes %}
+            <tr><td class="l" style="white-space:nowrap">{{ r.at }}</td><td class="f">{{ r.archivo }}</td><td class="l">{{ r.label or '—' }}</td><td>{{ r.as_of or '—' }}</td>
+              <td class="l"><span class="st {{ r.status }}">{{ {'imported':'Imported','received':'Received','error':'Error','skipped':'Skipped'}.get(r.status, r.status) }}</span></td>
+              <td class="msg">{{ r.message }}</td><td class="l">{{ r.by }}</td></tr>
+          {% else %}
+            <tr><td class="l" colspan="7"><span class="subtle">Nothing uploaded through the package yet.</span></td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+    {% endif %}
+  </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function(){
+const PAT = {{ ranman_patrones | tojson }};       // [kind, label, regex]
+const SEND = new Set({{ ranman_enviables | tojson }});
+const OMITE = {{ ranman_omite | tojson }};        // {carpeta: [...], nombre: [...]}
+const URL_UP = {{ url_for('ranman_package_upload') | tojson }};
+const MAX = 8 * 1024 * 1024;
+const $ = id => document.getElementById('rk-' + id);
+if (!$('dir')) return;
+const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[ch]));
+// the same normalisation as ranman_package._norm: no accents, lower case, single spaces
+const norm = s => String(s||'').normalize('NFKD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
+const RX = PAT.map(([k, l, rx]) => [k, l, new RegExp(rx)]);
+const ST = {imported:'Imported', received:'Received', error:'Error', skipped:'Skipped', pending:'Waiting', sending:'Sending'};
+function clasifica(file){
+  const ruta = file.webkitRelativePath || file.name;
+  const partes = ruta.split(/[\\/]+/).slice(0, -1).map(norm);
+  if (partes.some(p => OMITE.carpeta.some(o => p.includes(o)))) return null;
+  const n = norm(file.name);
+  if (!n || OMITE.nombre.some(o => n.includes(o))) return null;
+  const hit = RX.find(([k, l, rx]) => rx.test(n));
+  return hit ? {kind: hit[0], label: hit[1]} : null;
+}
+const periodo = ruta => { const m = /(?:^|[\\/])(20\d{2})[\\/](\d{1,2})_/.exec(ruta||''); return m ? `${m[1]}-${String(+m[2]).padStart(2,'0')}` : ''; };
+function fila(i, it){
+  return `<tr id="rk-r${i}"><td class="f">${esc(it.file.name)}</td><td class="l">${esc(it.label||'—')}</td><td>${esc(it.as_of||'—')}</td>` +
+    `<td class="l"><span class="st ${it.status}">${ST[it.status]||it.status}</span></td><td class="msg">${esc(it.message||'')}</td></tr>`;
+}
+async function enviar(files){
+  const lista = [], fuera = [];
+  [...files].forEach(f => { const c = clasifica(f);
+    if (!c) return;                                          // not a deliverable: not even listed
+    if (!SEND.has(c.kind)) fuera.push(f);
+    else lista.push({file:f, label:c.label, kind:c.kind, status: f.size > MAX ? 'skipped' : 'pending',
+      message: f.size > MAX ? 'Over 8 MB — upload limit.' : ''}); });
+  if (!lista.length){ $('prog').textContent = `No Ranman deliverables in the ${files.length} file${files.length===1?'':'s'} chosen.`; return; }
+  $('resWrap').hidden = false;
+  $('res').innerHTML = `<thead><tr><th class="l">File</th><th class="l">Deliverable</th><th>Cut</th><th class="l">Status</th><th class="l">Detail</th></tr></thead><tbody>${lista.map((it,i)=>fila(i,it)).join('')}</tbody>`;
+  let hechos = 0, ok = 0;
+  const pend = lista.filter(it => it.status==='pending');
+  const nota = fuera.length ? ` · ${fuera.length} BP file${fuera.length===1?'':'s'} left for later` : '';
+  for (const it of pend){
+    const i = lista.indexOf(it);
+    it.status = 'sending'; document.getElementById('rk-r'+i).outerHTML = fila(i, it);
+    $('prog').textContent = `Sending ${hechos+1} of ${pend.length}…${nota}`;
+    const fd = new FormData();
+    fd.append('files', it.file, it.file.name);
+    const ruta = it.file.webkitRelativePath || '';
+    fd.append('ruta', ruta); fd.append('periodo', periodo(ruta));
+    try {
+      const r = await fetch(URL_UP, {method:'POST', body:fd, credentials:'same-origin'});
+      const j = await r.json().catch(() => ({error: `The server answered ${r.status}.`}));
+      if (!r.ok || !j.results){ it.status = 'error'; it.message = j.error || `The server answered ${r.status}.`; }
+      else { const x = j.results[0]; Object.assign(it, {status:x.status, message:x.message, as_of:x.as_of}); if (x.status==='imported') ok++; }
+    } catch(e){ it.status = 'error'; it.message = 'The upload failed — check the connection and try again.'; }
+    document.getElementById('rk-r'+i).outerHTML = fila(i, it);
+    hechos++;
+  }
+  $('prog').textContent = `Done: ${ok} imported, ${lista.filter(x=>x.status==='received').length} received, ${lista.filter(x=>x.status==='error').length} with errors${nota}.`;
+  $('reload').hidden = false;
+}
+$('dir').addEventListener('change', e => { if (e.target.files.length) enviar(e.target.files); e.target.value = ''; });
+$('files').addEventListener('change', e => { if (e.target.files.length) enviar(e.target.files); e.target.value = ''; });
+$('reload').addEventListener('click', () => { const u = new URL(location.href); u.searchParams.set('tab', 'ranman-data'); location.href = u.toString(); });
+});
+</script>

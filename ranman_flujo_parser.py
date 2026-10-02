@@ -268,12 +268,133 @@ def base_para_corte(base: dict, as_of: str):
         return None
     anio, hasta = as_of[:4], as_of[:7]
     out = {'archivo': base.get('archivo'), 'fecha': base.get('fecha'), 'anios': base.get('anios') or [],
-           'filas': base.get('filas') or {}, 'ytd': {}, 'hasta': hasta}
+           'filas': base.get('filas') or {}, 'ytd': {}, 'hasta': hasta, 'mes': {}}
     for r, meses in (base.get('mensual') or {}).items():
         sel = [v for m, v in meses.items() if m[:4] == anio and m <= hasta]
         if sel:
             out['ytd'][r] = round(sum(sel), 2)
+        # the corte's year month by month (the Commercial tab charts the pace against it)
+        out['mes'][r] = {m: round(v, 2) for m, v in sorted(meses.items()) if m[:4] == anio}
     return out
+
+
+# ── by development: hidden sheet «PLP - Soporte» + the PLP's own split ─────
+# «PLP - Soporte» repeats the statement once per development: a block whose
+# first row carries the name in B and the months in C:EP (Jan-2024 → Dec-2035),
+# then Apartados … Saldo Final de Efectivo, and a «Diferencia» row the file uses
+# as its own check. It is Ranman's project-level support, NOT a split of the
+# consolidated PLP: land and macrolote sales and other adjustments are booked
+# per development only in the PLP sheet (rows 8-22 sales, 86-100 UAIR), so both
+# are kept and the page shows the gap.
+SOPORTE = 'PLP - Soporte'
+SOPORTE_CUENTA = {'Apartados', 'Individualizaciones'}
+SOPORTE_INICIAL = {'Saldo Inicial de Efectivo'}            # a year's value = its first month
+SOPORTE_FINAL = {'Efectivo Sobrante antes de Dividendos', 'Saldo Final de Efectivo Ranman'}  # = its last month
+
+
+def _bloques_soporte(ws):
+    filas = list(ws.iter_rows(min_row=1, max_row=ws.max_row, max_col=150, values_only=True))
+    inicios = [i for i, r in enumerate(filas) if len(r) > 2 and isinstance(r[2], dt.datetime)]
+    if not inicios:
+        raise ValueError("'%s' has no block headers (dates in column C)" % SOPORTE)
+    cab = filas[inicios[0]]
+    cols = [j for j in range(2, len(cab)) if isinstance(cab[j], dt.datetime)]
+    meses = [cab[j].strftime('%Y-%m') for j in cols]
+    out = []
+    for k, s in enumerate(inicios):
+        e = inicios[k + 1] if k + 1 < len(inicios) else len(filas)
+        rows, dif = [], None
+        for i in range(s + 1, e):
+            et = filas[i][1]
+            if not isinstance(et, str) or not et.strip():
+                continue
+            et = et.strip()
+            vals = [filas[i][j] if isinstance(filas[i][j], (int, float)) else None for j in cols]
+            if et == 'Diferencia':
+                dif = max((abs(v) for v in vals if v is not None), default=0.0)
+                break
+            if et == 'Validación' or (et.startswith('Reserva ') and not any(vals)):
+                continue
+            rows.append((et, vals))
+        if len(rows) >= 10:                    # «AGS - LA CARTUJA C00» is a two-row stub
+            out.append({'n': str(filas[s][1]).strip(), 'on': filas[s][0] != 0, 'rows': rows, 'dif': dif})
+    return meses, out
+
+
+def _anualiza(rows, meses, anios):
+    """Per year: flows add up, opening balances take January, closing balances
+    December, and margins are recomputed from the row above over sales."""
+    idx = {a: [i for i, m in enumerate(meses) if int(m[:4]) == a] for a in anios}
+    ventas = next((v for et, v in rows if et == 'Ventas Totales'), None)
+    tot = lambda vals, a: sum(vals[i] or 0 for i in idx[a])
+    out, previo = {}, None
+    for et, vals in rows:
+        if '(%)' in et:
+            out[et] = [round(tot(previo, a) / tot(ventas, a), 4) if previo and ventas and abs(tot(ventas, a)) > 0.5 else None
+                       for a in anios]
+            continue
+        if et in SOPORTE_INICIAL:
+            out[et] = [vals[idx[a][0]] if idx[a] else None for a in anios]
+        elif et in SOPORTE_FINAL:
+            out[et] = [vals[idx[a][-1]] if idx[a] else None for a in anios]
+        else:
+            out[et] = [tot(vals, a) for a in anios]
+        previo = vals
+    return out
+
+
+def lee_proyectos(wv, as_of: str) -> dict:
+    """Every development's statement (support sheet), with the consolidated PLP's
+    own per-development sales and UAIR beside it. Yearly 2024-2035 and the
+    corte's year month by month; mdp except units and margins."""
+    from ranman_package import clave_desarrollo     # one key per development across reports
+    a0 = int(as_of[:4])
+    meses, bloques = _bloques_soporte(wv[SOPORTE])
+    anios = sorted({int(m[:4]) for m in meses})
+    im = [i for i, m in enumerate(meses) if int(m[:4]) == a0]
+
+    def conv(et, v):
+        if v is None:
+            return None
+        if '(%)' in et:
+            return round(v, 4)
+        return round(v) if et in SOPORTE_CUENTA else round(v / MILES, 2)
+
+    proyectos = []
+    for b in bloques:
+        anual = _anualiza(b['rows'], meses, anios)
+        filas = [{'n': et, 't': 'pct' if '(%)' in et else ('cuenta' if et in SOPORTE_CUENTA else 'mdp'),
+                  'a': [conv(et, v) for v in anual[et]], 'm': [conv(et, vals[i]) for i in im]}
+                 for et, vals in b['rows']]
+        proyectos.append({'n': b['n'], 'k': clave_desarrollo(b['n']), 'on': b['on'],
+                          'cuadra': b['dif'] is None or b['dif'] < 1.0,
+                          'dif': None if b['dif'] is None else round(b['dif'] / MILES, 2), 'filas': filas})
+
+    # the PLP sheet's per-development rows: sales under «Ventas Totales» (row 7)
+    # and the «UAIR por Proyecto» block below the cash flow
+    ws = wv['PLP']
+    meses_plp = [ws.cell(3, c).value for c in COLS_MES]
+    imp = [i for i, m in enumerate(meses_plp) if isinstance(m, dt.datetime) and m.year == a0]
+    num = lambda v: v if isinstance(v, (int, float)) else None
+
+    def fila(r):
+        f = lambda c: None if num(ws.cell(r, c).value) is None else round(num(ws.cell(r, c).value) / MILES, 2)
+        et = str(ws.cell(r, 2).value).strip()
+        return {'n': et, 'k': clave_desarrollo(et), 'a': [f(c) for c in COLS_ANIO],
+                'm': [f(list(COLS_MES)[i]) for i in imp]}
+    ventas, uair, r = [], [], 8
+    while r < 30 and str(ws.cell(r, 2).value or '').strip() not in ('', 'Costo de Ventas'):
+        ventas.append(fila(r)); r += 1
+    r0 = next((r for r in range(83, 130) if str(ws.cell(r, 2).value or '').strip() == 'UAIR por Proyecto'), None)
+    total_uair = None
+    if r0:
+        total_uair = fila(r0 + 1)
+        r = r0 + 2
+        while r < r0 + 40 and str(ws.cell(r, 2).value or '').strip() not in ('', 'Validación'):
+            uair.append(fila(r)); r += 1
+    return {'asOf': as_of, 'anios': anios, 'meses': [meses[i] for i in im], 'proyectos': proyectos,
+            'plp': {'anios': [int(ws.cell(3, c).value) for c in COLS_ANIO], 'ventas': ventas, 'uair': uair,
+                    'uair_total': total_uair}}
 
 
 # ── entry points ────────────────────────────────────────────────────────────
@@ -293,13 +414,24 @@ def parse_workbook(file_bytes: bytes, filename: str):
                 raise ValueError("%s has no '%s' sheet — is it a Flujo y PLP DRA workbook?" % (filename, hoja))
         fl = lee_resumen(wf, wv, as_of)
         plp = lee_plp(wv, as_of)
+        # by development: optional — a change in the support sheet must not block the corte
+        proyectos, nota = None, None
+        if SOPORTE in wv.sheetnames:
+            try:
+                proyectos = lee_proyectos(wv, as_of)
+            except Exception as e:     # noqa: BLE001 — reported, never fatal
+                nota = "'%s' could not be read (%s)" % (SOPORTE, e)
     finally:
         wf.close()
         wv.close()
     ok, lines = valida(fl, plp)
+    if nota:
+        lines.append(nota)
     datos = {'archivo': filename, 'asOf': as_of,
              'generado': dt.datetime.now().isoformat(timespec='seconds'),
              'flujo': fl, 'plp': plp}
+    if proyectos:
+        datos['proyectos'] = proyectos     # the app stores it apart from the tablero document
     return datos, ok, lines
 
 

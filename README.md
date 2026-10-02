@@ -93,8 +93,36 @@ password: maquina2026
 | `USD_MXN_RATE` | fallback FX, e.g. `17.3328` |
 | `BANXICO_TOKEN` | *(optional)* enables live MXN/USD from Banxico |
 | `EMBER_DATABASE_URL` | *(optional)* read-only Ember Postgres — see below |
+| `RANMAN_SYNC_TOKEN` | *(optional)* lets `tools/ranman_sync.py` push Ranman's monthly package — see below |
 
 Railway provides `$PORT`; `gunicorn.conf.py` binds to it.
+
+---
+
+## Ranman data
+
+Ranman uploads a monthly package to OneDrive (`Archivos Ranman/<year>/<n>_<Month>/`).
+`ranman_package.py` recognises each deliverable **by file name** (the folder
+numbers have drifted over the years) and parses the ones the dashboard reads:
+Flujo y PLP (`ranman_flujo_parser.py`, including the hidden *PLP - Soporte*
+sheet by development), Cuadro de Riesgos (`ranman_deuda_parser.py`),
+Edo. Resultados por Proyecto, Breakeven and Pipeline. Each file is checked
+against its own totals before anything is stored.
+
+Three ways in, all through `POST /api/ranman/package`:
+
+- **Data tab** (admin) on the Ranman page: pick a whole month folder; files go one per request.
+- The older upload cards on the Cashflow & PLP and Finance tabs (same import underneath).
+- **`tools/ranman_sync.py`**, for an automatic daily run on a computer with the OneDrive folder synced:
+
+```bash
+# on that computer: RANMAN_SYNC_URL=https://<app>/api/ranman/package, RANMAN_SYNC_TOKEN=<same as Railway>
+python tools/ranman_sync.py --dry-run     # what it would send
+python tools/ranman_sync.py               # send new or changed files from the last 3 month folders
+```
+
+It remembers what it sent (`%LOCALAPPDATA%\ranman_sync\state.json`), so a
+scheduled run only sends what Ranman added since.
 
 ---
 
@@ -115,5 +143,6 @@ Follows the handoff's "unified" model so it can grow with real data:
 - `strategy_phases` / `company_phase_history` — lifecycle framework
 - `company_risks` / `company_strategies` — strategy tab data
 - `users`, `app_settings`
+- Ranman: `ranman_flujo_plp`, `ranman_debt_cortes`, `ranman_reports` (one JSON payload per deliverable and cut) and `ranman_package_log` (every file the package upload saw)
 
 Replace the contents of `seed_data.py` (or wire live sources) as real figures come online.

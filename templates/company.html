@@ -65,11 +65,13 @@
     <button class="tab" data-tab="ev">Enterprise Value Analysis</button>
     {% else %}
     <button class="tab" data-tab="commercial">Commercial</button>
+    {% if c.slug == 'ranman' %}<button class="tab" data-tab="ranman-projects">Projects</button>{% endif %}
     <button class="tab" data-tab="operations">{{ 'Cashflow & PLP' if c.slug == 'ranman' else 'Operations' }}</button>
     <button class="tab" data-tab="finance">Finance</button>
     {% if cap %}<button class="tab" data-tab="projects">Projects</button>{% endif %}
     {% if c.slug == 'ember' %}<button class="tab" data-tab="unit-economics">Unit Economics</button>{% endif %}
     <button class="tab" data-tab="strategy">Strategy</button>
+    {% if c.slug == 'ranman' and is_admin %}<button class="tab" data-tab="ranman-data">Data</button>{% endif %}
     {% endif %}
   </div>
 
@@ -264,6 +266,9 @@
 
   <div class="tab-panel" data-panel="commercial">
 
+    {# ── RANMAN · sales pace, breakeven coverage and land bank (monthly package) ── #}
+    {% if c.slug == 'ranman' %}{% set rr = ranman_rep %}{% set rf = ranman_flujo %}{% include '_partials/_ranman_comercial.html' %}{% endif %}
+
     {# ── Community Sales executive summary (MPCs) — live from Ember ── #}
     {% if sales %}
     <div class="card mb-24">
@@ -437,7 +442,8 @@
     </div>
     {% endif %}
 
-    {{ category_panel('Commercial') }}
+    {# Ranman's seeded Commercial KPIs were placeholders; the package data above replaces them. #}
+    {% if c.slug != 'ranman' %}{{ category_panel('Commercial') }}{% endif %}
   </div>
   <div class="tab-panel" data-panel="operations">
     {% if c.slug == 'ranman' %}
@@ -771,6 +777,19 @@
     </div>
     {% endif %}
   </div>
+
+  {# ───────── RANMAN · Projects (Edo. Resultados by etapa + PLP by development) ───────── #}
+  {% if c.slug == 'ranman' %}
+  <div class="tab-panel" data-panel="ranman-projects">
+    {% set rr = ranman_rep %}{% include '_partials/_ranman_proyectos.html' %}
+  </div>
+  {% if is_admin %}
+  {# ───────── RANMAN · Data (admin): the monthly package ───────── #}
+  <div class="tab-panel" data-panel="ranman-data">
+    {% set pk = ranman_pkg %}{% include '_partials/_ranman_datos.html' %}
+  </div>
+  {% endif %}
+  {% endif %}
 
   {# ───────── Projects (Ember Capital) ───────── #}
   {% if cap %}

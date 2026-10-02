@@ -1,0 +1,353 @@
+{# RANMAN · Projects — every etapa's lifetime result and every development's
+   statement. Portfolio: «Estado de Resultados al dd-mm-aa» (real a la fecha +
+   por ejercer, by etapa and plaza), each line coloured against the green and
+   red limits Ranman writes in the file. Desarrollo: «PLP - Soporte», the
+   project-level statement hidden in the Flujo y PLP workbook, with the
+   consolidated PLP's own per-development sales and UAIR beside it — the two
+   differ where land and macrolote sales are booked only in the consolidated
+   view, and the page shows by how much. Expects `rr` (ranman_rep). Classes and
+   ids namespaced rp-. #}
+{% set ed = rr.get('edo_resultados') %}{% set pp = rr.get('plp_proyectos') %}
+<style>
+.rp .rp-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(176px,1fr));gap:18px;margin-bottom:18px}
+.rp .kpi{min-height:0}
+.rp .kpi-value small{font-size:13px;font-weight:500;color:var(--mq-subtle);margin-left:4px;letter-spacing:0}
+.rp .kpi-value.accent{color:var(--mq-accent)}
+.rp .rp-grid{display:grid;gap:18px;grid-template-columns:repeat(12,1fr);align-items:start;margin-bottom:24px}
+.rp .rp-grid > .card{grid-column:span 12;min-width:0}
+@media(min-width:900px){.rp .rp-grid > .rp-col6{grid-column:span 6}}
+.rp .card-head{margin-bottom:14px}
+.rp .rp-sec{font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--mq-subtle);margin:6px 0 12px}
+.rp .rp-legend{display:flex;flex-wrap:wrap;gap:8px 18px;margin-top:14px;font-size:12.5px;color:var(--mq-ink)}
+.rp .rp-legend span{display:inline-flex;align-items:center;gap:8px}
+.rp .rp-sw{width:9px;height:9px;border-radius:50%;flex:none;display:inline-block}
+.rp .swl{display:inline-block;width:14px;height:0;border-top:2px solid var(--mq-ink);flex:none}
+.rp .rp-empty{font-size:12.5px;color:var(--mq-subtle);margin:0}
+.rp .pill[aria-pressed="true"]{background:var(--mq-accent);color:#fff}
+.rp .rp-bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:14px}
+.rp .rp-note{font-size:12px;color:var(--mq-subtle)}
+/* where each peso of sales goes */
+.rp .peso{display:grid;grid-template-columns:150px 1fr 92px;gap:12px;align-items:center;padding:7px 0;border-bottom:1px solid var(--mq-line)}
+.rp .peso:last-of-type{border-bottom:none}
+.rp .peso .nm{font-size:13px;color:var(--mq-ink);font-weight:600;min-width:0}
+.rp .peso .nm span{display:block;font-size:11px;color:var(--mq-subtle);font-weight:500}
+.rp .peso .trk{display:flex;height:18px;border-radius:5px;overflow:hidden;background:var(--mq-surface-2);min-width:0}
+.rp .peso .trk i{display:block;height:100%;min-width:1px}
+.rp .peso .v{font-family:var(--font-num);font-variant-numeric:tabular-nums;font-size:13px;text-align:right}
+.rp .peso.tot .nm{color:var(--mq-ink-2)} .rp .peso.tot{border-top:1px solid var(--mq-line-2)}
+@media(max-width:620px){.rp .peso{grid-template-columns:1fr 70px}.rp .peso .trk{grid-column:1 / -1;grid-row:2}}
+/* tables */
+.rp .table-scroll{max-height:none}
+.rp .dt{min-width:820px}
+.rp .dt td.l,.rp .dt th.l{text-align:left}
+.rp .dt .zero{color:var(--mq-subtle)} .rp .dt td.neg{color:var(--mq-bad)}
+.rp .dt thead th .sub2{display:block;font-size:10px;font-weight:500;letter-spacing:0;text-transform:none;color:var(--mq-subtle);margin-top:2px}
+.rp .dt tr.grp{cursor:pointer} .rp .dt tr.grp td{background:var(--mq-surface-2);font-weight:600;color:var(--mq-ink-2)}
+.rp .dt tr.grp:focus-visible{outline:2px solid var(--mq-accent);outline-offset:-2px}
+.rp .dt .chev{display:inline-block;width:11px;font-size:9px;color:var(--mq-subtle);transform:rotate(-90deg);transition:transform .15s;margin-right:3px}
+.rp .dt tr[aria-expanded="true"] .chev{transform:rotate(0)}
+.rp .dt td.h1{padding-left:30px}
+.rp .dt tr.pre td{opacity:.6}
+.rp .dt tfoot td{background:var(--mq-surface-2);font-weight:700;color:var(--mq-ink-2);border-top:1px solid var(--mq-line-2);border-bottom:none}
+.rp .dt td.ok{color:var(--mq-good)} .rp .dt td.warn{color:var(--mq-warn)} .rp .dt td.bad{color:var(--mq-bad)}
+.rp .dt tr.lim th{font-size:10px;font-weight:500;text-transform:none;letter-spacing:0;color:var(--mq-subtle);padding-top:0}
+.rp .av{display:inline-flex;align-items:center;gap:7px;justify-content:flex-end}
+.rp .av .trk{width:54px;height:6px;border-radius:4px;background:var(--mq-surface-2);border:1px solid var(--mq-line);position:relative;overflow:hidden}
+.rp .av .fil{position:absolute;inset:0 auto 0 0;background:var(--mq-accent)}
+.rp .ver{font-size:11.5px;font-weight:600;color:var(--mq-accent);background:none;border:0;padding:2px 4px;cursor:pointer;border-radius:5px}
+.rp .ver:hover,.rp .ver:focus-visible{background:var(--mq-accent-soft);outline:none}
+.rp .tag{font-size:10px;font-weight:600;padding:1px 7px;border-radius:999px;background:var(--mq-surface-2);color:var(--mq-subtle);margin-left:6px;vertical-align:1px}
+/* development statement */
+#rp-tblDes{min-width:640px;font-size:12px} #rp-tblDes.mens{min-width:980px}
+#rp-tblDes td,#rp-tblDes th{padding:6px 9px}
+#rp-tblDes td:first-child,#rp-tblDes th:first-child{white-space:normal;min-width:200px;max-width:270px;box-shadow:1px 0 0 var(--mq-line)}
+#rp-tblDes tr.n1 td:first-child{padding-left:24px} #rp-tblDes tr.n2 td:first-child{padding-left:40px;font-size:11.5px}
+#rp-tblDes tr.n1 td,#rp-tblDes tr.n2 td{color:var(--mq-muted)}
+#rp-tblDes tr.clave td{font-weight:700;color:var(--mq-ink-2);background:var(--mq-surface-2)}
+#rp-tblDes tr.sec td{background:var(--mq-surface-2);font-size:10.5px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--mq-subtle);padding:7px 10px;border-top:1px solid var(--mq-line-2)}
+#rp-tblDes tr.cmp td{color:var(--mq-muted);font-style:italic}
+#rp-tblDes td.real{background:color-mix(in srgb,var(--mq-accent) 6%,var(--mq-surface))} #rp-tblDes td.curso{background:color-mix(in srgb,var(--mq-accent) 3%,var(--mq-surface))}
+#rp-tblDes tr.clave td.real{background:color-mix(in srgb,var(--mq-accent) 8%,var(--mq-surface-2))}
+#rp-tblDes thead th.real{border-bottom:2px solid var(--mq-accent);color:var(--mq-ink)} #rp-tblDes thead th.curso{border-bottom:2px dashed var(--mq-accent)}
+.rp .pills-des{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:16px}
+.rp .pills-des .pill{font-size:12px}
+</style>
+
+<div class="rp mb-24" id="rp">
+  <div class="row wrap" style="gap:8px;margin-bottom:16px;align-items:center;">
+    {% if ed %}<span class="badge good" title="{{ ed.archivo }}">● Edo. Resultados al {{ ed.as_of_label }}</span>{% endif %}
+    {% if pp %}<span class="badge" title="{{ pp.archivo }}">PLP por desarrollo al {{ pp.as_of_label }}</span>{% endif %}
+    <span class="badge">Cifras en mdp</span>
+  </div>
+
+  {% if ed %}
+  <div class="rp-sec">Portafolio · resultado de vida de cada etapa</div>
+  <div class="rp-kpis" id="rp-edKpis"></div>
+  <div class="rp-grid">
+    <section class="card">
+      <div class="card-head"><div><div class="card-title">¿A dónde va cada peso de venta?</div>
+        <div class="card-sub">Resultado de vida (real a la fecha más lo que falta por ejercer), como porcentaje de las ventas de cada plaza.</div></div></div>
+      <div id="rp-peso"></div>
+      <div class="rp-legend" id="rp-lgPeso"></div>
+    </section>
+    <section class="card" style="padding:0;overflow:hidden;">
+      <div style="padding:22px 22px 0;">
+        <div class="card-head"><div><div class="card-title">Etapas</div>
+          <div class="card-sub">Agrupadas por plaza; clic en una plaza para plegarla. En verde, dentro del límite verde de Ranman; en rojo, pasado su límite rojo (renglones 1 y 2 del archivo).</div></div></div>
+        <div class="rp-bar">
+          <div class="pillgroup" role="group" aria-label="Vista">
+            <button class="pill" type="button" data-vista="res" aria-pressed="true">Resumen</button>
+            <button class="pill" type="button" data-vista="pct" aria-pressed="false">Costos · % de ventas</button>
+            <button class="pill" type="button" data-vista="mdp" aria-pressed="false">Costos · mdp</button>
+          </div>
+          <span class="rp-note" id="rp-edNota"></span>
+        </div>
+      </div>
+      <div class="table-scroll" style="border:none;border-top:1px solid var(--mq-line);border-radius:0;"><table class="data-table dt" id="rp-tblEd"></table></div>
+    </section>
+  </div>
+  {% endif %}
+
+  {% if pp %}
+  <div class="rp-sec" id="rp-desAncla">Desarrollo · estado de resultados y flujo</div>
+  <div class="pills-des" role="group" aria-label="Desarrollo" id="rp-pills"></div>
+  <div class="row wrap" style="gap:8px;margin-bottom:14px;align-items:center;" id="rp-desBadges"></div>
+  <div class="rp-kpis" id="rp-desKpis"></div>
+  <div class="rp-grid">
+    <section class="card rp-col6">
+      <div class="card-head"><div><div class="card-title">Ventas por año</div>
+        <div class="card-sub" id="rp-nV"></div></div></div>
+      <div id="rp-chV"></div>
+    </section>
+    <section class="card rp-col6">
+      <div class="card-head"><div><div class="card-title">UAIR por año</div>
+        <div class="card-sub" id="rp-nU"></div></div></div>
+      <div id="rp-chU"></div>
+    </section>
+    <section class="card" style="padding:0;overflow:hidden;">
+      <div style="padding:22px 22px 0;">
+        <div class="card-head"><div><div class="card-title">Estado de resultados y flujo del desarrollo</div>
+          <div class="card-sub">Hoja «PLP - Soporte» del Flujo y PLP. Al final, lo que el PLP consolidado asigna al mismo desarrollo y la diferencia.</div></div></div>
+        <div class="rp-bar">
+          <div class="pillgroup" role="group" aria-label="Periodicidad">
+            <button class="pill" type="button" id="rp-vA" aria-pressed="true">Anual</button>
+            <button class="pill" type="button" id="rp-vM" aria-pressed="false">Mensual</button>
+          </div>
+          <span class="rp-note" id="rp-desNota"></span>
+        </div>
+      </div>
+      <div class="table-scroll" style="border:none;border-top:1px solid var(--mq-line);border-radius:0;"><table class="data-table dt" id="rp-tblDes"></table></div>
+    </section>
+  </div>
+  {% endif %}
+
+  {% if not (ed or pp) %}
+  <div class="card mb-24"><p class="rp-empty">Todavía no hay datos por proyecto. Se cargan con el paquete mensual de Ranman (Estado de Resultados por Proyecto y Flujo y PLP){% if is_admin %} desde la pestaña Data{% endif %}.</p></div>
+  {% endif %}
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function(){
+const ED = {{ (ed.data if ed else None) | tojson }};
+const PPD = {{ (pp.data if pp else None) | tojson }};
+const DES = {{ ranman_desarrollos | tojson }};
+const PLZ = {{ ranman_plazas | tojson }};
+if (!document.getElementById('rp')) return;
+const $ = id => document.getElementById('rp-' + id);
+const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[ch]));
+const fx = (v, d=1) => (v==null||!isFinite(v)?'—':v.toLocaleString('es-MX',{minimumFractionDigits:d,maximumFractionDigits:d}));
+const f0 = v => (v==null||!isFinite(v)?'—':Math.round(v).toLocaleString('es-MX'));
+const pc = (v, d=1) => (v==null||!isFinite(v)?'—':(v*100).toFixed(d)+'%');
+const MES = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+const store = (k,v) => { try{ localStorage.setItem('rp-'+k, v); }catch(e){} };
+const recall = k => { try{ return localStorage.getItem('rp-'+k); }catch(e){ return null; } };
+const sw = c => `<i class="rp-sw" style="background:var(${c})"></i>`;
+const TONO = {good:'pos', bad:'neg', blue:'accent'};
+const kpiHTML = k => `<div class="kpi"><div class="kpi-top"><span class="kpi-label">${k.lab}</span></div><div class="kpi-value ${TONO[k.cls]||''}">${k.val}${k.u?`<small>${k.u}</small>`:''}</div><div class="kpi-foot"><span class="kpi-sub">${k.sub||''}</span></div></div>`;
+// a development is shown when its statement carries sales or UAIR in some year
+const conDatos = p => ['Ventas Totales','UAIR'].some(n => { const f = p.filas.find(x => x.n===n); return f && f.a.some(v => Math.abs(v||0) > 0.005); });
+const tieneDes = k => PPD && k && PPD.proyectos.some(p => p.k===k && conDatos(p));
+let elegir = null;      // set by the Desarrollo section; the portfolio's «Ver» buttons call it
+
+/* ==================== PORTAFOLIO (Edo. Resultados) ==================== */
+if (ED) (function(){
+  const U = ED.umbrales || {}, T = ED.total;
+  const r = (v, k) => v && v.ventas ? v[k]/v.ventas : null;
+  const tono = (k, x) => { const u = U[k]; if (!u || x==null || u.verde==null || u.rojo==null) return '';
+    return u.mejor==='alto' ? (x>=u.verde?'ok':(x<=u.rojo?'bad':'warn')) : (x<=u.verde?'ok':(x>=u.rojo?'bad':'warn')); };
+  const etapas = ED.plazas.flatMap(p => p.etapas);
+  const activas = etapas.filter(e => !e.pre);
+  const avP = activas.reduce((a,e)=>a+(e.avance||0)*e.v.ventas,0) / (activas.reduce((a,e)=>a+e.v.ventas,0)||1);
+  $('edKpis').innerHTML = [
+    {lab:'Ventas de vida', val:fx(T.ventas,0), u:'mdp', cls:'blue', sub:`${activas.length} etapas con ventas`},
+    {lab:'Margen bruto', val:pc(r(T,'margen_bruto')), sub:`${fx(T.margen_bruto,0)} mdp`},
+    {lab:'EBIT', val:pc(r(T,'ebit')), sub:`${fx(T.ebit,0)} mdp`},
+    {lab:'UAIR', val:pc(r(T,'uair')), cls:T.uair<0?'bad':'good', sub:`${fx(T.uair,0)} mdp antes de impuestos`},
+    {lab:'Avance en firmas', val:pc(avP,0), sub:'ponderado por ventas de cada etapa'},
+    {lab:'Etapas bajo el límite rojo', val:String(activas.filter(e => tono('uair', r(e.v,'uair'))==='bad').length), u:`de ${activas.length}`, cls:'bad',
+     sub:`UAIR por debajo del ${pc((U.uair||{}).rojo,0)} que Ranman marca en rojo · ${etapas.length-activas.length} preoperativas sin ventas`},
+  ].map(kpiHTML).join('');
+
+  // where each peso goes: cost groups and UAIR as % of sales
+  const GR = [['Terreno','--mq-c4',['terreno']], ['Permisos y estudios','--mq-c8',['permisos','estudios']],
+    ['Urbanización e infraestructura','--mq-c2',['urbanizacion','infraestructura']], ['Edificación','--mq-c1',['edificacion']],
+    ['Administración','--mq-c6',['admin_plaza','admin_corp']], ['Comercial y comisiones','--mq-c7',['comercial','comisiones']],
+    ['Financieros','--mq-c5',['fin_operativos','fin_lp']]];
+  const bar = (nom, sub, v, cls) => {
+    if (!v.ventas) return '';
+    const seg = GR.map(([n,c,ks]) => ({n, c, x: ks.reduce((a,k)=>a+(v[k]||0),0)/v.ventas}));
+    const u = v.uair/v.ventas;
+    if (u > 0) seg.push({n:'UAIR', c:'--mq-good', x:u});
+    const tot = seg.reduce((a,s)=>a+s.x,0) || 1;
+    return `<div class="peso ${cls||''}"><div class="nm">${esc(nom)}<span>${esc(sub)}</span></div><div class="trk" role="img" aria-label="${esc(nom)}: ${seg.map(s=>s.n+' '+pc(s.x)).join(', ')}">` +
+      seg.map(s => `<i style="width:${(s.x/tot*100).toFixed(2)}%;background:var(${s.c})" title="${esc(s.n)}: ${pc(s.x)} · ${fx(s.x*v.ventas)} mdp"></i>`).join('') +
+      `</div><div class="v ${u<0?'neg':''}" style="color:${u<0?'var(--mq-bad)':'var(--mq-ink)'}">UAIR ${pc(u)}</div></div>`;
+  };
+  $('peso').innerHTML = ED.plazas.map(p => bar(p.n, `${fx(p.v.ventas,0)} mdp de ventas`, p.v)).join('') + bar('Total Ranman', `${fx(T.ventas,0)} mdp`, T, 'tot');
+  $('lgPeso').innerHTML = GR.map(([n,c]) => `<span>${sw(c)}${n}</span>`).join('') + `<span>${sw('--mq-good')}UAIR</span><span class="rp-note">Cuando la UAIR es negativa, la barra reparte los costos, que pasan del 100%.</span>`;
+
+  // etapas table
+  const COSTOS = ['terreno','permisos','estudios','urbanizacion','infraestructura','edificacion','admin_plaza','admin_corp','comercial','comisiones','fin_operativos','fin_lp'];
+  const NOM = Object.fromEntries(ED.conceptos);
+  const CORTO = {terreno:'Terreno', permisos:'Permisos', estudios:'Estudios', urbanizacion:'Urbaniz.', infraestructura:'Infra', edificacion:'Edificación',
+    admin_plaza:'Admin plaza', admin_corp:'Admin corp', comercial:'Comercial', comisiones:'Comisiones', fin_operativos:'Fin. oper.', fin_lp:'Fin. LP'};
+  const lim = k => { const u = U[k]; if (!u || u.verde==null) return ''; return u.mejor==='alto' ? `≥${pc(u.verde,0)} · ≤${pc(u.rojo,0)}` : `≤${pc(u.verde,1)} · ≥${pc(u.rojo,1)}`; };
+  let vista = recall('vista') || 'res';
+  const cerradas = {};
+  const avance = a => a==null ? '<span class="zero">—</span>' : `<span class="av">${pc(a,0)}<span class="trk"><span class="fil" style="width:${Math.max(0,Math.min(1,a))*100}%"></span></span></span>`;
+  const celda = (v, k) => { const x = r(v,k); return `<td class="${tono(k,x)}">${v.ventas?pc(x):'<span class="zero">—</span>'}</td>`; };
+  const cols = () => vista==='res'
+    ? `<th class="l">Etapa</th><th>Avance en firmas</th><th>Ventas<span class="sub2">mdp</span></th><th>Margen bruto</th><th>EBIT</th><th>UAIR</th><th>UAIR<span class="sub2">mdp</span></th><th></th>`
+    : `<th class="l">Etapa</th><th>Ventas<span class="sub2">mdp</span></th>` + COSTOS.map(k => `<th title="${esc(NOM[k]||k)}">${CORTO[k]}</th>`).join('') + `<th>UAIR</th>`;
+  const fila = (n, v, extra, cls, attrs) => {
+    if (vista==='res') return `<tr class="${cls||''}"${attrs||''}><td class="l ${extra.ind?'h1':''}">${n}</td><td>${avance(extra.avance)}</td><td>${fx(v.ventas)}</td>${celda(v,'margen_bruto')}${celda(v,'ebit')}${celda(v,'uair')}<td class="${v.uair<0?'neg':''}">${fx(v.uair)}</td><td>${extra.ver||''}</td></tr>`;
+    return `<tr class="${cls||''}"${attrs||''}><td class="l ${extra.ind?'h1':''}">${n}</td><td>${fx(v.ventas)}</td>` +
+      COSTOS.map(k => vista==='pct' ? celda(v,k) : `<td class="${Math.abs(v[k]||0)<0.05?'zero':''}">${fx(v[k])}</td>`).join('') + celda(v,'uair') + '</tr>';
+  };
+  function tabla(){
+    document.querySelectorAll('#rp [data-vista]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.vista===vista)));
+    let h = '';
+    ED.plazas.forEach((p,i) => {
+      const g = 'p'+i, ab = !cerradas[g];
+      h += fila(`<span class="chev" aria-hidden="true">&#9660;</span>${esc(p.n)}<span class="tag">${p.etapas.length} etapa${p.etapas.length===1?'':'s'}</span>`, p.v, {avance:p.avance},
+        'grp', ` data-g="${g}" tabindex="0" role="button" aria-expanded="${ab}"`);
+      if (ab) p.etapas.forEach(e => {
+        const ver = tieneDes(e.k) ? `<button class="ver" type="button" data-k="${esc(e.k)}" title="Abrir ${esc((DES[e.k]||[e.k])[0])} en la sección Desarrollo">Ver →</button>` : '';
+        h += fila(esc(e.n) + (e.pre?'<span class="tag">preoperativa</span>':''), e.v, {ind:1, avance:e.avance, ver}, e.pre?'pre':'');
+      });
+    });
+    $('tblEd').innerHTML = `<thead><tr>${cols()}</tr>` + (vista==='pct' ? `<tr class="lim"><th class="l">Límite verde · rojo</th><th></th>${COSTOS.map(k=>`<th>${lim(k)}</th>`).join('')}<th>${lim('uair')}</th></tr>` : '') +
+      `</thead><tbody>${h}</tbody><tfoot>${fila('Total Ranman', T, {avance:avP}).replace(/^<tr[^>]*>/, '<tr>')}</tfoot>`;
+    $('edNota').textContent = vista==='res' ? 'Margen, EBIT y UAIR como % de las ventas de vida.' : (vista==='pct' ? 'Cada costo como % de las ventas de vida.' : 'Cada costo en mdp.');
+  }
+  const t = $('tblEd');
+  const flip = tr => { cerradas[tr.dataset.g] = !cerradas[tr.dataset.g]; tabla(); const nv = t.querySelector(`tr.grp[data-g="${tr.dataset.g}"]`); if (nv) nv.focus(); };
+  t.addEventListener('click', e => { const v = e.target.closest('button.ver'); if (v){ if (elegir) elegir(v.dataset.k, true); return; }
+    const tr = e.target.closest('tr.grp'); if (tr) flip(tr); });
+  t.addEventListener('keydown', e => { if (e.key!=='Enter' && e.key!==' ') return; if (e.target.closest('button')) return;
+    const tr = e.target.closest('tr.grp'); if (!tr) return; e.preventDefault(); flip(tr); });
+  document.querySelectorAll('#rp [data-vista]').forEach(b => b.addEventListener('click', () => { vista = b.dataset.vista; store('vista', vista); tabla(); }));
+  tabla();
+})();
+
+/* ==================== DESARROLLO (PLP - Soporte) ==================== */
+if (PPD) (function(){
+  const A0 = +PPD.asOf.slice(0,4), CORTE = PPD.asOf.slice(0,7), AN = PPD.anios, MS = PPD.meses;
+  // a mid-month corte leaves its month in progress: only complete months count as real
+  const d0 = new Date(PPD.asOf+'T00:00:00'), cerrado = new Date(d0.getFullYear(), d0.getMonth()+1, 0).getDate() === d0.getDate();
+  const ULT = cerrado ? CORTE : (+CORTE.slice(5) > 1 ? `${A0}-${String(+CORTE.slice(5)-1).padStart(2,'0')}` : `${A0-1}-12`);
+  const iA0 = AN.indexOf(A0);
+  const im = MS.map((m,i)=>i).filter(i => MS[i] <= ULT);
+  const ps = PPD.proyectos.filter(conDatos);
+  const PLPA = PPD.plp.anios;
+  const consol = (lista, k) => { const f = (PPD.plp[lista]||[]).find(x => x.k===k); return f ? f : null; };
+  const nombre = p => (DES[p.k] ? DES[p.k][0] : p.n);
+  const N1 = new Set(['Administración','Comercialización','Créditos Puente','Líneas Corporativas','Mezzanine']);
+  const N2 = new Set(['Gasto Administrativo Plaza','Gasto Administrativo Corp','Publicidad y Mkt','Comisiones Venta']);
+  const CLAVE = new Set(['Ventas Totales','Utilidad Bruta','EBIT','UAIR','Utilidad Neta','Flujo Generado por la Operación','Flujo Sobrante Neto de Efectivo','Saldo Final de Efectivo Ranman']);
+  const SEC = {'Apartados':'Unidades', 'Ventas Totales':'Estado de resultados', '+/- Movimientos en Capital Neto en Trabajo':'Flujo de efectivo'};
+  let sel = null, vista = recall('des-vista') || 'anual';
+  const fmt = (v, t) => v==null ? '—' : t==='pct' ? pc(v,0) : t==='cuenta' ? f0(v) : fx(v);
+  const estA = a => a < A0 ? 'real' : (a===A0 ? 'curso' : 'proy');
+
+  $('pills').innerHTML = ps.map(p => `<button class="pill" type="button" data-k="${esc(p.n)}" aria-pressed="false">${esc(nombre(p))}</button>`).join('');
+  $('pills').addEventListener('click', e => { const b = e.target.closest('button[data-k]'); if (b) pinta(ps.find(p => p.n===b.dataset.k)); });
+
+  function serieAnual(f, cons){
+    const real = [], proj = [], marks = [];
+    AN.forEach((a,i) => { const v = f.a[i];
+      const c = cons ? cons.a[PLPA.indexOf(a)] : null;
+      marks.push(c!=null && a<=A0+1 ? {base:c, ytd:null} : null);
+      if (v==null){ real.push(null); proj.push(null); return; }
+      if (a < A0){ real.push(v); proj.push(null); }
+      else if (a===A0){ const r = im.reduce((x,j)=>x+(f.m[j]||0),0); real.push(r); proj.push(v-r); }
+      else { real.push(null); proj.push(v); } });
+    return {real, proj, marks};
+  }
+  function pinta(p){
+    if (!p) return;
+    sel = p; store('des', p.n);
+    document.querySelectorAll('#rp-pills .pill').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.k===p.n)));
+    const F = n => p.filas.find(f => f.n===n);
+    const v = F('Ventas Totales'), u = F('UAIR'), ind = F('Individualizaciones'), mb = F('Margen Bruto (%)'), sf = F('Saldo Final de Efectivo Ranman');
+    const cv = consol('ventas', p.k), cu = consol('uair', p.k);
+    const ca = (c) => c ? c.a[PLPA.indexOf(A0)] : null;
+    const plaza = DES[p.k] ? PLZ[DES[p.k][1]] : '';
+    $('desBadges').innerHTML = (plaza ? `<span class="badge">${esc(plaza)}</span>` : '') + `<span class="badge" title="${esc(p.n)}">${esc(p.n)}</span>` +
+      (p.on ? '' : '<span class="badge">la hoja lo trae apagado</span>') +
+      (p.cuadra ? '' : `<span class="badge" style="color:var(--mq-warn)">el cuadre propio de la hoja no cierra${p.dif!=null?` · dif ${fx(p.dif)} mdp`:''}</span>`);
+    const realInd = ind ? im.reduce((x,j)=>x+(ind.m[j]||0),0) : null;
+    const dv = (a, c) => (a!=null && c!=null) ? `PLP consolidado ${fx(c)} · dif ${a-c>=0?'+':''}${fx(a-c)}` : (c!=null ? `PLP consolidado ${fx(c)}` : 'sin renglón en el PLP consolidado');
+    $('desKpis').innerHTML = [
+      v ? {lab:`Ventas ${A0}`, val:fx(v.a[iA0]), u:'mdp', cls:'blue', sub:dv(v.a[iA0], ca(cv))} : null,
+      u ? {lab:`UAIR ${A0}`, val:fx(u.a[iA0]), u:'mdp', cls:(u.a[iA0]||0)<0?'bad':'good', sub:dv(u.a[iA0], ca(cu))} : null,
+      ind ? {lab:`Firmas ${A0}`, val:f0(ind.a[iA0]), sub: im.length ? `${f0(realInd)} reales a ${MES[+ULT.slice(5)-1]} · el resto, proyección` : 'todo el año es proyección'} : null,
+      mb ? {lab:`Margen bruto ${A0}`, val:mb.a[iA0]==null?'—':pc(mb.a[iA0],1), sub:'sobre las ventas del año'} : null,
+      sf ? {lab:`Efectivo al cierre de ${A0}`, val:fx(sf.a[iA0]), u:'mdp', sub:'saldo final de efectivo del desarrollo'} : null,
+    ].filter(Boolean).map(kpiHTML).join('');
+    const nota = ` Sólidas las barras reales; tenues, la proyección. La raya marca lo que el PLP consolidado asigna a este desarrollo.`;
+    $('nV').textContent = `Ventas totales del desarrollo, ${AN[0]}–${AN[AN.length-1]}.` + nota;
+    $('nU').textContent = `Utilidad antes de impuestos.` + nota;
+    const lab = AN.map(String);
+    if (v){ const s = serieAnual(v, cv); MQC.bars($('chV'), 250, lab, [{name:'Ventas', color:'--mq-c1', real:s.real, proj:s.proj, marks:s.marks,
+      tip: i => [`Ventas: ${fx(v.a[i])} mdp`].concat(s.marks[i] ? [`PLP consolidado: ${fx(s.marks[i].base)} mdp`] : [])}], {yFmt:f0, maxBar:30}); }
+    if (u){ const s = serieAnual(u, cu); MQC.bars($('chU'), 250, lab, [{name:'UAIR', color:'--mq-good', neg:'--mq-bad', real:s.real, proj:s.proj, marks:s.marks,
+      tip: i => [`UAIR: ${fx(u.a[i])} mdp`].concat(s.marks[i] ? [`PLP consolidado: ${fx(s.marks[i].base)} mdp`] : [])}], {yFmt:f0, maxBar:30}); }
+    tabla();
+  }
+  function tabla(){
+    const p = sel; if (!p) return;
+    const mens = vista==='mensual';
+    const cols = mens ? MS.map((m,i)=>({i, cab:MES[+m.slice(5)-1], e: m<=ULT ? 'real' : (m===CORTE?'curso':'proy')}))
+                      : AN.map((a,i)=>({i, cab:String(a), e:estA(a)}));
+    const val = (f, c) => mens ? f.m[c.i] : f.a[c.i];
+    let h = '';
+    p.filas.forEach(f => {
+      if (SEC[f.n]) h += `<tr class="sec"><td colspan="${cols.length+1}">${SEC[f.n]}</td></tr>`;
+      const cls = (N1.has(f.n)?'n1':N2.has(f.n)?'n2':'') + (CLAVE.has(f.n)?' clave':'');
+      h += `<tr class="${cls.trim()}"><td>${esc(f.n)}</td>` + cols.map(c => { const x = val(f,c);
+        return `<td class="${c.e} ${x==null||Math.abs(x)<0.005?'zero':(x<0?'neg':'')}">${fmt(x, f.t)}</td>`; }).join('') + '</tr>';
+    });
+    // the consolidated PLP's own numbers for this development
+    const cv = consol('ventas', p.k), cu = consol('uair', p.k), V = p.filas.find(f=>f.n==='Ventas Totales');
+    const cval = (c, col) => !c ? null : (mens ? c.m[col.i] : c.a[PLPA.indexOf(AN[col.i])]);
+    h += `<tr class="sec"><td colspan="${cols.length+1}">PLP consolidado · mismo desarrollo</td></tr>`;
+    [['Ventas en el PLP consolidado', cv], ['UAIR en el PLP consolidado', cu]].forEach(([n, c]) => {
+      h += `<tr class="cmp"><td>${n}</td>` + cols.map(col => { const x = cval(c, col); return `<td class="${col.e} ${x==null||Math.abs(x)<0.005?'zero':(x<0?'neg':'')}">${c?fx(x):'—'}</td>`; }).join('') + '</tr>';
+    });
+    if (cv && V) h += `<tr class="cmp"><td>Diferencia en ventas (soporte − consolidado)</td>` + cols.map(col => { const a = val(V,col), b = cval(cv,col);
+      const d = (a!=null && b!=null) ? a-b : null; return `<td class="${col.e} ${d==null||Math.abs(d)<0.05?'zero':(d<0?'neg':'')}">${d==null?'—':(d>0?'+':'')+fx(d)}</td>`; }).join('') + '</tr>';
+    $('tblDes').classList.toggle('mens', mens);
+    $('tblDes').innerHTML = `<thead><tr><th>Concepto</th>${cols.map(c=>`<th class="${c.e}">${c.cab}</th>`).join('')}</tr></thead><tbody>${h}</tbody>`;
+    $('desNota').textContent = mens ? `${A0} mes a mes · sombreado lo real${im.length ? ', hasta '+MES[+ULT.slice(5)-1] : ''}${cerrado ? '' : ' · '+MES[+CORTE.slice(5)-1]+' en curso'}` : `${AN[0]} a ${AN[AN.length-1]} · sombreados ${AN[0]}–${A0-1} reales y ${A0} en curso`;
+    $('vA').setAttribute('aria-pressed', String(!mens)); $('vM').setAttribute('aria-pressed', String(mens));
+  }
+  $('vA').addEventListener('click', () => { vista='anual'; store('des-vista', vista); tabla(); });
+  $('vM').addEventListener('click', () => { vista='mensual'; store('des-vista', vista); tabla(); });
+  elegir = (k, scroll) => { const p = ps.find(x => x.k===k); if (!p) return; pinta(p);
+    if (scroll) $('desAncla').scrollIntoView({behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block:'start'}); };
+  pinta(ps.find(p => p.n===recall('des')) || ps[0]);
+})();
+// Theme flips rebuild the charts through MQ's registry (static/mq_charts.js).
+});
+</script>

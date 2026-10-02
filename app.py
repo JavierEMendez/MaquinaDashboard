@@ -13,6 +13,7 @@ import json
 import calendar
 import datetime
 import functools
+import hmac
 
 import requests
 import psycopg2
@@ -28,6 +29,7 @@ import polaris_parser
 import kmz_parser
 import ranman_deuda_parser
 import ranman_flujo_parser
+import ranman_package
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "maquina-dev-secret-change-me")
@@ -37,6 +39,8 @@ app.config["MAX_CONTENT_LENGTH"] = 8 * 1024 * 1024
 
 @app.errorhandler(413)
 def _too_large(e):
+    if request.path.startswith("/api/"):
+        return jsonify(error="That file is too large (max 8 MB per request)."), 413
     flash("That file is too large (max 8 MB).", "error")
     return redirect(request.referrer or url_for("settings"))
 
@@ -862,10 +866,11 @@ def load_ranman_flujo():
     if not (isinstance(data, dict) and data.get("flujo") and data.get("plp")):
         return None
     as_of = str(row["as_of"])[:10]
-    if not data["plp"].get("base"):          # the year's opening plan, if it was loaded after this corte
-        base = _ranman_plp_base(as_of[:4])
-        if base:
-            data["plp"]["base"] = ranman_flujo_parser.base_para_corte(base, as_of)
+    # The year's opening plan as stored now wins over the one embedded at upload:
+    # files arrive one at a time, so an older workbook can replace it later.
+    base = _ranman_plp_base(as_of[:4])
+    if base:
+        data["plp"]["base"] = ranman_flujo_parser.base_para_corte(base, as_of)
     MESES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"]
     d = datetime.date.fromisoformat(as_of)
     ua = row.get("uploaded_at")
@@ -876,6 +881,216 @@ def load_ranman_flujo():
         n_meses=len(fl.get("meses") or []), n_lineas=len(fl.get("lineas") or []),
         uploaded_at=(ua.strftime("%Y-%m-%d %H:%M") if hasattr(ua, "strftime") else (str(ua)[:16] if ua else None)),
     )
+
+
+# ─── RANMAN · monthly package ──────────────────────────────────────────
+# One import path for every deliverable: the Data tab (one file per request, so
+# the 8 MB cap holds for the whole folder), the older per-tab upload cards, and
+# tools/ranman_sync.py (bearer token) all land in _ranman_import_file. Files are
+# recognised by name (ranman_package.clasifica); each parser checks the file
+# against its own totals and nothing that fails is stored. Every file is logged
+# so the Data tab can show what arrived for each month.
+RANMAN_REPORTS = ("edo_resultados", "breakeven", "pipeline", "plp_proyectos")
+_RANMAN_PARSERS = {"edo_resultados": ranman_package.parse_edo_resultados,
+                   "breakeven": ranman_package.parse_breakeven,
+                   "pipeline": ranman_package.parse_pipeline}
+_MESES_ES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"]
+
+
+def _lbl_es(iso):
+    """'2026-08-31' -> '31 ago 2026'."""
+    try:
+        d = datetime.date.fromisoformat(str(iso)[:10])
+    except ValueError:
+        return str(iso)
+    return "%d %s %d" % (d.day, _MESES_ES[d.month - 1], d.year)
+
+
+def _ts(v):
+    return v.strftime("%Y-%m-%d %H:%M") if hasattr(v, "strftime") else (str(v)[:16] if v else None)
+
+
+def _difs(lines, tol=0.05):
+    """Only the validation lines whose difference is above tolerance."""
+    out = []
+    for l in lines:
+        nums = [float(x) for x in re.findall(r"dif[^0-9\-]*(-?\d+(?:\.\d+)?)", l)]
+        if any(abs(n) >= tol for n in nums):
+            out.append(l.strip())
+    return out
+
+
+def _plp_cuadra(lines):
+    """True when every PLP subtotal check passed — all the opening plan needs."""
+    plp = [l for l in lines if l.startswith("PLP renglón")]
+    return bool(plp) and not _difs(plp, 0.1)
+
+
+def _import_flujo(name, raw, user):
+    datos, valid, lines = ranman_flujo_parser.parse_workbook(raw, name)
+    proyectos = datos.pop("proyectos", None)
+    problems = []
+    plan_ok = valid or _plp_cuadra(lines)
+    if plan_ok:          # the year's oldest workbook is its opening plan; only its PLP sheet is used
+        _ranman_plp_base_candidate(raw, name, datos["asOf"], problems)
+    base = _ranman_plp_base(datos["asOf"][:4])
+    es_plan = bool(base and base.get("fecha") == datos["asOf"])
+    nota_plan = " Kept as %s's opening plan (the oldest workbook of the year so far)." % datos["asOf"][:4] if es_plan else ""
+    if not valid:
+        msg = ("HAY DIFERENCIAS — the recomputed totals don't match the file's own; not imported as a corte. %s"
+               % " · ".join(_difs(lines, 0.1))[:600])
+        if es_plan:
+            msg += (" Its PLP sheet does add up, so it is kept as %s's opening plan "
+                    "(the oldest workbook of the year so far)." % datos["asOf"][:4])
+        return dict(status="error", message=msg)
+    if base:
+        datos["plp"]["base"] = ranman_flujo_parser.base_para_corte(base, datos["asOf"])
+    db.save_ranman_flujo(datos["asOf"], datos.get("archivo") or name, json.dumps(datos, ensure_ascii=False), user)
+    msg = "Corte validated against the file's own totals." + nota_plan
+    if proyectos:
+        db.save_ranman_report("plp_proyectos", datos["asOf"], name, json.dumps(proyectos, ensure_ascii=False), user)
+        mal = [p["n"] for p in proyectos["proyectos"] if not p["cuadra"]]
+        msg += " %d developments from PLP - Soporte" % len(proyectos["proyectos"])
+        msg += (" (the sheet's own check doesn't close for %s)." % ", ".join(mal)) if mal else "."
+    return dict(status="imported", message=" ".join([msg] + problems))
+
+
+def _import_riesgos(name, raw, user):
+    fecha, creds, declarado = ranman_deuda_parser.parse_corte(raw, name)
+    if not fecha:
+        return dict(status="error", message="Could not read the date from the file name (expected '... 31 ago 26.xlsm').")
+    bad = ranman_deuda_parser.reconcile(creds, declarado)
+    if bad:
+        return dict(status="error", as_of=fecha, message="%s — not imported." % bad)
+    vrm = _vrm_flujos()
+    # the VRM shareholder credit joins AFTER the file reconciles: its Total is bank debt only
+    creds = creds + ranman_deuda_parser.credito_vrm(vrm, fecha)
+    rec = ranman_deuda_parser.serie_record(fecha, name, creds)
+    db.save_ranman_corte(fecha, name, json.dumps(rec, ensure_ascii=False), json.dumps(creds, ensure_ascii=False), user)
+    return dict(status="imported", as_of=fecha,
+                message="Reconciled against the Total it declares." +
+                ("" if vrm else " Without the VRM credit — load Credito VRM.xlsx on the Finance tab to include it."))
+
+
+def _ranman_import_file(name, raw, periodo=None, user="admin"):
+    """Import one file of Ranman's package -> {archivo, kind, label, as_of, status, message};
+    status is imported | received (recognised, not read yet) | skipped (not a deliverable) | error."""
+    kind, as_of = ranman_package.clasifica(name)
+    res = dict(archivo=name, kind=kind, label=ranman_package.ENTREGABLE[kind][2] if kind else None,
+               as_of=as_of, status="error", message="")
+    try:
+        if not kind:
+            res.update(status="skipped", message="Not one of Ranman's monthly deliverables (going by its file name).")
+        elif kind == "flujo":
+            res.update(_import_flujo(name, raw, user))
+        elif kind == "riesgos":
+            res.update(_import_riesgos(name, raw, user))
+        elif kind in _RANMAN_PARSERS:
+            if not as_of:
+                res["message"] = "Could not read the cut date from the file name."
+            else:
+                data, ok, lines = _RANMAN_PARSERS[kind](raw, name, as_of)
+                if ok:
+                    db.save_ranman_report(kind, as_of, name, json.dumps(data, ensure_ascii=False), user)
+                    res.update(status="imported", message="Checked against the file's own totals.")
+                else:
+                    res["message"] = "The file's own totals don't add up — not imported. " + " · ".join(_difs(lines))[:600]
+        else:
+            res.update(status="received", message="Recognised. The dashboard doesn't read this deliverable yet.")
+    except ValueError as e:
+        res["message"] = str(e)
+    except Exception as e:  # pragma: no cover
+        app.logger.warning("Ranman package import failed for %s: %s", name, e)
+        res["message"] = "Could not read the file."
+    try:
+        db.log_ranman_package(name, kind, res.get("as_of"), periodo or ((res.get("as_of") or "")[:7] or None),
+                              res["status"], res["message"], len(raw or b""), user)
+    except Exception as e:  # pragma: no cover
+        app.logger.warning("Ranman package log failed: %s", e)
+    return res
+
+
+def _ranman_sync_user():
+    """Who may push package files: a signed-in admin, or tools/ranman_sync.py with
+    `Authorization: Bearer <RANMAN_SYNC_TOKEN>` (disabled while the variable is unset)."""
+    if session.get("user_id") and session.get("is_admin"):
+        return session.get("username") or "admin"
+    tok = os.environ.get("RANMAN_SYNC_TOKEN", "").strip()
+    auth = request.headers.get("Authorization", "")
+    if tok and auth.startswith("Bearer ") and hmac.compare_digest(auth[7:].strip().encode(), tok.encode()):
+        return "sync"
+    return None
+
+
+def load_ranman_reports():
+    """The latest cut of each package report the Ranman tabs draw from:
+    kind -> {as_of, as_of_label, archivo, data, uploaded_at}. {} when nothing is loaded."""
+    try:
+        rows = db.ranman_reports_latest(RANMAN_REPORTS)
+    except Exception as e:
+        app.logger.warning("ranman reports load failed: %s", e)
+        return {}
+    out = {}
+    for k, r in rows.items():
+        data = _jl(r["data"])
+        if not isinstance(data, dict):
+            continue
+        as_of = str(r["as_of"])[:10]
+        out[k] = dict(as_of=as_of, as_of_label=_lbl_es(as_of), archivo=r.get("archivo") or "",
+                      data=data, uploaded_at=_ts(r.get("uploaded_at")))
+    return out
+
+
+def load_ranman_package():
+    """Admin Data tab: what is loaded per parsed deliverable, which files arrived
+    for the last four reporting months, the recent upload log, and sync status."""
+    try:
+        log = db.ranman_package_log(400)
+        idx = db.ranman_reports_index()
+        cuts = db.ranman_stored_cuts()
+    except Exception as e:
+        app.logger.warning("ranman package status failed: %s", e)
+        return None
+    fechas = {"flujo": [str(f)[:10] for f in cuts["flujo"]], "riesgos": [str(f)[:10] for f in cuts["riesgos"]]}
+    for r in idx:
+        fechas.setdefault(r["kind"], []).append(str(r["as_of"])[:10])
+    cargado = []
+    for key, label in (("flujo", "Flujo y PLP"), ("plp_proyectos", "PLP by development (PLP - Soporte)"),
+                       ("riesgos", "Cuadro de Riesgos"), ("edo_resultados", "Edo. Resultados por Proyecto"),
+                       ("breakeven", "Breakeven"), ("pipeline", "Pipeline")):
+        fs = sorted(fechas.get(key, []))
+        cargado.append(dict(key=key, label=label, n=len(fs), first=_lbl_es(fs[0]) if fs else None,
+                            last=_lbl_es(fs[-1]) if fs else None))
+    per = lambda r: r["periodo"] or (str(r["as_of"])[:7] if r["as_of"] else None)
+    hoy = datetime.date.today()
+    fin = max([p for p in (per(r) for r in log) if p] + ["%d-%02d" % (hoy.year, hoy.month)])
+    y, m = int(fin[:4]), int(fin[5:7])
+    periodos = []
+    for _ in range(4):
+        periodos.insert(0, "%d-%02d" % (y, m))
+        y, m = (y, m - 1) if m > 1 else (y - 1, 12)
+    rango = {"imported": 3, "received": 2, "error": 1}
+    filas = []
+    for key, num, label, _rx, _modo, parsed in ranman_package.ENTREGABLES:
+        celdas = []
+        for p in periodos:
+            rs = [r for r in log if r["kind"] == key and per(r) == p]
+            best = max(rs, key=lambda r: (rango.get(r["status"], 0), str(r["as_of"] or ""))) if rs else None
+            celdas.append(dict(status=best["status"] if best else None, n=len(rs),
+                               as_of=_lbl_es(best["as_of"]) if best and best["as_of"] else None,
+                               archivo=best["archivo"] if best else None))
+        filas.append(dict(key=key, num=num, label=label, parsed=parsed, celdas=celdas))
+    recientes = [dict(archivo=r["archivo"], label=ranman_package.ENTREGABLE[r["kind"]][2] if r["kind"] in ranman_package.ENTREGABLE else None,
+                      as_of=_lbl_es(r["as_of"]) if r["as_of"] else None, status=r["status"], message=r["message"],
+                      by=r["uploaded_by"], at=_ts(r["uploaded_at"])) for r in log[:40]]
+    ult_sync = next((r for r in log if r["uploaded_by"] == "sync"), None)
+    return dict(cargado=cargado, periodos=periodos, periodos_lbl=[calendar.month_abbr[int(p[5:7])] + " " + p[:4] for p in periodos],
+                filas=filas, recientes=recientes,
+                sync=dict(enabled=bool(os.environ.get("RANMAN_SYNC_TOKEN", "").strip()),
+                          last=_ts(ult_sync["uploaded_at"]) if ult_sync else None,
+                          # Railway terminates TLS at its proxy: keep the scheme the browser used
+                          url="%s://%s%s" % (request.headers.get("X-Forwarded-Proto", request.scheme).split(",")[0].strip(),
+                                             request.host, url_for("ranman_package_upload"))))
 
 
 @app.template_filter("mdp")
@@ -1346,24 +1561,15 @@ def ranman_debt_upload(slug):
         name = f.filename
         if not name.lower().endswith((".xlsm", ".xlsx")):
             problems.append("%s: not an Excel workbook" % name); continue
-        try:
-            fecha, creds, declarado = ranman_deuda_parser.parse_corte(f.read(), name)
-        except ValueError as e:
-            problems.append(str(e)); continue
-        except Exception as e:  # pragma: no cover
-            app.logger.warning("Ranman corte parse failed: %s", e)
-            problems.append("%s: could not read the workbook" % name); continue
-        if not fecha:
-            problems.append("%s: could not read the date from the file name (expected '... 31 ago 26.xlsm')" % name); continue
-        bad = ranman_deuda_parser.reconcile(creds, declarado)
-        if bad:
-            problems.append("%s: %s — not imported" % (name, bad)); continue
-        # the VRM shareholder credit joins AFTER the file reconciles: its Total is bank debt only
-        creds = creds + ranman_deuda_parser.credito_vrm(vrm, fecha)
-        rec = ranman_deuda_parser.serie_record(fecha, name, creds)
-        db.save_ranman_corte(fecha, name, json.dumps(rec, ensure_ascii=False),
-                             json.dumps(creds, ensure_ascii=False), session.get("username") or "admin")
-        ok += 1
+        # the same import as the Data tab's package upload (recognised by name, logged)
+        res = _ranman_import_file(name, f.read(), user=session.get("username") or "admin")
+        if res["status"] == "imported" and res["kind"] == "riesgos":
+            ok += 1
+        elif res["kind"] != "riesgos":
+            problems.append("%s: doesn't look like a 'Cuadro de riesgos Ranman <dd mmm aa>.xlsm' file%s"
+                            % (name, " (imported as %s)" % res["label"] if res["status"] == "imported" else ""))
+        else:
+            problems.append("%s: %s" % (name, res["message"]))
     if ok:
         flash("Imported %d corte%s%s." % (ok, "" if ok == 1 else "s",
               "" if vrm else " — without the VRM credit (load Credito VRM.xlsx below to include it)"), "ok")
@@ -1454,26 +1660,25 @@ def ranman_flujo_upload(slug):
     if not files:
         flash("Choose a Flujo y PLP .xlsx or flujo_plp.json first.", "error")
         return redirect(url_for("company", slug=slug))
-    ok, problems, workbooks = 0, [], []
-    for f in files:
+    ok, problems = 0, []
+    # oldest first, so a January workbook becomes the opening plan before later cortes save
+    for f in sorted(files, key=lambda f: ranman_flujo_parser.fecha_de_nombre(f.filename) or "9999"):
         name = f.filename
         low = name.lower()
-        try:
-            if low.endswith(".json"):
-                datos = ranman_flujo_parser.parse_json(f.read())
-            elif low.endswith(".xlsx"):
-                raw = f.read()
-                datos, valid, lines = ranman_flujo_parser.parse_workbook(raw, name)
-                if not valid:
-                    problems.append("%s: HAY DIFERENCIAS — the recomputed totals don't match the file's own; not imported. %s"
-                                    % (name, " · ".join(l for l in lines if "dif" in l)[:600]))
-                    continue
-                # the year's oldest workbook is its opening plan; attach plans once every file is seen
-                _ranman_plp_base_candidate(raw, name, datos["asOf"], problems)
-                workbooks.append((datos, name))
-                continue
+        if low.endswith(".xlsx"):
+            # the same import as the Data tab's package upload (also stores PLP - Soporte, logged)
+            res = _ranman_import_file(name, f.read(), user=session.get("username") or "admin")
+            if res["status"] == "imported" and res["kind"] == "flujo":
+                ok += 1
+            elif res["kind"] != "flujo":
+                problems.append("%s: doesn't look like a 'Flujo y PLP DRA - MAQUINA - <dd-mm-aa>.xlsx' file" % name)
             else:
-                problems.append("%s: expected a .xlsx workbook or flujo_plp.json" % name); continue
+                problems.append("%s: %s" % (name, res["message"]))
+            continue
+        if not low.endswith(".json"):
+            problems.append("%s: expected a .xlsx workbook or flujo_plp.json" % name); continue
+        try:
+            datos = ranman_flujo_parser.parse_json(f.read())
         except (ValueError, UnicodeDecodeError, KeyError) as e:
             problems.append("%s: %s" % (name, e)); continue
         except Exception as e:  # pragma: no cover
@@ -1482,18 +1687,35 @@ def ranman_flujo_upload(slug):
         db.save_ranman_flujo(datos["asOf"], datos.get("archivo") or name, json.dumps(datos, ensure_ascii=False),
                              session.get("username") or "admin")
         ok += 1
-    for datos, name in workbooks:
-        base = _ranman_plp_base(datos["asOf"][:4])
-        if base:
-            datos["plp"]["base"] = ranman_flujo_parser.base_para_corte(base, datos["asOf"])
-        db.save_ranman_flujo(datos["asOf"], datos.get("archivo") or name, json.dumps(datos, ensure_ascii=False),
-                             session.get("username") or "admin")
-        ok += 1
     if ok:
         flash("Imported %d Flujo y PLP corte%s." % (ok, "" if ok == 1 else "s"), "ok")
     for p in problems[:6]:
         flash(p, "error")
     return redirect(url_for("company", slug=slug))
+
+
+@app.route("/api/ranman/package", methods=["POST"])
+def ranman_package_upload():
+    """Import files of Ranman's monthly package (field `files`, one or more).
+    Optional `periodo` (YYYY-MM) or `ruta` (the file's path under Archivos Ranman,
+    which carries the month folder) dates the upload for the Data tab's
+    checklist. Signed-in admin, or `Authorization: Bearer <RANMAN_SYNC_TOKEN>`
+    for tools/ranman_sync.py. Answers JSON: {results: [{archivo, kind, label,
+    as_of, status, message}]}."""
+    user = _ranman_sync_user()
+    if not user:
+        return jsonify(error="Sign in as an admin, or send the sync token."), 401
+    files = [f for f in request.files.getlist("files") + request.files.getlist("file") if f and f.filename]
+    if not files:
+        return jsonify(error="No files in the request (form field 'files')."), 400
+    periodo = (request.form.get("periodo") or "").strip()
+    if not re.fullmatch(r"20\d{2}-(0[1-9]|1[0-2])", periodo):
+        periodo = ranman_package.periodo_de_ruta(request.form.get("ruta") or "")
+    results = []
+    for f in files:
+        name = re.split(r"[\\/]", f.filename)[-1]
+        results.append(_ranman_import_file(name, f.read(), periodo, user))
+    return jsonify(results=results)
 
 
 @app.route("/strategy")
@@ -2198,9 +2420,14 @@ def company(slug):
         polaris = load_polaris()
     ranman_debt = None   # Cuadro de Riesgos (deuda con costo) — Ranman only
     ranman_flujo = None  # Flujo y PLP tablero — Ranman only
+    ranman_rep = {}      # monthly package: Edo. Resultados, Breakeven, Pipeline, PLP by development
+    ranman_pkg = None    # Data tab (admin): what's loaded and what arrived
     if c["slug"] == "ranman":
         ranman_debt = load_ranman_debt()
         ranman_flujo = load_ranman_flujo()
+        ranman_rep = load_ranman_reports()
+        if session.get("is_admin"):
+            ranman_pkg = load_ranman_package()
     if c["slug"] == "ember":
         ember_loans = fetch_ember_loans()
         ember_returns = fetch_ember_returns()
@@ -2330,7 +2557,11 @@ def company(slug):
         ember_returns=ember_returns, summary=summary, fin=fin, leverage=leverage,
         valuation=valuation, cap=cap, hold=hold, exitr=exitr, fre_basis=fre_basis,
         verticals=verticals, sales=sales, ember_budget=ember_budget, polaris=polaris, ranman_debt=ranman_debt,
-        ranman_flujo=ranman_flujo, ue=ue,
+        ranman_flujo=ranman_flujo, ue=ue, ranman_rep=ranman_rep, ranman_pkg=ranman_pkg,
+        ranman_patrones=ranman_package.patrones_js() if c["slug"] == "ranman" else None,
+        ranman_enviables=sorted(ranman_package.ENVIABLES) if c["slug"] == "ranman" else None,
+        ranman_omite=dict(carpeta=list(ranman_package.OMITE_CARPETA), nombre=list(ranman_package.OMITE_NOMBRE)),
+        ranman_desarrollos=ranman_package.DESARROLLOS, ranman_plazas=ranman_package.PLAZAS,
     )
 
 

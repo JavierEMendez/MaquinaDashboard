@@ -1,0 +1,324 @@
+{# RANMAN · Commercial — the sales pace against the plan and against breakeven,
+   coverage by development, and the land bank still to sell. From the monthly
+   package: Flujo y PLP (firmas and apartados by month, plus the plan the year
+   started with), Breakeven (units a month for UAIR 0% and 10%), PLP - Soporte
+   (firmas by development) and Pipeline (units left by coto and quarter).
+   Expects `rf` (ranman_flujo, may be None) and `rr` (ranman_rep). In the house
+   style of the other Ranman tabs; classes and ids namespaced rc-. #}
+{% set be = rr.get('breakeven') %}{% set pi = rr.get('pipeline') %}{% set pp = rr.get('plp_proyectos') %}
+<style>
+.rc .rc-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(176px,1fr));gap:18px;margin-bottom:18px}
+.rc .kpi{min-height:0}
+.rc .kpi-value small{font-size:13px;font-weight:500;color:var(--mq-subtle);margin-left:4px;letter-spacing:0}
+.rc .kpi-value.accent{color:var(--mq-accent)}
+.rc .rc-grid{display:grid;gap:18px;grid-template-columns:repeat(12,1fr);align-items:start;margin-bottom:24px}
+.rc .rc-grid > .card{grid-column:span 12;min-width:0}
+.rc .card-head{margin-bottom:14px}
+.rc .rc-sec{font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--mq-subtle);margin:6px 0 12px}
+.rc .rc-legend{display:flex;flex-wrap:wrap;gap:8px 20px;margin-top:14px;font-size:12.5px;color:var(--mq-ink)}
+.rc .rc-legend span{display:inline-flex;align-items:center;gap:8px}
+.rc .rc-sw{width:9px;height:9px;border-radius:50%;flex:none;display:inline-block}
+.rc .rc-ln{display:inline-block;width:16px;height:0;border-top:2px solid var(--mq-ink);flex:none}
+.rc .rc-ln.dash{border-top-style:dashed}
+.rc .rc-empty{font-size:12.5px;color:var(--mq-subtle);margin:0}
+.rc .pill[aria-pressed="true"]{background:var(--mq-accent);color:#fff}
+.rc .table-scroll{max-height:none}
+.rc .dt{min-width:760px}
+.rc .dt td.l,.rc .dt th.l{text-align:left}
+.rc .dt .zero{color:var(--mq-subtle)}
+.rc .dt thead th .sub2{display:block;font-size:10px;font-weight:500;letter-spacing:0;text-transform:none;color:var(--mq-subtle);margin-top:2px}
+.rc .dt td .sub{display:block;font-size:11px;color:var(--mq-subtle);margin-top:2px;white-space:normal;max-width:340px}
+.rc .dt tr.grp{cursor:pointer} .rc .dt tr.grp td{background:var(--mq-surface-2);font-weight:600;color:var(--mq-ink-2)}
+.rc .dt tr.grp:focus-visible{outline:2px solid var(--mq-accent);outline-offset:-2px}
+.rc .dt .chev{display:inline-block;width:11px;font-size:9px;color:var(--mq-subtle);transform:rotate(-90deg);transition:transform .15s;margin-right:3px}
+.rc .dt tr[aria-expanded="true"] .chev{transform:rotate(0)}
+.rc .dt td.h1{padding-left:30px} .rc .dt td.h2{padding-left:48px;color:var(--mq-muted);font-size:12px}
+.rc .dt tfoot td{background:var(--mq-surface-2);font-weight:700;color:var(--mq-ink-2);border-top:1px solid var(--mq-line-2);border-bottom:none}
+.rc .cov{display:inline-flex;align-items:center;gap:8px;justify-content:flex-end}
+.rc .cov .trk{position:relative;width:70px;height:6px;border-radius:4px;background:var(--mq-surface-2);border:1px solid var(--mq-line)}
+.rc .cov .fil{position:absolute;inset:0 auto 0 0;border-radius:4px}
+.rc .cov .mk{position:absolute;top:-3px;bottom:-3px;width:1.5px;background:var(--mq-ink)}
+.rc .ok{color:var(--mq-good)} .rc .warn{color:var(--mq-warn)} .rc .bad{color:var(--mq-bad)}
+.rc .fil.ok{background:var(--mq-good)} .rc .fil.warn{background:var(--mq-warn)} .rc .fil.bad{background:var(--mq-bad)}
+</style>
+
+<div class="rc mb-24" id="rc">
+  <div class="row wrap" style="gap:8px;margin-bottom:16px;align-items:center;">
+    {% if rf %}<span class="badge good">● Flujo y PLP al {{ rf.as_of_label }}</span>{% endif %}
+    {% if be %}<span class="badge" title="{{ be.archivo }}">Breakeven al {{ be.as_of_label }}</span>{% endif %}
+    {% if pi %}<span class="badge" title="{{ pi.archivo }}">Pipeline al {{ pi.as_of_label }}</span>{% endif %}
+    <span class="badge">Unidades y mdp</span>
+  </div>
+
+  {% if rf %}
+  <div class="rc-sec">Ritmo comercial</div>
+  <div class="rc-kpis" id="rc-rmKpis"></div>
+  <div class="rc-grid">
+    <section class="card">
+      <div class="card-head"><div><div class="card-title">Firmas por mes</div>
+        <div class="card-sub" id="rc-rmNota">Firmas del PLP consolidado (renglón 5): sólidas las reales, tenues las proyectadas.</div></div></div>
+      <div id="rc-chRitmo"></div>
+      <div class="rc-legend" id="rc-lgRitmo"></div>
+    </section>
+  </div>
+  {% endif %}
+
+  {% if be %}
+  <div class="rc-sec">Breakeven {{ be.data.anio or '' }}</div>
+  <div class="rc-kpis" id="rc-beKpis"></div>
+  <div class="rc-grid">
+    <section class="card" style="padding:0;overflow:hidden;">
+      <div class="card-head" style="padding:22px 22px 0;"><div><div class="card-title">Cobertura por desarrollo</div>
+        <div class="card-sub" id="rc-beNota">Unidades al mes que el presupuesto necesita para cubrir costos (UAIR 0%) y para ganar 10%, contra las firmas reales del año.</div></div></div>
+      <div class="table-scroll" style="border:none;border-top:1px solid var(--mq-line);border-radius:0;"><table class="data-table dt" id="rc-tblBe"></table></div>
+    </section>
+  </div>
+  {% endif %}
+
+  {% if pi %}
+  <div class="rc-sec">Inventario por vender</div>
+  <div class="rc-kpis" id="rc-piKpis"></div>
+  <div class="rc-grid">
+    <section class="card">
+      <div class="card-head"><div><div class="card-title">Unidades por vender, trimestre a trimestre</div>
+        <div class="card-sub">De 2020 a la última unidad del plan. A la izquierda de «hoy» es lo ya vendido; a la derecha, la absorción que planea Ranman.</div></div>
+        <div class="pillgroup" role="group" aria-label="Agrupar por">
+          <button class="pill" type="button" id="rc-pPlaza" aria-pressed="true">Por plaza</button>
+          <button class="pill" type="button" id="rc-pMercado" aria-pressed="false">Por mercado</button>
+        </div></div>
+      <div id="rc-chPipe"></div>
+      <div class="rc-legend" id="rc-lgPipe"></div>
+    </section>
+    <section class="card" style="padding:0;overflow:hidden;">
+      <div class="card-head" style="padding:22px 22px 0;"><div><div class="card-title">Por desarrollo</div>
+        <div class="card-sub">Agrupado por plaza; clic en una plaza para ver sus desarrollos y en un desarrollo para ver sus cotos. Ritmo y fecha en que se agota, según la curva de absorción del plan.</div></div></div>
+      <div class="table-scroll" style="border:none;border-top:1px solid var(--mq-line);border-radius:0;"><table class="data-table dt" id="rc-tblPipe"></table></div>
+    </section>
+  </div>
+  {% endif %}
+
+  {% if not (rf or be or pi) %}
+  <div class="card mb-24"><p class="rc-empty">Todavía no hay datos comerciales. Se cargan con el paquete mensual de Ranman (Flujo y PLP, Breakeven y Pipeline){% if is_admin %} desde la pestaña Data{% endif %}.</p></div>
+  {% endif %}
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function(){
+const PLP = {{ (rf.data.plp if rf else None) | tojson }};
+const ASOF = {{ (rf.as_of if rf else None) | tojson }};
+const BE = {{ (be.data if be else None) | tojson }};
+const PI = {{ (pi.data if pi else None) | tojson }};
+const PP = {{ (pp.data if pp else None) | tojson }};
+if (!document.getElementById('rc')) return;
+const $ = id => document.getElementById('rc-' + id);
+const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[ch]));
+const fx = (v, d=1) => (v==null||!isFinite(v)?'—':v.toLocaleString('es-MX',{minimumFractionDigits:d,maximumFractionDigits:d}));
+const f0 = v => (v==null||!isFinite(v)?'—':Math.round(v).toLocaleString('es-MX'));
+const pct = v => (v==null||!isFinite(v)?'—':Math.round(v*100)+'%');
+const MES = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+const lbl = s => { const [y,m]=s.split('-'); return MES[+m-1]+'-'+y.slice(2); };
+const store = (k,v) => { try{ localStorage.setItem('rc-'+k, v); }catch(e){} };
+const recall = k => { try{ return localStorage.getItem('rc-'+k); }catch(e){ return null; } };
+const sw = c => `<i class="rc-sw" style="background:var(${c})"></i>`;
+const TONO = {good:'pos', bad:'neg', blue:'accent'};
+const kpiHTML = k => `<div class="kpi"><div class="kpi-top"><span class="kpi-label">${k.lab}</span></div><div class="kpi-value ${TONO[k.cls]||''}">${k.val}${k.u?`<small>${k.u}</small>`:''}</div><div class="kpi-foot"><span class="kpi-sub">${k.sub||''}</span></div></div>`;
+const tono = r => r==null ? '' : (r >= 1 ? 'ok' : (r >= 0.8 ? 'warn' : 'bad'));
+const PLAZA = {SLP:'San Luis Potosí', QRO:'Querétaro', AGS:'Aguascalientes', CEL:'Celaya', SMA:'San Miguel de Allende', GDL:'Guadalajara', CAN:'Cancún'};
+// grouped tables: click or Enter/Space on a group row opens it
+function plegable(tabla, pintar, abiertos){
+  const flip = tr => { abiertos[tr.dataset.g] = !abiertos[tr.dataset.g]; pintar(); const nv = tabla.querySelector(`tr.grp[data-g="${tr.dataset.g}"]`); if (nv) nv.focus(); };
+  tabla.addEventListener('click', e => { const tr = e.target.closest('tr.grp'); if (tr) flip(tr); });
+  tabla.addEventListener('keydown', e => { if (e.key!=='Enter' && e.key!==' ') return; const tr = e.target.closest('tr.grp'); if (!tr) return; e.preventDefault(); flip(tr); });
+}
+
+// a mid-month corte leaves its month in progress: only complete months count as real
+const finDeMes = iso => { const d = new Date(iso+'T00:00:00'); return new Date(d.getFullYear(), d.getMonth()+1, 0).getDate() === d.getDate(); };
+const ultCerrado = iso => { if (finDeMes(iso)) return iso.slice(0,7);
+  const y = +iso.slice(0,4), m = +iso.slice(5,7); return m > 1 ? `${y}-${String(m-1).padStart(2,'0')}` : `${y-1}-12`; };
+
+/* firmas reales del año por desarrollo (PLP - Soporte), meses cerrados hasta su corte */
+const CORTE_PP = PP ? ultCerrado(PP.asOf) : null;
+function firmasPP(k){
+  if (!PP || !k) return null;
+  const ps = PP.proyectos.filter(p => p.k===k);
+  if (!ps.length) return null;
+  const im = PP.meses.map((m,i)=>i).filter(i => PP.meses[i] <= CORTE_PP);
+  let tot = 0;
+  ps.forEach(p => { const f = p.filas.find(x => x.n==='Individualizaciones'); if (f) im.forEach(i => tot += (f.m[i]||0)); });
+  return {tot, n: im.length};
+}
+
+/* ==================== RITMO COMERCIAL ==================== */
+if (PLP && ASOF) (function(){
+  const A0 = +ASOF.slice(0,4), CORTE = ASOF.slice(0,7);
+  const ULT = ultCerrado(ASOF);
+  const fila = r => PLP.filas.find(f => f.r===r);
+  const fi = fila(5), ap = fila(4);
+  if (!fi) return;
+  const idx = PLP.meses.map((m,i)=>({m,i})).filter(x => +x.m.slice(0,4)===A0);
+  const real = idx.filter(x => x.m <= ULT);
+  const suma = (f, xs) => xs.reduce((a,x)=>a+(f.m[x.i]||0), 0);
+  const B = PLP.base || null;
+  const planMes = r => (B && B.mes && B.mes[r]) ? idx.map(x => B.mes[r][x.m] ?? null) : null;
+  const planYtd = r => (B && B.mes && B.mes[r]) ? real.reduce((a,x)=>a+(B.mes[r][x.m]||0),0) : null;
+  const fYtd = suma(fi, real), aYtd = ap ? suma(ap, real) : null;
+  const pF = planYtd('5'), pA = planYtd('4');
+  const prom = real.length ? fYtd/real.length : null;
+  const conBe = BE && BE.anio===A0;
+  const be0 = conBe ? BE.be0.total.u : null, be10 = conBe ? BE.be10.total.u : null;
+  const be0m = conBe ? BE.be0.total.ut/12 : null;
+  const varTxt = (r, p) => p ? `${r-p>=0?'+':''}${f0(r-p)} contra el plan (${f0(p)})` : 'sin plan de arranque cargado';
+  const k = [
+    {lab: real.length ? `Firmas ${MES[0]}–${MES[+ULT.slice(5)-1]}` : 'Firmas en el año', val:f0(fYtd), cls:'blue', sub:varTxt(fYtd, pF)},
+    ap ? {lab: real.length ? `Apartados ${MES[0]}–${MES[+ULT.slice(5)-1]}` : 'Apartados en el año', val:f0(aYtd), sub:varTxt(aYtd, pA)} : null,
+    {lab:'Firmas al mes', val:fx(prom), sub:`promedio de ${real.length} mes${real.length===1?'':'es'} cerrado${real.length===1?'':'s'}` + (finDeMes(ASOF) ? '' : ` · ${MES[+CORTE.slice(5)-1]} va en curso`)},
+  ];
+  if (conBe) k.push({lab:'Cobertura del breakeven', val:pct(prom/be0m), cls:prom>=be0m?'good':'bad',
+    sub:`necesita ${fx(be0m)} al mes para UAIR 0% · ${fx(BE.be10.total.ut/12)} para 10%`});
+  $('rmKpis').innerHTML = k.filter(Boolean).map(kpiHTML).join('');
+
+  const labels = idx.map(x => lbl(x.m));
+  const esReal = idx.map(x => x.m <= ULT);
+  const series = [{name:'Firmas', color:'--mq-c4', vals:idx.map(x => fi.m[x.i]), real:esReal}];
+  const lineas = [];
+  const pm = planMes('5');
+  if (pm) lineas.push({name:'Plan de arranque', color:'--mq-ink', vals:pm, dash:[5,4]});
+  if (conBe){ lineas.push({name:'Breakeven UAIR 0%', color:'--mq-bad', vals:be0});
+              lineas.push({name:'Breakeven UAIR 10%', color:'--mq-good', vals:be10}); }
+  MQC.mount($('chRitmo'), 300, () => {
+    const ds = series.map(s => ({type:'bar', label:s.name, data:s.vals, order:2, borderWidth:0, maxBarThickness:34,
+      backgroundColor:s.vals.map((v,i)=>MQC.alpha(s.color, s.real[i]?0.78:0.3))}));
+    lineas.forEach(l => ds.push({type:'line', label:l.name, data:l.vals, order:1, borderColor:MQC.color(l.color),
+      backgroundColor:'transparent', borderWidth:2, borderDash:l.dash||[], pointRadius:0, pointHoverRadius:3, tension:.25, spanGaps:true}));
+    return {type:'bar', data:{labels, datasets:ds}, options:{responsive:true, maintainAspectRatio:false,
+      interaction:{mode:'index', intersect:false},
+      scales:{x:{grid:{display:false}, ticks:{color:MQ.muted(), maxRotation:0}},
+              y:{beginAtZero:true, grid:{color:MQ.grid()}, ticks:{color:MQ.muted(), callback:f0}, title:{display:true, text:'unidades', color:MQ.muted(), font:{size:11}}}},
+      plugins:{legend:{display:false}, tooltip:{callbacks:{label:c => `${c.dataset.label}: ${fx(c.parsed.y)}`,
+        afterBody: it => it.length && !esReal[it[0].dataIndex] ? ['(proyección)'] : []}}}}};
+  });
+  $('lgRitmo').innerHTML = `<span>${sw('--mq-c4')}Firmas reales</span><span><i class="rc-sw" style="background:var(--mq-c4);opacity:.32"></i>proyectadas</span>` +
+    lineas.map(l => `<span><i class="rc-ln${l.dash?' dash':''}" style="border-top-color:var(${l.color})"></i>${esc(l.name)}</span>`).join('') +
+    (B ? `<span class="subtle" style="color:var(--mq-subtle)">plan: ${esc(B.archivo||'')}</span>` : '');
+  if (!conBe && BE) $('rmNota').textContent += ` El breakeven cargado es de ${BE.anio}, no se compara con ${A0}.`;
+})();
+
+/* ==================== BREAKEVEN POR DESARROLLO ==================== */
+if (BE) (function(){
+  const A = BE.anio, F0 = BE.be0.filas, F10 = BE.be10.filas;
+  // projects by development key (Puerta Natura + its lots, Azhala + Alella …), with their plaza and etapas
+  const grupos = {}, orden = [];
+  let plaza = null;
+  F0.forEach((f, i) => {
+    if (f.nivel==='plaza'){ plaza = f.n; return; }
+    if (f.nivel!=='proyecto') return;
+    const k = f.k || f.n;
+    if (!grupos[k]){ grupos[k] = {k, nombres:[], plaza, ut0:0, ut10:0, pt0:0, etapas:[]}; orden.push(k); }
+    const g = grupos[k], f10 = F10.find(x => x.n===f.n && x.nivel==='proyecto');
+    g.nombres.push(f.n); g.ut0 += f.ut; g.pt0 += f.pt; g.ut10 += f10 ? f10.ut : 0;
+    for (let j=i+1; j<F0.length && F0[j].nivel==='etapa'; j++) g.etapas.push(F0[j].n);
+  });
+  const conPP = PP && +PP.asOf.slice(0,4)===A;
+  const filas = orden.map(k => { const g = grupos[k], r = conPP ? firmasPP(g.k) : null;
+    return Object.assign(g, {real: r && r.n ? r.tot/r.n : null}); }).sort((a,b)=>b.ut0-a.ut0);
+  const T0 = BE.be0.total, T10 = BE.be10.total;
+  const rTot = conPP ? filas.reduce((a,g)=>a+(g.real||0),0) : null;
+  const kp = [
+    {lab:'Breakeven UAIR 0%', val:fx(T0.ut/12), u:'u/mes', cls:'blue', sub:`${f0(T0.ut)} unidades · ${fx(T0.pt)} mdp en ${A}`},
+    {lab:'Breakeven UAIR 10%', val:fx(T10.ut/12), u:'u/mes', sub:`${f0(T10.ut)} unidades · ${fx(T10.pt)} mdp en ${A}`},
+  ];
+  if (conPP) kp.push({lab:'Firmas reales al mes', val:fx(rTot), u:'u/mes', sub:`suma de los desarrollos, ${MES[0]}–${MES[+CORTE_PP.slice(5)-1]} ${A}`},
+                     {lab:'Desarrollos bajo el 0%', val:String(filas.filter(g=>g.real!=null && g.real<g.ut0/12).length), u:'', cls:'bad',
+                      sub:`de ${filas.filter(g=>g.real!=null).length} con firmas comparables`});
+  $('beKpis').innerHTML = kp.map(kpiHTML).join('');
+  if (!conPP) $('beNota').textContent += PP ? ` Las firmas por desarrollo cargadas son de ${PP.asOf.slice(0,4)}; no se comparan con ${A}.` : ' Faltan las firmas por desarrollo (PLP - Soporte, en el Flujo y PLP).';
+  const cov = (real, need) => {
+    if (real==null || !need) return '<span class="zero">—</span>';
+    const r = real/need, t = tono(r), w = Math.min(100, r/1.6*100);
+    return `<span class="cov"><span class="${t}">${pct(r)}</span><span class="trk"><span class="fil ${t}" style="width:${w}%"></span><span class="mk" style="left:${100/1.6}%"></span></span></span>`;
+  };
+  const DES = {{ ranman_desarrollos | tojson }};
+  $('tblBe').innerHTML = `<thead><tr><th class="l">Desarrollo</th><th>UAIR 0%<span class="sub2">u/mes</span></th><th>UAIR 10%<span class="sub2">u/mes</span></th><th>Firmas reales<span class="sub2">u/mes</span></th><th>Cobertura del 0%</th><th>Ventas de equilibrio<span class="sub2">mdp en ${A}</span></th></tr></thead><tbody>` +
+    filas.map(g => `<tr><td class="l">${esc(DES[g.k] ? DES[g.k][0] : g.nombres.join(' + '))}<span class="sub">${esc(g.plaza||'')}${g.nombres.length>1?' · incluye '+esc(g.nombres.slice(1).join(', ')):''}${g.etapas.length?' · '+esc(g.etapas.join(', ')):''}</span></td>` +
+      `<td>${fx(g.ut0/12)}</td><td>${fx(g.ut10/12)}</td><td>${g.real==null?'<span class="zero">—</span>':fx(g.real)}</td><td>${cov(g.real, g.ut0/12)}</td><td>${fx(g.pt0)}</td></tr>`).join('') +
+    `</tbody><tfoot><tr><td class="l">Total Ranman</td><td>${fx(T0.ut/12)}</td><td>${fx(T10.ut/12)}</td><td>${rTot==null?'—':fx(rTot)}</td><td>${cov(rTot, T0.ut/12)}</td><td>${fx(T0.pt)}</td></tr></tfoot>`;
+})();
+
+/* ==================== PIPELINE ==================== */
+if (PI) (function(){
+  const T = PI.trimestres, d = new Date(PI.asOf+'T00:00:00');
+  const qHoy = `${d.getFullYear()}-Q${Math.floor(d.getMonth()/3)+1}`;
+  let iH = T.indexOf(qHoy); if (iH<0) iH = Math.max(0, T.filter(q => q<=qHoy).length-1);
+  const F = PI.filas.filter(f => f.r.some(v => v>0));
+  const ahora = f => f.r[iH] || 0;
+  const qLbl = q => `${q.slice(6)}T ${q.slice(0,4)}`;
+  // pace and sell-out come from the plan's own quarterly burn-down: each coto's
+  // absorption only applies while it sells, so adding them up would overstate the pace
+  const curva = fs => T.map((_,j) => fs.reduce((a,f)=>a+(f.r[j]||0),0));
+  const ritmo = c => (c[iH] - c[Math.min(iH+4, c.length-1)]) / (Math.min(4, c.length-1-iH)*3 || 1);
+  const agota = c => { if (c[iH] <= 0.5) return {j:iH, lbl:'vendido'};
+    for (let j=iH+1; j<c.length; j++) if (c[j] <= 0.5) return {j, lbl:qLbl(T[j])};
+    return {j:null, lbl:`después de ${T[T.length-1].slice(0,4)}`}; };
+  const C = curva(F), uH = C[iH];
+  const valor = F.reduce((a,f)=>a+ahora(f)*(f.precio||0),0);
+  const vendidas = C[0] - uH;
+  const desAct = new Set(F.filter(f=>ahora(f)>0).map(f=>f.plaza+'|'+f.d)).size;
+  const fin = agota(C);
+  $('piKpis').innerHTML = [
+    {lab:'Unidades por vender', val:f0(uH), cls:'blue', sub:`al ${qLbl(T[iH])} · ${desAct} desarrollos`},
+    {lab:'Valor por vender', val:fx(valor,0), u:'mdp', sub:'unidades por vender × precio promedio'},
+    {lab:'Ritmo del plan', val:fx(ritmo(C)), u:'u/mes', sub:'próximos 12 meses, según el plan de absorción'},
+    {lab:'Se agota', val:fin.j!=null ? qLbl(T[fin.j]) : '—', u:'', sub: fin.j!=null ? `${fx((fin.j-iH)/4)} años desde hoy` : fin.lbl},
+    {lab:'Vendidas desde 2020', val:f0(vendidas), sub:`${qLbl(T[0])} → ${qLbl(T[iH])}`},
+  ].map(kpiHTML).join('');
+
+  const etq = T.map(q => `${q.slice(6)}T${q.slice(2,4)}`);
+  const CAT = MQC.CAT;
+  function pinta(por){
+    const clave = f => por==='plaza' ? f.plaza : (f.mercado || 'Sin mercado');
+    const tot = {};
+    F.forEach(f => { const k = clave(f); tot[k] = (tot[k]||0) + ahora(f); });
+    const ks = Object.keys(tot).sort((a,b)=>tot[b]-tot[a]);
+    const ser = ks.map((k,i) => ({name: por==='plaza' ? (PLAZA[k]||k) : k, color: CAT[i%CAT.length],
+      vals: T.map((_,j) => F.filter(f=>clave(f)===k).reduce((a,f)=>a+(f.r[j]||0),0))}));
+    MQC.area($('chPipe'), 300, etq, ser, {yFmt:f0, xTicks:12, events:[{x:iH, label:'hoy'}],
+      tooltip:{callbacks:{title: it => it.length ? qLbl(T[it[0].dataIndex]) : '', label: c => `${c.dataset.label}: ${f0(c.parsed.y)}`}}});
+    $('lgPipe').innerHTML = ser.map(s => `<span>${sw(s.color)}${esc(s.name)} · ${f0(tot[ks[ser.indexOf(s)]])} hoy</span>`).join('');
+  }
+  const bP = $('pPlaza'), bM = $('pMercado');
+  const pon = v => { bP.setAttribute('aria-pressed', String(v==='plaza')); bM.setAttribute('aria-pressed', String(v==='mercado')); pinta(v); store('pipe-por', v); };
+  bP.addEventListener('click', () => pon('plaza')); bM.addEventListener('click', () => pon('mercado'));
+  pon(recall('pipe-por')==='mercado' ? 'mercado' : 'plaza');
+
+  // table: plaza > desarrollo > coto
+  const agrega = fs => { const u = fs.reduce((a,f)=>a+(f.u||0),0), c = curva(fs), h = c[iH],
+    v = fs.reduce((a,f)=>a+ahora(f)*(f.precio||0),0);
+    const ms = [...new Set(fs.map(f=>f.mercado).filter(Boolean))];
+    return {u, h, rit: ritmo(c), fin: agota(c), v, precio: h ? v/h : (fs.reduce((a,f)=>a+(f.precio||0)*(f.u||0),0)/(u||1)),
+            mercado: ms.length===1 ? ms[0] : 'Mixto'}; };
+  const plazas = [...new Set(F.map(f=>f.plaza))].sort((a,b)=>agrega(F.filter(f=>f.plaza===b)).h - agrega(F.filter(f=>f.plaza===a)).h);
+  const abiertos = {};
+  const celdas = a => `<td class="l">${esc(a.mercado)}</td><td>${fx(a.precio,2)}</td><td class="${a.rit>0.05?'':'zero'}">${fx(a.rit)}</td><td>${f0(a.u)}</td><td class="${a.h?'':'zero'}">${f0(a.h)}</td><td>${a.h?esc(a.fin.lbl):'<span class="zero">vendido</span>'}</td><td class="${a.v?'':'zero'}">${fx(a.v,0)}</td>`;
+  function tabla(){
+    let h = '';
+    plazas.forEach(p => {
+      const fp = F.filter(f=>f.plaza===p), ap = agrega(fp), gp = 'p:'+p, abP = !!abiertos[gp];
+      h += `<tr class="grp" data-g="${esc(gp)}" tabindex="0" role="button" aria-expanded="${abP}"><td class="l"><span class="chev" aria-hidden="true">&#9660;</span>${esc(PLAZA[p]||p)}</td>${celdas(ap)}</tr>`;
+      if (!abP) return;
+      [...new Set(fp.map(f=>f.d))].forEach(dn => {
+        const fd = fp.filter(f=>f.d===dn), ad = agrega(fd), gd = 'd:'+p+'|'+dn, abD = !!abiertos[gd];
+        const varios = fd.length > 1;
+        h += `<tr${varios?` class="grp" data-g="${esc(gd)}" tabindex="0" role="button" aria-expanded="${abD}"`:''}><td class="l h1">${varios?'<span class="chev" aria-hidden="true">&#9660;</span>':''}${esc(dn)}${varios?`<span class="sub">${fd.length} cotos</span>`:''}</td>${celdas(ad)}</tr>`;
+        if (varios && abD) fd.forEach(f => { h += `<tr><td class="l h2">${esc(f.coto||'—')}</td>${celdas(agrega([f]))}</tr>`; });
+      });
+    });
+    const at = agrega(F);
+    $('tblPipe').innerHTML = `<thead><tr><th class="l">Plaza / desarrollo</th><th class="l">Mercado</th><th>Precio prom.<span class="sub2">mdp</span></th><th>Ritmo del plan<span class="sub2">u/mes, 12 meses</span></th><th>Unidades</th><th>Por vender</th><th>Se agota</th><th>Valor por vender<span class="sub2">mdp</span></th></tr></thead><tbody>${h}</tbody>` +
+      `<tfoot><tr><td class="l">Total</td>${celdas(at)}</tr></tfoot>`;
+  }
+  plegable($('tblPipe'), tabla, abiertos);
+  tabla();
+})();
+// Theme flips rebuild the charts through MQ's registry (static/mq_charts.js).
+});
+</script>
