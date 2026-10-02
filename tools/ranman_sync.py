@@ -6,6 +6,13 @@ dashboard uses (ranman_package.clasifica) — and sends the new or changed ones,
 one per request, to /api/ranman/package. What was sent is remembered in a small
 state file, so a daily run only sends what Ranman added since.
 
+Files go oldest month first, and within a month in order of their cut date: the
+dashboard keeps the year's oldest Flujo y PLP as its opening plan, so the
+January workbook has to land before the later ones. A file the dashboard
+rejected (its own totals don't add up) is remembered too and isn't sent again
+until it changes — Ranman re-saving it is what can fix it. After a dashboard
+update reads something new, --retry received,error sends those files again.
+
 Needs, on the computer that runs it:
     RANMAN_SYNC_URL    https://<the dashboard>/api/ranman/package
     RANMAN_SYNC_TOKEN  the same value as the RANMAN_SYNC_TOKEN set on Railway
@@ -15,6 +22,7 @@ and Python with `requests` and `openpyxl` (pip install -r requirements.txt).
     python tools/ranman_sync.py                   # send it
     python tools/ranman_sync.py --months 12       # look further back
     python tools/ranman_sync.py --force           # resend even if unchanged
+    python tools/ranman_sync.py --retry error     # resend files rejected last time, even if unchanged
     python tools/ranman_sync.py --months 34 --only aaa,sabana   # load those reports' history
     python tools/ranman_sync.py --root "D:\\OneDrive\\Archivos Ranman"
 
@@ -98,6 +106,20 @@ def huella(p: Path):
     return [st.st_size, int(st.st_mtime)]
 
 
+def recuerdo(v):
+    """A state entry -> (fingerprint, last status). Older state files stored only
+    the fingerprint of files that went through."""
+    if isinstance(v, dict):
+        return v.get('h'), v.get('s')
+    return v, 'imported'
+
+
+def orden(item):
+    """Oldest first: by folder month, then by the cut date in the name, then path."""
+    p, rel, kind, periodo = item
+    return (periodo, ranman_package.clasifica(p.name)[1] or '', rel)
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split('\n\n')[0])
     ap.add_argument('--root', help='the «Archivos Ranman» folder (default: the OneDrive one)')
@@ -109,12 +131,17 @@ def main():
     ap.add_argument('--state', default=str(STATE), help='where to remember what was sent (default %(default)s)')
     ap.add_argument('--only', help='send only these deliverables, comma-separated (e.g. aaa,sabana) — '
                                    'for loading one report\'s history without resending the rest')
+    ap.add_argument('--retry', help='resend unchanged files whose last answer was one of these statuses, '
+                                    'comma-separated: error, received (e.g. after the dashboard learns to read one)')
     a = ap.parse_args()
     state = Path(a.state)
     solo = {k.strip() for k in a.only.split(',')} if a.only else None
     if solo and not solo <= set(ranman_package.ENTREGABLE):
         sys.exit('--only: unknown deliverable(s) %s; use any of %s'
                  % (', '.join(sorted(solo - set(ranman_package.ENTREGABLE))), ', '.join(ranman_package.ENTREGABLE)))
+    reintenta = {s.strip() for s in a.retry.split(',')} if a.retry else set()
+    if reintenta - {'error', 'received', 'imported'}:
+        sys.exit('--retry: use error, received or imported')
 
     raiz = Path(a.root) if a.root else raiz_por_defecto()
     if not raiz or not raiz.is_dir():
@@ -126,14 +153,19 @@ def main():
     except ValueError:
         estado = {}
 
-    pendientes = []
+    pendientes, rechazados = [], 0
     for p, rel, kind, periodo in candidatos(raiz, a.months):
         if solo and kind not in solo:
             continue
-        if not a.force and estado.get(rel) == huella(p):
+        h, ultimo = recuerdo(estado.get(rel))
+        if not a.force and h == huella(p) and ultimo not in reintenta:
+            rechazados += ultimo == 'error'
             continue
         pendientes.append((p, rel, kind, periodo))
+    pendientes.sort(key=orden)
     print('%s · %d month folder(s) · %d file(s) to send' % (raiz, a.months, len(pendientes)))
+    if rechazados:
+        print('  %d unchanged file(s) the dashboard rejected last time are left out (--retry error sends them)' % rechazados)
     if a.dry_run:
         for p, rel, kind, periodo in pendientes:
             print('  %-15s %s  %s' % (kind, periodo, rel))
@@ -162,13 +194,14 @@ def main():
                 break                       # wrong token: no point trying the rest
             continue
         st = res.get('status') or '?'
-        print('  %-6s %s — %s' % (st.upper(), rel, res.get('message', '')))
+        print('  %-8s %s — %s' % (st.upper(), rel, res.get('message', '')))
         if st == 'error':
-            fallos += 1                     # rejected by its own totals: resend after Ranman fixes it
-        else:
-            estado[rel] = huella(p)
-    state.parent.mkdir(parents=True, exist_ok=True)
-    state.write_text(json.dumps(estado, indent=1, ensure_ascii=False), encoding='utf-8')
+            fallos += 1                     # rejected by its own totals: sent again once the file changes
+        # what the dashboard answered, so an unchanged file isn't sent again tomorrow
+        estado[rel] = {'h': huella(p), 's': st}
+        # saved as it goes: an interrupted run keeps what it already sent
+        state.parent.mkdir(parents=True, exist_ok=True)
+        state.write_text(json.dumps(estado, indent=1, ensure_ascii=False), encoding='utf-8')
     print('done: %d sent, %d problem(s)' % (len(pendientes) - fallos, fallos))
     return 1 if fallos else 0
 
