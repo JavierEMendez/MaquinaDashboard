@@ -1,7 +1,7 @@
 {# RANMAN · Data (admin) — load and check the monthly package. A whole month
    folder (or any files) is filtered in the browser with the same name rules
    the server uses (ranman_package.ENTREGABLES), then sent one file per request
-   to /api/ranman/package so the 8 MB cap holds. Below: what's loaded, what
+   to /api/ranman/package so the per-file cap (32 MB, for the BP models) holds. Below: what's loaded, what
    arrived for each of the last four months, the automatic sync, and the recent
    log. Expects `pk` (ranman_pkg), `ranman_patrones`, `ranman_enviables`,
    `ranman_omite`. Classes and ids namespaced rk-. #}
@@ -37,7 +37,7 @@
   <div class="rk-grid">
     <section class="card">
       <div class="card-head"><div><div class="card-title">Upload the monthly package</div>
-        <div class="card-sub">Pick a whole month folder from <code>Archivos Ranman\&lt;year&gt;\&lt;n&gt;_&lt;Month&gt;</code>, or any files. Files are recognised by name; backups, scenarios and draw slips are left out, and so are the BPs until their parser exists. Each file is sent on its own, checked against its own totals and logged below. AAA, Flujo y PLP, Cuadro de Riesgos, Edo. Resultados, Breakeven, Pipeline and the Sábana Operativa are read today; the rest are recorded as received.</div></div></div>
+        <div class="card-sub">Pick a whole month folder from <code>Archivos Ranman\&lt;year&gt;\&lt;n&gt;_&lt;Month&gt;</code>, or any files. Files are recognised by name; backups, scenario sub-folders and draw slips are left out. Each file is sent on its own, checked against its own totals and logged below. AAA, Flujo y PLP, Cuadro de Riesgos, Edo. Resultados, Breakeven, Pipeline, the Sábana Operativa and the BP models are read today; the rest are recorded as received. A month with its BPs is some 150 MB, so a whole folder takes a few minutes.</div></div></div>
       <div class="rk-pick">
         <label class="btn btn-primary btn-sm">Choose a month folder<input type="file" id="rk-dir" webkitdirectory multiple></label>
         <label class="btn btn-ghost btn-sm">Choose files<input type="file" id="rk-files" multiple accept=".xlsx,.xlsm,.pdf"></label>
@@ -121,7 +121,7 @@ const PAT = {{ ranman_patrones | tojson }};       // [kind, label, regex]
 const SEND = new Set({{ ranman_enviables | tojson }});
 const OMITE = {{ ranman_omite | tojson }};        // {carpeta: [...], nombre: [...]}
 const URL_UP = {{ url_for('ranman_package_upload') | tojson }};
-const MAX = 8 * 1024 * 1024;
+const MAX = 32 * 1024 * 1024;
 const $ = id => document.getElementById('rk-' + id);
 if (!$('dir')) return;
 const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[ch]));
@@ -149,13 +149,13 @@ async function enviar(files){
     if (!c) return;                                          // not a deliverable: not even listed
     if (!SEND.has(c.kind)) fuera.push(f);
     else lista.push({file:f, label:c.label, kind:c.kind, status: f.size > MAX ? 'skipped' : 'pending',
-      message: f.size > MAX ? 'Over 8 MB — upload limit.' : ''}); });
+      message: f.size > MAX ? 'Over 32 MB — upload limit.' : ''}); });
   if (!lista.length){ $('prog').textContent = `No Ranman deliverables in the ${files.length} file${files.length===1?'':'s'} chosen.`; return; }
   $('resWrap').hidden = false;
   $('res').innerHTML = `<thead><tr><th class="l">File</th><th class="l">Deliverable</th><th>Cut</th><th class="l">Status</th><th class="l">Detail</th></tr></thead><tbody>${lista.map((it,i)=>fila(i,it)).join('')}</tbody>`;
   let hechos = 0, ok = 0;
   const pend = lista.filter(it => it.status==='pending');
-  const nota = fuera.length ? ` · ${fuera.length} BP file${fuera.length===1?'':'s'} left for later` : '';
+  const nota = fuera.length ? ` · ${fuera.length} file${fuera.length===1?'':'s'} left out` : '';
   for (const it of pend){
     const i = lista.indexOf(it);
     it.status = 'sending'; document.getElementById('rk-r'+i).outerHTML = fila(i, it);

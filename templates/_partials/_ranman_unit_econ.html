@@ -1,0 +1,509 @@
+{# RANMAN · Projects · Unit economics — the business plans («NN BP <PLAZA>
+   V02.xlsx», one model per plaza) etapa by etapa, three ways: the proforma
+   signed when the etapa was approved, the close Ranman expects today, and what
+   the model's own monthly cash flow adds up to. Next to them, the same model's
+   expected close a month earlier and at the end of last year, and any other
+   current model that carries the development (an alternative program).
+   Modelled on Ember's Unit Economics: one baseline, every other column with its
+   difference, in total, per unit or as % of sales. Below: how the expected
+   margin has moved month by month, and each etapa's month-end cash.
+   Expects `bp` (ranman_bp, from app.load_ranman_bp), `ranman_desarrollos`,
+   `ranman_plazas`. Classes and ids namespaced ru-. #}
+<style>
+.ru .ru-sec{font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--mq-subtle);margin:6px 0 12px}
+.ru .pill[aria-pressed="true"]{background:var(--mq-accent);color:#fff}
+.ru .ru-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(176px,1fr));gap:18px;margin-bottom:18px}
+.ru .kpi{min-height:0}
+.ru .kpi-value small{font-size:13px;font-weight:500;color:var(--mq-subtle);margin-left:4px;letter-spacing:0}
+.ru .kpi-value.accent{color:var(--mq-accent)}
+.ru .ru-controls{display:flex;flex-wrap:wrap;gap:14px 22px;align-items:flex-end;margin-bottom:18px}
+.ru .ru-ctl{display:flex;flex-direction:column;gap:6px;min-width:0}
+.ru .ru-ctl label.fld-label{margin:0}
+.ru .ru-ctl select.input{width:auto;min-width:220px;max-width:100%;padding:7px 34px 7px 12px;font-size:13px}
+.ru .pillgroup{flex-wrap:wrap}
+.ru .pill small{font-weight:500;opacity:.75;margin-left:4px}
+.ru .ru-grid{display:grid;gap:18px;grid-template-columns:repeat(12,1fr);align-items:start;margin-bottom:24px}
+.ru .ru-grid > .card{grid-column:span 12;min-width:0}
+@media(min-width:1000px){.ru .ru-grid > .ru-col6{grid-column:span 6}}
+.ru .card-head{margin-bottom:14px}
+.ru .ru-note{font-size:12px;color:var(--mq-subtle);line-height:1.55}
+.ru .ru-empty{font-size:12.5px;color:var(--mq-subtle);margin:0}
+/* scenario cards */
+.ru .ru-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:16px;margin-bottom:22px}
+.ru .ru-sc{cursor:pointer;min-height:0;gap:6px;transition:border-color .14s;text-align:left;font:inherit;color:inherit}
+.ru .ru-sc:hover{border-color:var(--mq-line-2)}
+.ru .ru-sc:focus-visible{outline:2px solid var(--mq-accent);outline-offset:2px}
+.ru .ru-sc.is-base{border-color:var(--mq-accent);box-shadow:0 0 0 1px var(--mq-accent),var(--mq-shadow-card)}
+.ru .ru-sc .kpi-label{color:var(--mq-ink-2);font-size:13px;font-weight:700;line-height:1.3}
+.ru .ru-sc-cap{font-size:11px;color:var(--mq-subtle);text-transform:uppercase;letter-spacing:.06em;font-weight:600}
+.ru .ru-sc-line{font-size:12.5px;color:var(--mq-muted);font-variant-numeric:tabular-nums}
+.ru .ru-sc-line b{color:var(--mq-ink);font-weight:600}
+.ru .ru-sc-delta{font-size:12.5px;font-variant-numeric:tabular-nums;padding-top:6px;margin-top:2px;border-top:1px solid var(--mq-line);color:var(--mq-muted)}
+.ru .pos{color:var(--mq-good)} .ru .neg{color:var(--mq-bad)}
+.ru .ru-sc-delta .pos,.ru .ru-sc-delta .neg{font-weight:700}
+/* tables */
+.ru .table-scroll{max-height:none}
+.ru .dt td.l,.ru .dt th.l{text-align:left}
+.ru .dt .zero{color:var(--mq-subtle)}
+.ru .dt thead th .sub2{display:block;font-size:10px;font-weight:500;letter-spacing:0;text-transform:none;color:var(--mq-subtle);margin-top:2px}
+.ru .dt tfoot td{background:var(--mq-surface-2);font-weight:700;color:var(--mq-ink-2);border-top:1px solid var(--mq-line-2);border-bottom:none}
+.ru .dt tbody tr.pick{cursor:pointer}
+.ru .dt tbody tr.pick:hover td{background:var(--mq-surface-2)}
+.ru .dt tbody tr.pick:focus-visible{outline:2px solid var(--mq-accent);outline-offset:-2px}
+.ru .dt tbody tr.is-sel td{background:var(--mq-accent-soft)}
+.ru .dt td.plz{color:var(--mq-subtle);font-size:11.5px}
+.ru .tag{font-size:10px;font-weight:600;padding:1px 7px;border-radius:999px;background:var(--mq-surface-2);color:var(--mq-subtle);margin-left:6px;vertical-align:1px;white-space:nowrap}
+.ru .tag.warn{color:var(--mq-warn)}
+.ru .dt tr.ru-tot td{background:var(--mq-surface-2);font-weight:700;color:var(--mq-ink-2);border-top:1px solid var(--mq-line-2)}
+.ru .dt tr.ru-gr td{background:var(--mq-surface-2);color:var(--mq-subtle);font-size:10.5px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;padding-top:8px;padding-bottom:8px}
+.ru #ru-tbl{min-width:760px}
+.ru #ru-tbl th.ru-sch{white-space:normal;min-width:112px;max-width:160px;vertical-align:bottom;line-height:1.3}
+.ru #ru-tbl th.ru-sch.is-base{color:var(--mq-accent)}
+.ru #ru-tbl th.ru-dh{color:var(--mq-subtle);font-weight:600;vertical-align:bottom;white-space:normal;min-width:78px;line-height:1.3}
+.ru #ru-tbl td.ru-d{color:var(--mq-subtle);font-size:12px}
+.ru #ru-tbl td.ru-d.pos{color:var(--mq-good)} .ru #ru-tbl td.ru-d.neg{color:var(--mq-bad)}
+.ru #ru-tbl td.ru-v.neg{color:var(--mq-bad)}
+.ru #ru-tbl tr.ru-band td{background:var(--mq-surface-2);color:var(--mq-subtle);font-size:10.5px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;padding-top:7px;padding-bottom:7px}
+.ru #ru-tbl tr.ru-sub td:first-child{padding-left:30px;color:var(--mq-muted)}
+.ru #ru-tbl tr.ru-strong td{font-weight:700;color:var(--mq-ink-2)}
+.ru #ru-tbl tr.ru-strong td.ru-d{font-weight:600}
+.ru #ru-tbl tr.ru-accent td{background:var(--mq-accent-soft)}
+.ru #ru-tbl tr.ru-info td{color:var(--mq-muted);font-size:12px}
+.ru #ru-tbl td:first-child{white-space:normal;min-width:190px}
+.ru .ru-head{display:flex;flex-wrap:wrap;gap:12px 20px;align-items:flex-start;justify-content:space-between;padding:20px 22px 14px}
+.ru .ru-legend{display:flex;flex-wrap:wrap;gap:8px 18px;margin-top:12px;font-size:12.5px;color:var(--mq-ink)}
+.ru .ru-legend span{display:inline-flex;align-items:center;gap:8px}
+.ru .ru-sw{width:9px;height:9px;border-radius:50%;flex:none;display:inline-block}
+.ru .ru-fondeo{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px 18px}
+.ru .ru-fondeo div{display:flex;flex-direction:column;gap:2px}
+.ru .ru-fondeo span{font-size:11px;color:var(--mq-subtle);text-transform:uppercase;letter-spacing:.06em;font-weight:600}
+.ru .ru-fondeo b{font-size:15px;font-weight:600;color:var(--mq-ink);font-variant-numeric:tabular-nums}
+</style>
+
+<div class="ru mb-24" id="ru">
+  <div class="ru-sec" id="ru-ancla">Unit economics · business plan por etapa</div>
+  <div class="row wrap" style="gap:8px;margin-bottom:16px;align-items:center;">
+    <span class="badge good" title="{% for m in bp.modelos %}{{ m.archivo }} · real a {{ m.corte }}&#10;{% endfor %}">● BPs con real a {{ bp.corte_label }}</span>
+    <span class="badge">{{ bp.modelos | length }} modelo{{ '' if bp.modelos|length == 1 else 's' }}</span>
+    {% if bp.fuera %}<span class="badge" title="{% for m in bp.fuera %}{{ m.modelo }} · real a {{ m.corte }}&#10;{% endfor %}">{{ bp.fuera | length }} sin actualizar en 3 meses, fuera de la vista</span>{% endif %}
+    <span class="badge">Cifras en mdp</span>
+  </div>
+
+  <div class="ru-controls">
+    <div class="ru-ctl"><span class="fld-label">Etapas</span>
+      <div class="pillgroup" role="group" aria-label="Etapas" id="ru-est">
+        <button class="pill" type="button" data-v="todas" aria-pressed="true">Todas</button>
+        <button class="pill" type="button" data-v="curso" aria-pressed="false">En curso</button>
+        <button class="pill" type="button" data-v="nuevo" aria-pressed="false">Por arrancar</button>
+      </div></div>
+  </div>
+  <div class="ru-kpis" id="ru-kpis"></div>
+
+  <section class="card mb-24" style="padding:0;overflow:hidden;">
+    <div class="ru-head"><div><div class="card-title">Cada desarrollo contra lo firmado</div>
+      <div class="card-sub">Resultado de vida en el BP: el cierre previsto de hoy contra la suma de las proformas firmadas de sus etapas. Clic en un desarrollo para abrirlo abajo.</div></div></div>
+    <div class="table-scroll" style="border:none;border-top:1px solid var(--mq-line);border-radius:0;"><table class="data-table dt" id="ru-port" style="min-width:900px;"></table></div>
+  </section>
+
+  <div class="ru-controls" style="margin-bottom:12px;">
+    <div class="ru-ctl"><span class="fld-label">Plaza</span><div class="pillgroup" role="group" aria-label="Plaza" id="ru-plz"></div></div>
+    <div class="ru-ctl"><span class="fld-label">Desarrollo</span><div class="pillgroup" role="group" aria-label="Desarrollo" id="ru-des"></div></div>
+  </div>
+  <div class="ru-controls">
+    <div class="ru-ctl"><label class="fld-label" for="ru-etapa">Etapa</label><select class="input" id="ru-etapa"></select></div>
+    <div class="ru-ctl"><label class="fld-label" for="ru-base">Comparar contra</label><select class="input" id="ru-base"></select></div>
+    <div class="ru-ctl"><span class="fld-label">Base</span>
+      <div class="pillgroup" role="group" aria-label="Base" id="ru-basis">
+        <button class="pill" type="button" data-v="total" aria-pressed="true">Total</button>
+        <button class="pill" type="button" data-v="unidad" aria-pressed="false">Por unidad</button>
+        <button class="pill" type="button" data-v="pct" aria-pressed="false">% de ventas</button>
+      </div></div>
+  </div>
+  <div class="row wrap" style="gap:8px;margin-bottom:14px;align-items:center;" id="ru-badges"></div>
+
+  <div class="ru-cards" id="ru-cards"></div>
+
+  <section class="card mb-24" style="padding:0;overflow:hidden;">
+    <div class="ru-head"><div><div class="card-title" id="ru-title">Estado de resultados de vida</div>
+      <div class="card-sub" id="ru-basisNote"></div></div></div>
+    <div class="table-scroll" style="border:none;border-top:1px solid var(--mq-line);border-radius:0;"><table class="data-table dt" id="ru-tbl"></table></div>
+  </section>
+
+  <section class="card mb-24" style="padding:0;overflow:hidden;" id="ru-etWrap">
+    <div class="ru-head"><div><div class="card-title">Etapas del desarrollo</div>
+      <div class="card-sub">Margen antes de impuestos firmado y previsto hoy, y cuánto se movió el término. Clic en una etapa para verla sola.</div></div></div>
+    <div class="table-scroll" style="border:none;border-top:1px solid var(--mq-line);border-radius:0;"><table class="data-table dt" id="ru-et" style="min-width:980px;"></table></div>
+  </section>
+
+  <div class="ru-grid">
+    <section class="card ru-col6">
+      <div class="card-head"><div><div class="card-title">Cómo se ha movido el margen</div>
+        <div class="card-sub" id="ru-nEvo"></div></div></div>
+      <div id="ru-chEvo"></div>
+      <div class="ru-legend" id="ru-lgEvo"></div>
+    </section>
+    <section class="card ru-col6">
+      <div class="card-head"><div><div class="card-title">Efectivo al cierre de cada mes</div>
+        <div class="card-sub" id="ru-nCaja"></div></div></div>
+      <div id="ru-chCaja"></div>
+      <div class="ru-legend" id="ru-lgCaja"></div>
+    </section>
+  </div>
+
+  <div class="ru-grid" id="ru-detalle" hidden>
+    <section class="card ru-col6" style="padding:0;overflow:hidden;" id="ru-protoWrap">
+      <div class="card-head" style="padding:22px 22px 0;"><div><div class="card-title">Prototipos</div>
+        <div class="card-sub">Del cuadro «UAIR por prototipo» de la etapa en el BP.</div></div></div>
+      <div class="table-scroll" style="border:none;border-top:1px solid var(--mq-line);border-radius:0;"><table class="data-table dt" id="ru-proto" style="min-width:560px;"></table></div>
+    </section>
+    <section class="card ru-col6" id="ru-fondeoWrap">
+      <div class="card-head"><div><div class="card-title">Fondeo de la etapa</div>
+        <div class="card-sub">Estructura de financiamiento del BP: lo que pone el capital, los créditos y lo que regresa a Ranman.</div></div></div>
+      <div class="ru-fondeo" id="ru-fondeo"></div>
+    </section>
+  </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function(){
+const BP = {{ bp | tojson }};
+const DES = {{ ranman_desarrollos | tojson }};
+const PLZ = {{ ranman_plazas | tojson }};
+const ORD_P = {{ ranman_plazas | list | tojson }};   // Ranman's order (tojson sorts the keys)
+if (!BP || !document.getElementById('ru')) return;
+const $ = id => document.getElementById('ru-' + id);
+const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[ch]));
+const ok = v => v != null && isFinite(v);
+const fx = (v, d=1) => ok(v) ? v.toLocaleString('es-MX',{minimumFractionDigits:d,maximumFractionDigits:d}) : '—';
+const f0 = v => ok(v) ? Math.round(v).toLocaleString('es-MX') : '—';
+const pc = (v, d=1) => ok(v) ? (v*100).toFixed(d)+'%' : '—';
+const sg = v => v > 0 ? '+' : (v < 0 ? '−' : '');
+const MES = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+const mes = ym => ym ? `${MES[+ym.slice(5,7)-1]} ${ym.slice(2,4)}` : '—';
+const meses = (a, b) => (a && b) ? (+b.slice(0,4) - +a.slice(0,4))*12 + (+b.slice(5,7) - +a.slice(5,7)) : null;
+const store = (k,v) => { try{ localStorage.setItem('ru-'+k, v); }catch(e){} };
+const recall = k => { try{ return localStorage.getItem('ru-'+k); }catch(e){ return null; } };
+const compacto = s => String(s||'').normalize('NFKD').replace(/[̀-ͯ]/g,'').toLowerCase().replace(/[^a-z0-9]/g,'');
+const sw = c => `<i class="ru-sw" style="background:${MQC.color(c)}"></i>`;
+const TONO = {good:'pos', bad:'neg', blue:'accent'};
+const kpiHTML = k => `<div class="kpi"><div class="kpi-top"><span class="kpi-label">${k.lab}</span></div><div class="kpi-value ${TONO[k.cls]||''}">${k.val}${k.u?`<small>${k.u}</small>`:''}</div><div class="kpi-foot"><span class="kpi-sub">${k.sub||''}</span></div></div>`;
+
+const CK = BP.conceptos.map(c => c[0]);
+const NOM = Object.fromEntries(BP.conceptos);
+const COSTO = new Set(['terreno','permisos','estudios','urbanizacion','infraestructura','edificacion','admin_plaza','admin_corp','comercial','comisiones','mantenimiento','fin_operativos','fin_lp','fin_mezz']);
+const FILAS = [
+  ['band','Ingresos'], ['ventas'],
+  ['band','Costos directos'], ['terreno',1], ['permisos',1], ['estudios',1], ['urbanizacion',1], ['infraestructura',1], ['edificacion',1],
+  ['margen_bruto','s'],
+  ['band','Gastos de operación'], ['admin_plaza',1], ['admin_corp',1], ['comercial',1], ['comisiones',1], ['mantenimiento',1],
+  ['ebit','s'],
+  ['band','Financieros'], ['fin_operativos',1], ['fin_lp',1], ['fin_mezz',1],
+  ['uair','a'],
+];
+const plazaDe = k => DES[k] ? DES[k][1] : null;
+const nombreDe = k => DES[k] ? DES[k][0] : (BP.desarrollos[k] ? BP.desarrollos[k].modelo : k);
+// by plaza in Ranman's order, the biggest development (expected sales) first
+const tam = k => BP.desarrollos[k].etapas.reduce((a,e) => a + (e.esc.cierre.ventas||0), 0);
+const KS = Object.keys(BP.desarrollos).sort((a,b) => {
+  const pa = ORD_P.indexOf(plazaDe(a)), pb = ORD_P.indexOf(plazaDe(b));
+  return ((pa<0?99:pa) - (pb<0?99:pb)) || (tam(b) - tam(a));
+});
+
+// ── etapas filter: all, under way, not started ──
+let est = recall('est'); if (!['todas','curso','nuevo'].includes(est)) est = 'todas';
+const enCurso = e => /curso/i.test(e.estatus || '');
+const pasa = e => est === 'todas' || (est === 'curso' ? enCurso(e) : !enCurso(e));
+// earlier cuts carry no status: an etapa takes the one it has in today's BP
+function estatusPorNombre(D){ const m = {}; D.etapas.forEach(e => m[compacto(e.n)] = e); return m; }
+
+// sum a list of etapas' P&L (pick returns the dict for one etapa)
+function suma(lista, pick){
+  let n = 0, u = 0, conU = 0; const v = {};
+  lista.forEach(e => { const s = pick(e); if (!s || s.ventas == null) return; n++;
+    CK.forEach(k => { if (s[k] != null) v[k] = (v[k]||0) + s[k]; });
+    if (e.u != null){ u += e.u; conU++; } });
+  return n ? {v, n, u: conU === n ? u : null} : null;
+}
+const margen = a => a && a.v.ventas ? a.v.uair / a.v.ventas : null;
+
+/* ==================== KPIs + portfolio ==================== */
+function portafolio(){
+  document.querySelectorAll('#ru-est .pill').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.v===est)));
+  const todasF = KS.map(k => { const D = BP.desarrollos[k], es = D.etapas.filter(pasa);
+    return {k, D, es, p: suma(es, e => e.esc.proforma), c: suma(es, e => e.esc.cierre)}; }).filter(r => r.es.length && r.c);
+  // a project under study (a model in a folder of its own) is listed, not added up
+  const filas = todasF.filter(r => !r.D.estudio), estudios = todasF.filter(r => r.D.estudio);
+  const tot = (pick) => { const v = {}; let u = 0, conU = true;
+    filas.forEach(r => { const a = pick(r); if (!a) return; CK.forEach(k => v[k] = (v[k]||0) + (a.v[k]||0)); if (a.u == null) conU = false; else u += a.u; });
+    return {v, u: conU ? u : null}; };
+  const P = tot(r => r.p), C = tot(r => r.c);
+  const todas = filas.flatMap(r => r.es);
+  const perdieron = todas.filter(e => { const p = e.esc.proforma, c = e.esc.cierre;
+    return p.ventas && c.ventas && (c.uair/c.ventas) < (p.uair/p.ventas) - 0.02; }).length;
+  const curso = todas.filter(e => enCurso(e) && e.fechas.proforma[1] && e.fechas.flujos[1]);
+  const atraso = curso.length ? curso.reduce((a,e) => a + meses(e.fechas.proforma[1], e.fechas.flujos[1]), 0) / curso.length : null;
+  const dU = C.v.uair - P.v.uair, dM = margen(C) - margen(P);
+  $('kpis').innerHTML = [
+    {lab:'Ventas de vida en el BP', val:fx(C.v.ventas,0), u:'mdp', cls:'blue', sub:`${todas.length} etapas · ${f0(C.u)} unidades · firmado ${fx(P.v.ventas,0)} mdp`},
+    {lab:'UAIR prevista', val:fx(C.v.uair,0), u:'mdp', cls:C.v.uair<0?'bad':'good', sub:`${pc(margen(C))} de las ventas · firmado ${pc(margen(P))}`},
+    {lab:'Contra lo firmado', val:`${sg(dU)}${fx(Math.abs(dU),0)}`, u:'mdp', cls:dU<0?'bad':'good', sub:`UAIR ${sg(dM)}${fx(Math.abs(dM*100),1)} pp de margen`},
+    {lab:'Etapas que perdieron margen', val:String(perdieron), u:`de ${todas.length}`, cls:perdieron?'bad':'', sub:'su margen previsto quedó más de 2 pp debajo del firmado'},
+    {lab:'Atraso en el término', val:atraso==null?'—':fx(atraso,1), u:'meses', sub:`promedio de ${curso.length} etapas en curso · término del flujo contra el firmado`},
+  ].map(kpiHTML).join('');
+
+  const td = (v, cls) => `<td class="${cls||''}">${v}</td>`;
+  const dpp = (a, b) => (a==null||b==null) ? '—' : `${sg(a-b)}${fx(Math.abs((a-b)*100),1)} pp`;
+  const cl = d => d==null ? '' : (d < -0.0005 ? 'neg' : (d > 0.0005 ? 'pos' : 'zero'));
+  let h = '', ultP = null;
+  const renglon = r => {
+    const pl = plazaDe(r.k), mp = margen(r.p), mc = margen(r.c);
+    const nC = r.es.filter(enCurso).length;
+    const sinV = r.es.filter(e => e.esc.cierre.ventas === 0 && e.esc.proforma.ventas);
+    const uu = r.c.u ? r.c.v.uair / r.c.u * 1000 : null;
+    const out = `<tr class="pick${r.k===sel.k?' is-sel':''}" data-k="${esc(r.k)}" tabindex="0" role="button" aria-label="Abrir ${esc(nombreDe(r.k))}">` +
+      td(pl !== ultP ? esc(PLZ[pl] || pl || '—') : '', 'l plz') +
+      td(esc(nombreDe(r.k)) + (sinV.length ? `<span class="tag warn" title="${esc(sinV.map(e => e.n).join(', '))}">${sinV.length} sin ventas en el cierre</span>` : ''), 'l') +
+      td(r.es.length) + td(nC, nC ? '' : 'zero') + td(f0(r.c.u)) + td(fx(r.c.v.ventas)) +
+      td(r.p && r.p.v.ventas ? `${sg(r.c.v.ventas/r.p.v.ventas-1)}${fx(Math.abs((r.c.v.ventas/r.p.v.ventas-1)*100),1)}%` : '—', r.p ? cl(r.c.v.ventas - r.p.v.ventas) : '') +
+      td(pc(mp)) + td(pc(mc), mc<0?'neg':'') + td(dpp(mc, mp), cl(mc==null||mp==null?null:mc-mp)) +
+      td(fx(r.c.v.uair), r.c.v.uair<0?'neg':'') + td(r.p ? `${sg(r.c.v.uair-r.p.v.uair)}${fx(Math.abs(r.c.v.uair-r.p.v.uair))}` : '—', r.p ? cl(r.c.v.uair-r.p.v.uair) : '') +
+      td(f0(uu), uu<0?'neg':'') + '</tr>';
+    ultP = pl;
+    return out;
+  };
+  filas.forEach(r => h += renglon(r));
+  let hE = '';
+  if (estudios.length){ ultP = null; hE = `<tr class="ru-gr"><td class="l" colspan="13">Estudios · modelos en carpeta propia, no suman al total</td></tr>`; estudios.forEach(r => hE += renglon(r)); }
+  const mP = margen(P), mC = margen(C);
+  $('port').innerHTML = `<thead><tr><th class="l">Plaza</th><th class="l">Desarrollo</th><th>Etapas</th><th>En curso</th><th>Unidades</th><th>Ventas<span class="sub2">cierre previsto</span></th><th>Ventas<span class="sub2">vs firmado</span></th>` +
+    `<th>UAIR<span class="sub2">% firmado</span></th><th>UAIR<span class="sub2">% previsto</span></th><th>Margen<span class="sub2">vs firmado</span></th><th>UAIR<span class="sub2">mdp previsto</span></th><th>UAIR<span class="sub2">mdp vs firmado</span></th><th>UAIR por unidad<span class="sub2">miles de $</span></th></tr></thead>` +
+    `<tbody>${h}<tr class="ru-tot"><td class="l">Total</td><td></td><td>${todas.length}</td><td>${todas.filter(enCurso).length}</td><td>${f0(C.u)}</td><td>${fx(C.v.ventas)}</td><td>${P.v.ventas?`${sg(C.v.ventas/P.v.ventas-1)}${fx(Math.abs((C.v.ventas/P.v.ventas-1)*100),1)}%`:'—'}</td>` +
+    `<td>${pc(mP)}</td><td>${pc(mC)}</td><td>${dpp(mC,mP)}</td><td>${fx(C.v.uair)}</td><td>${sg(dU)}${fx(Math.abs(dU))}</td><td>${C.u?f0(C.v.uair/C.u*1000):'—'}</td></tr>${hE}</tbody>`;
+}
+$('port').addEventListener('click', e => { const tr = e.target.closest('tr.pick'); if (tr) elegir(tr.dataset.k, true); });
+$('port').addEventListener('keydown', e => { if (e.key!=='Enter' && e.key!==' ') return; const tr = e.target.closest('tr.pick'); if (!tr) return; e.preventDefault(); elegir(tr.dataset.k, true); });
+$('est').addEventListener('click', e => { const b = e.target.closest('button[data-v]'); if (!b) return; est = b.dataset.v; store('est', est); portafolio(); pinta(); });
+
+/* ==================== one development ==================== */
+const sel = {k: null, etapa: '', base: 'proforma', basis: 'total'};
+{ const b = recall('basis'); if (['total','unidad','pct'].includes(b)) sel.basis = b; }
+
+// the columns: the three views of today's BP, the same model a month earlier
+// and at last year's close, and any other current model with the development
+function columnas(){
+  const D = BP.desarrollos[sel.k], porN = estatusPorNombre(D);
+  const mismo = e => sel.etapa ? compacto(e.n) === compacto(sel.etapa) : pasa(porN[compacto(e.n)] || {estatus: null});
+  const hoy = D.etapas.filter(e => sel.etapa ? e.n === sel.etapa : pasa(e));
+  const fechas = (es, cual) => { const i = es.map(e => e.fechas[cual][0]).filter(Boolean).sort(), t = es.map(e => e.fechas[cual][1]).filter(Boolean).sort();
+    return {ini: i[0] || null, fin: t[t.length-1] || null, todas: es.every(e => e.fechas[cual][1])}; };
+  const cols = [
+    {id:'proforma', lab:'Proforma firmado', cap:'aprobado al arrancar cada etapa', a:suma(hoy, e => e.esc.proforma), f:fechas(hoy, 'proforma')},
+    {id:'cierre', lab:'Cierre previsto', cap:`BP de hoy · real a ${mes(D.corte)}`, a:suma(hoy, e => e.esc.cierre), f:fechas(hoy, 'flujos')},
+    {id:'flujos', lab:'Resultados flujos', cap:'lo que suma el flujo mensual del BP', a:suma(hoy, e => e.esc.flujos), f:fechas(hoy, 'flujos')},
+  ];
+  // the loader keeps the full statement only for these two cuts (h.completo)
+  const H = D.historia.filter(h => h.corte < D.corte && h.completo);
+  const prev = H[H.length-1];
+  const dic = H.filter(h => h.corte.slice(0,4) < D.corte.slice(0,4)).pop();
+  [[prev, 'el BP del mes anterior'], [dic !== prev ? dic : null, 'el BP al cierre del año pasado']].forEach(([h, cap]) => {
+    if (!h) return;
+    const a = suma(h.etapas.filter(mismo), e => e.c);
+    if (a) cols.push({id:'h'+h.corte, lab:`Cierre previsto · ${mes(h.corte)}`, cap:cap + (h.slug !== D.principal ? ` (${h.modelo})` : ''), a});
+  });
+  D.escenarios.forEach(s => {
+    const es = s.etapas.filter(mismo);
+    const a = suma(es, e => e.c);
+    if (a) cols.push({id:'e'+s.slug, lab:`Cierre previsto · ${s.modelo}`, cap:`${s.estudio ? 'estudio' : 'otro modelo'} · real a ${mes(s.corte)}`, a});
+  });
+  return cols;
+}
+// a line in the chosen basis
+const enBase = (a, k) => { if (!a || a.v[k] == null) return null;
+  if (sel.basis === 'pct') return a.v.ventas ? a.v[k] / a.v.ventas : null;
+  if (sel.basis === 'unidad') return a.u ? a.v[k] / a.u * 1000 : null;
+  return a.v[k]; };
+const fmtB = v => sel.basis === 'pct' ? pc(v) : (sel.basis === 'unidad' ? f0(v) : fx(v));
+const fmtD = d => !ok(d) ? '—' : (Math.abs(d) < (sel.basis==='pct' ? 0.0005 : (sel.basis==='unidad' ? 0.5 : 0.05)) ? '—' :
+  sg(d) + (sel.basis === 'pct' ? fx(Math.abs(d*100),1)+' pp' : (sel.basis === 'unidad' ? f0(Math.abs(d)) : fx(Math.abs(d)))));
+const tonoD = (k, d) => !ok(d) || Math.abs(d) < 1e-6 ? '' : ((COSTO.has(k) ? d < 0 : d > 0) ? 'pos' : 'neg');
+
+function controles(){
+  const plazas = ORD_P.filter(p => KS.some(k => plazaDe(k) === p));
+  if (KS.some(k => !plazaDe(k))) plazas.push('');
+  const pl = plazaDe(sel.k) || '';
+  $('plz').innerHTML = plazas.map(p => `<button class="pill" type="button" data-v="${esc(p)}" aria-pressed="${p===pl}">${esc(p ? PLZ[p] : 'Otros')}</button>`).join('');
+  $('des').innerHTML = KS.filter(k => (plazaDe(k)||'') === pl).map(k => `<button class="pill" type="button" data-v="${esc(k)}" aria-pressed="${k===sel.k}">${esc(nombreDe(k))}<small>${BP.desarrollos[k].estudio ? 'estudio' : BP.desarrollos[k].etapas.length}</small></button>`).join('');
+  const D = BP.desarrollos[sel.k];
+  $('etapa').innerHTML = `<option value="">Todas las etapas (${D.etapas.filter(pasa).length})</option>` +
+    D.etapas.map(e => `<option value="${esc(e.n)}"${e.n===sel.etapa?' selected':''}>${esc(e.n)}${enCurso(e)?'':' · por arrancar'}</option>`).join('');
+  document.querySelectorAll('#ru-basis .pill').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.v===sel.basis)));
+}
+$('plz').addEventListener('click', e => { const b = e.target.closest('button[data-v]'); if (!b) return;
+  const k = KS.find(x => (plazaDe(x)||'') === b.dataset.v); if (k) elegir(k); });
+$('des').addEventListener('click', e => { const b = e.target.closest('button[data-v]'); if (b) elegir(b.dataset.v); });
+$('etapa').addEventListener('change', e => { sel.etapa = e.target.value; pinta(); });
+$('base').addEventListener('change', e => { sel.base = e.target.value; pinta(); });
+$('basis').addEventListener('click', e => { const b = e.target.closest('button[data-v]'); if (!b) return; sel.basis = b.dataset.v; store('basis', sel.basis); pinta(); });
+
+function elegir(k, scroll){
+  if (!BP.desarrollos[k]) return;
+  sel.k = k; sel.etapa = ''; store('k', k);
+  portafolio(); pinta();
+  if (scroll) $('ancla').scrollIntoView({behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block:'start'});
+}
+
+function pinta(){
+  const D = BP.desarrollos[sel.k];
+  if (sel.etapa && !D.etapas.some(e => e.n === sel.etapa)) sel.etapa = '';
+  controles();
+  const cols = columnas();
+  if (!cols.some(c => c.id === sel.base)) sel.base = 'proforma';
+  const base = cols.find(c => c.id === sel.base) || cols[0];
+  const orden = [base, ...cols.filter(c => c !== base)];
+  $('base').innerHTML = cols.map(c => `<option value="${esc(c.id)}"${c.id===base.id?' selected':''}>${esc(c.lab)}</option>`).join('');
+
+  const E = sel.etapa ? D.etapas.find(e => e.n === sel.etapa) : null;
+  const plaza = plazaDe(sel.k);
+  $('badges').innerHTML = (plaza ? `<span class="badge">${esc(PLZ[plaza])}</span>` : '') +
+    `<span class="badge" title="${esc(D.archivo)}">BP ${esc(D.modelo)} · real a ${mes(D.corte)}</span>` +
+    (D.estudio ? '<span class="badge" style="color:var(--mq-warn)" title="El modelo está en una carpeta propia dentro de la plaza: un proyecto en estudio. No suma al portafolio.">estudio</span>' : '') +
+    (E ? `<span class="badge">${esc(E.estatus || '—')}</span>` + (E.u ? `<span class="badge">${f0(E.u)} ${esc(E.u_tipo || 'unidades')}</span>` : '') : '') +
+    (E && E.esc.cierre.ventas === 0 && E.esc.proforma.ventas ? '<span class="badge" style="color:var(--mq-warn)">el cierre previsto de esta etapa no trae ventas</span>' : '');
+  $('title').textContent = `Estado de resultados de vida · ${E ? E.n : nombreDe(sel.k)}`;
+  $('basisNote').textContent = (sel.basis === 'pct' ? 'Cada renglón como % de las ventas de su columna; las diferencias, en puntos porcentuales.'
+    : sel.basis === 'unidad' ? 'Miles de pesos por unidad, cada columna sobre sus propias unidades (lotes o departamentos).'
+    : 'Millones de pesos, de vida de la etapa (real a la fecha más lo que falta).') + ` Diferencias contra ${base.lab.toLowerCase()}.`;
+
+  // scenario cards
+  const mb = margen(base.a);
+  $('cards').innerHTML = orden.map(c => {
+    const m = margen(c.a), u = c.a.u;
+    const dU = c.a.v.uair - base.a.v.uair, dM = (m!=null && mb!=null) ? m - mb : null;
+    const delta = c === base ? '<span class="ru-sc-cap">Base de la comparación</span>'
+      : `UAIR <span class="${dU<0?'neg':'pos'}">${sg(dU)}${fx(Math.abs(dU))} mdp</span> · margen <span class="${dM<0?'neg':'pos'}">${dM==null?'—':sg(dM)+fx(Math.abs(dM*100),1)+' pp'}</span>`;
+    return `<button type="button" class="kpi ru-sc${c===base?' is-base':''}" data-id="${esc(c.id)}" aria-pressed="${c===base}" title="Comparar contra ${esc(c.lab)}">
+      <div class="kpi-top"><span class="kpi-label">${esc(c.lab)}</span></div>
+      <span class="ru-sc-cap">${esc(c.cap)}${c.a.n !== base.a.n ? ` · ${c.a.n} etapa${c.a.n===1?'':'s'} (base ${base.a.n})` : ''}</span>
+      <span class="ru-sc-line">Ventas <b>${fx(c.a.v.ventas)}</b> mdp${u ? ` · <b>${f0(u)}</b> unidades` : ''}</span>
+      <span class="ru-sc-line">UAIR <b class="${c.a.v.uair<0?'neg':''}">${fx(c.a.v.uair)}</b> mdp · <b class="${m<0?'neg':''}">${pc(m)}</b>${u ? ` · ${f0(c.a.v.uair/u*1000)} mil $/u` : ''}</span>
+      <span class="ru-sc-delta">${delta}</span></button>`;
+  }).join('');
+
+  // statement
+  const visible = k => k === 'mantenimiento' || k === 'fin_mezz' ? orden.some(c => Math.abs(c.a.v[k]||0) > 0.0005) : true;
+  let h = `<thead><tr><th>Concepto</th>` + orden.map((c,i) => `<th class="ru-sch${i?'':' is-base'}">${esc(c.lab)}</th>${i?`<th class="ru-dh">Δ vs ${esc(base.lab.split(' · ')[0].toLowerCase())}</th>`:''}`).join('') + `</tr></thead><tbody>`;
+  const ncols = orden.length * 2;
+  const info = (lab, f) => { h += `<tr class="ru-info"><td>${lab}</td>` + orden.map((c,i) => `<td>${f(c)}</td>${i?'<td class="ru-d"></td>':''}`).join('') + '</tr>'; };
+  h += `<tr class="ru-band"><td colspan="${ncols}">Etapa${E ? '' : 's'}</td></tr>`;
+  info('Etapas', c => f0(c.a.n));
+  info('Unidades', c => f0(c.a.u));
+  info('Precio promedio por unidad <span class="tag">mdp</span>', c => c.a.u ? fx(c.a.v.ventas / c.a.u, 2) : '—');
+  info('Inicio', c => c.f ? mes(c.f.ini) : '—');
+  info('Término', c => c.f ? mes(c.f.fin) : '—');
+  FILAS.forEach(([k, t]) => {
+    if (k === 'band'){ h += `<tr class="ru-band"><td colspan="${ncols}">${t}</td></tr>`; return; }
+    if (!visible(k)) return;
+    const cls = t === 1 ? 'ru-sub' : (t === 's' ? 'ru-strong' : (t === 'a' ? 'ru-strong ru-accent' : 'ru-strong'));
+    const vb = enBase(base.a, k);
+    h += `<tr class="${cls}"><td>${esc(NOM[k] || k)}</td>` + orden.map((c,i) => { const v = enBase(c.a, k);
+      const d = (v!=null && vb!=null) ? v - vb : null;
+      return `<td class="ru-v ${v<0?'neg':''}">${fmtB(v)}</td>` + (i ? `<td class="ru-d ${tonoD(k, d)}">${fmtD(d)}</td>` : ''); }).join('') + '</tr>';
+  });
+  $('tbl').innerHTML = h + '</tbody>';
+
+  etapasTabla(D);
+  evolucion(D, E);
+  caja(D, E);
+  detalle(E);
+}
+$('cards').addEventListener('click', e => { const b = e.target.closest('button[data-id]'); if (!b) return; sel.base = b.dataset.id; pinta(); });
+
+function etapasTabla(D){
+  const td = (v, cls) => `<td class="${cls||''}">${v}</td>`;
+  const lista = D.etapas.filter(e => pasa(e) || e.n === sel.etapa);
+  $('etWrap').hidden = D.etapas.length < 2 && !sel.etapa;
+  $('et').innerHTML = `<thead><tr><th class="l">Etapa</th><th class="l">Estatus</th><th>Unidades</th><th>Ventas<span class="sub2">firmado</span></th><th>Ventas<span class="sub2">previsto</span></th>` +
+    `<th>UAIR<span class="sub2">% firmado</span></th><th>UAIR<span class="sub2">% previsto</span></th><th>Margen<span class="sub2">vs firmado</span></th><th>UAIR<span class="sub2">mdp previsto</span></th>` +
+    `<th>UAIR por unidad<span class="sub2">miles de $</span></th><th>Término<span class="sub2">firmado</span></th><th>Término<span class="sub2">flujo</span></th><th>Atraso<span class="sub2">meses</span></th></tr></thead><tbody>` +
+    lista.map(e => { const p = e.esc.proforma, c = e.esc.cierre;
+      const mp = p.ventas ? p.uair/p.ventas : null, mc = c.ventas ? c.uair/c.ventas : null;
+      const at = meses(e.fechas.proforma[1], e.fechas.flujos[1]);
+      const d = (mp!=null && mc!=null) ? mc - mp : null;
+      return `<tr class="pick${e.n===sel.etapa?' is-sel':''}" data-n="${esc(e.n)}" tabindex="0" role="button" aria-label="Ver ${esc(e.n)}">` +
+        td(esc(e.n) + (c.ventas === 0 && p.ventas ? '<span class="tag warn">sin ventas en el cierre</span>' : ''), 'l') + td(esc(e.estatus || '—'), 'l') +
+        td(e.u == null ? '—' : (e.u % 1 ? fx(e.u, 1) : f0(e.u))) + td(fx(p.ventas)) + td(fx(c.ventas)) + td(pc(mp)) + td(pc(mc), mc<0?'neg':'') +
+        td(d==null ? '—' : `${sg(d)}${fx(Math.abs(d*100),1)} pp`, d==null ? '' : (d < -0.0005 ? 'neg' : (d > 0.0005 ? 'pos' : 'zero'))) +
+        td(fx(c.uair), c.uair<0?'neg':'') + td(e.u ? f0(c.uair/e.u*1000) : '—', c.uair<0?'neg':'') +
+        td(mes(e.fechas.proforma[1])) + td(mes(e.fechas.flujos[1])) + td(at==null ? '—' : (at > 0 ? '+'+at : String(at)), at > 0 ? 'neg' : (at < 0 ? 'pos' : 'zero')) + '</tr>'; }).join('') + '</tbody>';
+}
+$('et').addEventListener('click', e => { const tr = e.target.closest('tr.pick'); if (!tr) return; sel.etapa = sel.etapa === tr.dataset.n ? '' : tr.dataset.n; pinta(); });
+$('et').addEventListener('keydown', e => { if (e.key!=='Enter' && e.key!==' ') return; const tr = e.target.closest('tr.pick'); if (!tr) return; e.preventDefault(); sel.etapa = sel.etapa === tr.dataset.n ? '' : tr.dataset.n; pinta(); });
+
+// the expected margin, month by month: each cut of the development's model
+function evolucion(D, E){
+  const porN = estatusPorNombre(D);
+  const mismo = e => E ? compacto(e.n) === compacto(E.n) : pasa(porN[compacto(e.n)] || {estatus: null});
+  const H = D.historia.map(h => ({h, c: suma(h.etapas.filter(mismo), e => e.c), f: suma(h.etapas.filter(mismo), e => e.f)})).filter(x => x.c);
+  const host = $('chEvo');
+  if (H.length < 2){
+    MQC.clear(host, `<p class="ru-empty">Hace falta más de un mes de BPs para ver la evolución${H.length ? ` (hay ${mes(H[0].h.corte)})` : ''}. El sync carga los meses anteriores con <code>--months 14 --only bp</code>.</p>`);
+    $('lgEvo').innerHTML = ''; $('nEvo').textContent = 'UAIR como % de las ventas en cada BP mensual.'; return;
+  }
+  const hoy = E ? [E] : D.etapas.filter(pasa);
+  const fp = margen(suma(hoy, e => e.esc.proforma));
+  const lab = H.map(x => mes(x.h.corte));
+  const S = [{name:'Cierre previsto', color:'--mq-c1', vals:H.map(x => margen(x.c))},
+             {name:'Resultados flujos', color:'--mq-c6', vals:H.map(x => margen(x.f))},
+             {name:'Proforma firmado (hoy)', color:'--mq-c5', vals:H.map(() => fp)}];
+  MQC.line(host, 250, lab, S, {yFmt: v => (v*100).toFixed(0)+'%', tooltip:{callbacks:{label: c => {
+    const x = H[c.dataIndex], a = c.datasetIndex === 1 ? x.f : x.c;
+    return c.datasetIndex === 2 ? `Proforma firmado: ${pc(fp)}` : `${c.dataset.label}: ${pc(c.raw)} · UAIR ${fx(a.v.uair)} de ${fx(a.v.ventas)} mdp · ${a.n} etapa${a.n===1?'':'s'}`; }}}});
+  $('lgEvo').innerHTML = S.map(s => `<span>${sw(s.color)}${s.name}</span>`).join('');
+  const cambia = new Set(H.map(x => x.c.n)).size > 1;
+  $('nEvo').textContent = `UAIR como % de las ventas en cada BP mensual, ${mes(H[0].h.corte)} a ${mes(H[H.length-1].h.corte)}.` +
+    (cambia ? ' El número de etapas cambia entre meses: el BP agrega o quita etapas.' : '');
+}
+
+// month-end cash by etapa («Saldos Finales»), real through the cut
+function caja(D, E){
+  const host = $('chCaja'), S = D.saldos;
+  if (!S || !S.meses.length){ MQC.clear(host, '<p class="ru-empty">El BP no trae saldos finales por etapa para este desarrollo.</p>'); $('lgCaja').innerHTML = ''; $('nCaja').textContent = ''; return; }
+  let filas = S.filas;
+  const uno = E ? filas.filter(f => compacto(f.n).replace(/coto|etapa/g,'') === compacto(E.n).replace(/coto|etapa/g,'')) : [];
+  if (uno.length) filas = uno;
+  const top = filas.map((f,i) => ({f, i, m: Math.max(...f.v.map(Math.abs))})).sort((a,b) => b.m - a.m);
+  const muestra = top.slice(0, filas.length > 7 ? 6 : 7).sort((a,b) => a.i - b.i).map(x => x.f);
+  const resto = filas.filter(f => !muestra.includes(f));
+  const series = muestra.map((f,i) => ({name:f.n, color:MQC.CAT[i % 7], vals:f.v}));
+  if (resto.length) series.push({name:`Otras ${resto.length}`, color:MQC.CAT[7], vals:S.meses.map((_,j) => resto.reduce((a,f) => a + (f.v[j]||0), 0))});
+  const lab = S.meses.map(mes), ic = S.meses.indexOf(D.corte);
+  MQC.area(host, 250, lab, series, {total:'Total', xTicks:8, yFmt: v => f0(v), events: ic >= 0 ? [{x: ic, label: `real a ${mes(D.corte)}`}] : [],
+    tooltip:{callbacks:{label: c => `${c.dataset.label}: ${fx(c.raw)} mdp`}}});
+  $('lgCaja').innerHTML = series.map(s => `<span>${sw(s.color)}${esc(s.name)}</span>`).join('');
+  $('nCaja').textContent = `Hoja «Saldos Finales» del BP, mdp. Real hasta ${mes(D.corte)}; después, lo que proyecta el modelo.` +
+    (E && !uno.length ? ' Esta etapa no tiene renglón propio en la hoja: se muestra el desarrollo completo.' : '');
+}
+
+function detalle(E){
+  const P = E ? (E.prototipos || []) : [], F = E ? (E.fondeo || {}) : {};
+  const hayF = Object.values(F).some(v => v != null && Math.abs(v) > 0.0005);
+  $('detalle').hidden = !(P.length || hayF);
+  $('protoWrap').hidden = !P.length; $('fondeoWrap').hidden = !hayF;
+  if (P.length){
+    const tieneUair = P.some(p => p.uair != null), tieneV = P.some(p => p.vendidas != null);
+    $('proto').innerHTML = `<thead><tr><th class="l">Prototipo</th><th>Mezcla</th><th>m² terreno</th><th>m² construcción</th><th>Precio promedio<span class="sub2">mdp</span></th><th>Unidades</th>${tieneUair?'<th>UAIR</th>':''}${tieneV?'<th>Vendidas</th>':''}</tr></thead><tbody>` +
+      P.map(p => `<tr><td class="l">${esc(p.n)}</td><td>${pc(p.mezcla,0)}</td><td>${f0(p.m2t)}</td><td>${f0(p.m2c)}</td><td>${fx(p.precio,2)}</td><td>${p.u==null?'—':(p.u%1?fx(p.u,1):f0(p.u))}</td>${tieneUair?`<td class="${p.uair<0?'neg':''}">${pc(p.uair)}</td>`:''}${tieneV?`<td>${f0(p.vendidas)}</td>`:''}</tr>`).join('') + '</tbody>';
+  }
+  if (hayF){
+    const L = [['equity','Necesidad de equity', v => fx(Math.abs(v))+' mdp'], ['puente','Crédito puente', v => fx(v)+' mdp'], ['corporativo','Crédito corporativo', v => fx(v)+' mdp'],
+      ['mezzanine','Crédito mezzanine', v => fx(v)+' mdp'], ['aportaciones','Aportaciones Ranman', v => fx(v)+' mdp'], ['recuperaciones','Recuperaciones Ranman', v => fx(v)+' mdp'],
+      ['tir','TIR', v => pc(v)], ['moic','MOIC', v => fx(v,2)+'×']];
+    $('fondeo').innerHTML = L.filter(([k]) => F[k] != null && (k === 'tir' || k === 'moic' || Math.abs(F[k]) > 0.0005))
+      .map(([k, l, f]) => `<div><span>${l}</span><b>${f(F[k])}</b></div>`).join('');
+  }
+}
+
+sel.k = BP.desarrollos[recall('k')] ? recall('k') : KS[0];
+portafolio(); pinta();
+});
+</script>

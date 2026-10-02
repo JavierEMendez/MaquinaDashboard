@@ -18,7 +18,7 @@ import hmac
 import requests
 import psycopg2
 from PIL import Image, ImageOps
-from flask import (Flask, render_template, request, redirect, url_for,
+from flask import (Flask, Request, render_template, request, redirect, url_for,
                    session, flash, jsonify, abort, Response)
 from werkzeug.security import check_password_hash, generate_password_hash
 
@@ -31,8 +31,23 @@ import ranman_deuda_parser
 import ranman_flujo_parser
 import ranman_package
 import ranman_aaa
+import ranman_bp
+
+RANMAN_MAX_BYTES = 32 * 1024 * 1024
+
+
+class _Request(Request):
+    """Ranman's BP models run to 15 MB: the package route takes one file of up
+    to 32 MB per request. Every other route keeps the app-wide cap."""
+    @property
+    def max_content_length(self):
+        if self.path == "/api/ranman/package":
+            return RANMAN_MAX_BYTES
+        return super().max_content_length
+
 
 app = Flask(__name__)
+app.request_class = _Request
 app.secret_key = os.environ.get("SECRET_KEY", "maquina-dev-secret-change-me")
 # Cap uploads; processed down to <=256px thumbnails before storage.
 app.config["MAX_CONTENT_LENGTH"] = 8 * 1024 * 1024
@@ -40,6 +55,8 @@ app.config["MAX_CONTENT_LENGTH"] = 8 * 1024 * 1024
 
 @app.errorhandler(413)
 def _too_large(e):
+    if request.path == "/api/ranman/package":
+        return jsonify(error="That file is too large (max 32 MB per file)."), 413
     if request.path.startswith("/api/"):
         return jsonify(error="That file is too large (max 8 MB per request)."), 413
     flash("That file is too large (max 8 MB).", "error")
@@ -886,7 +903,7 @@ def load_ranman_flujo():
 
 # ─── RANMAN · monthly package ──────────────────────────────────────────
 # One import path for every deliverable: the Data tab (one file per request, so
-# the 8 MB cap holds for the whole folder), the older per-tab upload cards, and
+# the per-request cap holds for the whole folder), the older per-tab upload cards, and
 # tools/ranman_sync.py (bearer token) all land in _ranman_import_file. Files are
 # recognised by name (ranman_package.clasifica); each parser checks the file
 # against its own totals and nothing that fails is stored. Every file is logged
@@ -975,7 +992,33 @@ def _import_riesgos(name, raw, user):
                 ("" if vrm else " Without the VRM credit — load Credito VRM.xlsx on the Finance tab to include it."))
 
 
-def _ranman_import_file(name, raw, periodo=None, user="admin"):
+def _import_bp(name, raw, user, ruta=None):
+    """A business plan: stored under its own kind (bp:<model>) at the month its
+    actuals run through, so each model keeps one cut per month. A model kept in
+    a folder of its own inside the plaza's («02 BP Aguascalientes/Viñedos
+    Elizondo 08-26/») is a study: shown, but not added to the portfolio."""
+    try:
+        data, ok, lines = ranman_bp.parse_bp(raw, name)
+    except ranman_bp.SinSupuestos as e:
+        return dict(status="received", message="Recognised as a BP, but %s." % str(e).split(" has ", 1)[-1].replace("no ", "it has no ", 1))
+    if not ok:
+        malas = [l.strip() for l in lines if "no cuadra" in l and "(aviso)" not in l]
+        return dict(status="error", as_of=data["asOf"],
+                    message="The model's own P&L doesn't add up — not imported. " + " · ".join(malas)[:600])
+    data["estudio"] = ranman_bp.es_estudio(ruta)
+    db.save_ranman_report("bp:" + data["slug"], data["asOf"], name, json.dumps(data, ensure_ascii=False), user)
+    _BP_CACHE.clear()
+    avisos = sorted({l.split("  ")[0].strip() for l in lines if "(aviso)" in l})
+    msg = ("%s: %d etapas, actuals through %s. Each etapa's P&L checked."
+           % (data["modelo"], len(data["etapas"]), _lbl_es(data["asOf"])[3:]))
+    if avisos:
+        msg += " The signed proforma of %s doesn't add up as typed in the file; shown as it is." % ", ".join(avisos)[:300]
+    if data["estudio"]:
+        msg += " Kept as a study (it sits in a folder of its own), not added to the portfolio."
+    return dict(status="imported", as_of=data["asOf"], message=msg)
+
+
+def _ranman_import_file(name, raw, periodo=None, user="admin", ruta=None):
     """Import one file of Ranman's package -> {archivo, kind, label, as_of, status, message};
     status is imported | received (recognised, not read yet) | skipped (not a deliverable) | error."""
     kind, as_of = ranman_package.clasifica(name)
@@ -988,6 +1031,8 @@ def _ranman_import_file(name, raw, periodo=None, user="admin"):
             res.update(_import_flujo(name, raw, user))
         elif kind == "riesgos":
             res.update(_import_riesgos(name, raw, user))
+        elif kind == "bp":
+            res.update(_import_bp(name, raw, user, ruta))
         elif kind in _RANMAN_PARSERS:
             if not as_of:
                 res["message"] = "Could not read the cut date from the file name."
@@ -1055,6 +1100,122 @@ def load_ranman_aaa_historia():
     return ranman_aaa.historia(cortes) if cortes else None
 
 
+_BP_CACHE = {}      # per worker; keyed by the stored cuts' count and last upload
+_BP_MESES = 13      # how far back the Unit Economics section compares a BP
+
+
+def _meses_entre(a, b):
+    """'2026-05', '2026-08' -> 3."""
+    return (int(b[:4]) - int(a[:4])) * 12 + int(b[5:7]) - int(a[5:7])
+
+
+def load_ranman_bp():
+    """The business plans, by development, for the Projects tab's Unit Economics:
+    {corte, corte_label, modelos, desarrollos: {k: {principal, modelo, corte,
+    etapas (newest cut, in full), escenarios (other current models with the same
+    development), historia (its principal model's cut each month), saldos,
+    estudio}}}. A development's principal model is a plaza model before a study
+    (ranman_bp.es_estudio), then the one carrying most of its etapas; a model
+    last updated more than three months before the newest is left out.
+    None when no BP is stored."""
+    try:
+        stamp = db.ranman_bp_stamp()
+        if not stamp[0]:
+            return None
+        if _BP_CACHE.get("stamp") == stamp:
+            return _BP_CACHE["val"]
+        rows = db.ranman_bp_cortes(_BP_MESES)
+        saldos = db.ranman_bp_saldos()
+    except Exception as e:
+        app.logger.warning("ranman BP load failed: %s", e)
+        return None
+    cortes = []                                   # (model, 'YYYY-MM', row, data), oldest first
+    for r in rows:
+        d = _jl(r["data"])
+        if isinstance(d, dict) and d.get("etapas"):
+            cortes.append((r["kind"][3:], str(r["as_of"])[:7], r, d))
+    if not cortes:
+        return None
+    ultimo = max(c for _, c, _, _ in cortes)
+    ult = {}
+    for m, c, r, d in cortes:
+        ult[m] = (c, r, d)                        # the last one seen is the newest
+    vigentes = {m: v for m, v in ult.items() if _meses_entre(v[0], ultimo) <= 3}
+    clave = lambda e, m: e.get("k") or "_" + m    # an etapa naming no known development stays with its model
+    numerado = lambda archivo: bool(re.match(r"\d{2} ", archivo or ""))
+
+    estudio = lambda m: bool((ult.get(m) or (None, None, {}))[2].get("estudio"))
+
+    def principal(cands):
+        """cands: {model: (count, corte, archivo)} -> the model that leads: a
+        plaza model before a study, then the most etapas, the newest cut, a
+        numbered «NN BP» file."""
+        return max(cands, key=lambda m: (not estudio(m), cands[m][0], cands[m][1], numerado(cands[m][2]))) if cands else None
+
+    por_k = {}
+    for m, (c, r, d) in vigentes.items():
+        for e in d["etapas"]:
+            k = clave(e, m)
+            n, _c, _a = por_k.setdefault(k, {}).get(m, (0, c, r["archivo"]))
+            por_k[k][m] = (n + 1, c, r["archivo"])
+    compacto = lambda e: {"n": e["n"], "u": e.get("u"), "c": e["esc"]["cierre"], "f": e["esc"]["flujos"]}
+    # month by month the page charts only sales and UAIR; the full statement is
+    # kept for the two cuts it compares against (last month, last December)
+    breve = lambda e: {"n": e["n"], "u": e.get("u"),
+                       "c": {x: e["esc"]["cierre"].get(x) for x in ("ventas", "uair")},
+                       "f": {x: e["esc"]["flujos"].get(x) for x in ("ventas", "uair")}}
+    desarrollos = {}
+    for k, cands in por_k.items():
+        p = principal(cands)
+        c, r, d = vigentes[p]
+        etapas = [e for e in d["etapas"] if clave(e, p) == k]
+        escenarios = [{"slug": m, "modelo": vigentes[m][2]["modelo"], "corte": vigentes[m][0], "estudio": estudio(m),
+                       "etapas": [compacto(e) for e in vigentes[m][2]["etapas"] if clave(e, m) == k]}
+                      for m in sorted(cands) if m != p]
+        # the development month by month: the principal model's cut, or the model that carried it then
+        hist = {}
+        for m, cm, rm, dm in cortes:
+            es = [e for e in dm["etapas"] if clave(e, m) == k]
+            if not es or (dm.get("estudio") and m != p):
+                continue
+            prev = hist.get(cm)
+            if prev is None or (m == p) or (prev["slug"] != p and len(es) > len(prev["_es"])):
+                hist[cm] = {"corte": cm, "slug": m, "modelo": dm["modelo"], "_es": es}
+        antes = [x for x in sorted(hist) if x < c]
+        dic = [x for x in antes if x[:4] < c[:4]]
+        completos = set(antes[-1:] + dic[-1:])
+        for x, h in hist.items():
+            h["completo"] = x in completos
+            h["etapas"] = [(compacto if x in completos else breve)(e) for e in h.pop("_es")]
+        sal = saldos.get("bp:" + p)
+        sal = _jl(sal) if sal is not None else None
+        if isinstance(sal, dict) and sal.get("filas"):
+            filas = [dict(f, v=[round(v, 1) for v in f["v"]]) for f in sal["filas"] if (f.get("k") or "_" + p) == k]
+            sal = {"meses": sal["meses"], "filas": filas} if filas else None
+        else:
+            sal = None
+        desarrollos[k] = {"principal": p, "modelo": d["modelo"], "archivo": r["archivo"], "corte": c,
+                          "estudio": estudio(p),
+                          "etapas": etapas, "escenarios": escenarios,
+                          "historia": [hist[x] for x in sorted(hist)], "saldos": sal}
+    modelos = [{"slug": m, "modelo": d["modelo"], "archivo": r["archivo"], "corte": c, "estudio": bool(d.get("estudio")),
+                "uploaded_at": _ts(r.get("uploaded_at")), "etapas": len(d["etapas"])}
+               for m, (c, r, d) in sorted(vigentes.items(), key=lambda kv: kv[1][2]["modelo"])]
+    viejos = sorted(m for m in ult if m not in vigentes)
+    val = {"corte": ultimo, "corte_label": _lbl_es(_fin_mes(ultimo))[3:], "modelos": modelos,
+           "conceptos": ranman_bp.CONCEPTOS,
+           "fuera": [{"slug": m, "modelo": ult[m][2]["modelo"], "corte": ult[m][0]} for m in viejos],
+           "desarrollos": desarrollos}
+    _BP_CACHE.clear()
+    _BP_CACHE.update(stamp=stamp, val=val)
+    return val
+
+
+def _fin_mes(ym):
+    y, m = int(ym[:4]), int(ym[5:7])
+    return "%d-%02d-%02d" % (y, m, calendar.monthrange(y, m)[1])
+
+
 def load_ranman_package():
     """Admin Data tab: what is loaded per parsed deliverable, which files arrived
     for the last four reporting months, the recent upload log, and sync status."""
@@ -1066,10 +1227,17 @@ def load_ranman_package():
         app.logger.warning("ranman package status failed: %s", e)
         return None
     fechas = {"flujo": [str(f)[:10] for f in cuts["flujo"]], "riesgos": [str(f)[:10] for f in cuts["riesgos"]]}
+    modelos = set()
     for r in idx:
-        fechas.setdefault(r["kind"], []).append(str(r["as_of"])[:10])
+        k = r["kind"]
+        if k.startswith("bp:"):           # one kind per model: count the months any model covers
+            modelos.add(k)
+            if str(r["as_of"])[:10] not in fechas.setdefault("bp", []):
+                fechas["bp"].append(str(r["as_of"])[:10])
+            continue
+        fechas.setdefault(k, []).append(str(r["as_of"])[:10])
     cargado = []
-    for key, label in (("aaa", "AAA scorecard"), ("flujo", "Flujo y PLP"), ("plp_proyectos", "PLP by development (PLP - Soporte)"),
+    for key, label in (("aaa", "AAA scorecard"), ("bp", "Business plans (%d models)" % len(modelos)), ("flujo", "Flujo y PLP"), ("plp_proyectos", "PLP by development (PLP - Soporte)"),
                        ("riesgos", "Cuadro de Riesgos"), ("edo_resultados", "Edo. Resultados por Proyecto"),
                        ("breakeven", "Breakeven"), ("pipeline", "Pipeline"), ("sabana", "Sábana Operativa")):
         fs = sorted(fechas.get(key, []))
@@ -1728,7 +1896,7 @@ def ranman_package_upload():
     results = []
     for f in files:
         name = re.split(r"[\\/]", f.filename)[-1]
-        results.append(_ranman_import_file(name, f.read(), periodo, user))
+        results.append(_ranman_import_file(name, f.read(), periodo, user, request.form.get("ruta")))
     return jsonify(results=results)
 
 
@@ -2437,11 +2605,13 @@ def company(slug):
     ranman_rep = {}      # monthly package: Edo. Resultados, Breakeven, Pipeline, PLP by development
     ranman_pkg = None    # Data tab (admin): what's loaded and what arrived
     ranman_hist = None   # AAA scorecard month by month (Dashboard trends)
+    ranman_bp = None     # business plans by development (Projects · Unit Economics)
     if c["slug"] == "ranman":
         ranman_debt = load_ranman_debt()
         ranman_flujo = load_ranman_flujo()
         ranman_rep = load_ranman_reports()
         ranman_hist = load_ranman_aaa_historia()
+        ranman_bp = load_ranman_bp()
         if session.get("is_admin"):
             ranman_pkg = load_ranman_package()
     if c["slug"] == "ember":
@@ -2574,6 +2744,7 @@ def company(slug):
         valuation=valuation, cap=cap, hold=hold, exitr=exitr, fre_basis=fre_basis,
         verticals=verticals, sales=sales, ember_budget=ember_budget, polaris=polaris, ranman_debt=ranman_debt,
         ranman_flujo=ranman_flujo, ue=ue, ranman_rep=ranman_rep, ranman_pkg=ranman_pkg, ranman_hist=ranman_hist,
+        ranman_bp=ranman_bp,
         ranman_patrones=ranman_package.patrones_js() if c["slug"] == "ranman" else None,
         ranman_enviables=sorted(ranman_package.ENVIABLES) if c["slug"] == "ranman" else None,
         ranman_omite=dict(carpeta=list(ranman_package.OMITE_CARPETA), nombre=list(ranman_package.OMITE_NOMBRE)),

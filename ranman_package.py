@@ -14,6 +14,7 @@ file's own totals don't add up and nothing should be stored):
     parse_breakeven       «Breakeven al dd-mm-aa.xlsx»              units / pesos to reach UAIR 0% and 10%
     parse_pipeline        «Pipeline al dd-mm-aa.xlsx»               units still to sell, by coto and quarter
     parse_sabana          «NNN PLAN OPERATIVO <año>_<MES>_….xlsx»   plan vs real by development, month by month
+(the BPs and the AAA have modules of their own: ranman_bp, ranman_aaa)
 Amounts come in pesos (Edo. Resultados) or thousands (Breakeven, Pipeline
 prices) and are stored in mdp, like the other Ranman tableros.
 """
@@ -83,7 +84,7 @@ ENTREGABLES = [
     ('edo_resultados', 2,  'Edo. Resultados por Proyecto', r'^estado de resultados al \d{2}-\d{2}-\d{2}.*\.xlsx$',   'dma', True),
     ('necesidad',      3,  'Necesidad de Capital',         r'^necesidad(es)? de capital al \d{2}-\d{2}-\d{2}.*\.xlsx$', 'amd', False),
     ('riesgos',        4,  'Cuadro de Riesgos',            r'^cuadro de riesgos ranman .*\.xls[xm]$',                'riesgos', True),
-    ('bp',             5,  'BPs',                          r'^(\d{2} )?bp .*\.xlsx$',                                None, False),
+    ('bp',             5,  'BPs',                          r'^(\d{2} )?bp .*\.xlsx$',                                None, True),
     ('pipeline',       6,  'Pipeline',                     r'^pipeline al \d{2}-\d{2}-\d{2}.*\.xlsx$',               'dma', True),
     ('aaa',            7,  'AAA',                          r'^reporte aaa .*\.pdf$',                                 'mes', True),
     ('breakeven',      8,  'Breakeven',                    r'^breakeven al \d{2}-\d{2}-\d{2}.*\.xlsx$',              'dma', True),
@@ -98,9 +99,9 @@ ENTREGABLES = [
 ]
 ENTREGABLE = {e[0]: e for e in ENTREGABLES}
 PARSEADOS = {e[0] for e in ENTREGABLES if e[5]}
-# What tools/ranman_sync.py and the upload page send. BPs wait for their parser:
-# the models run to 14 MB and the backup trees hold some 240 more.
-ENVIABLES = {e[0] for e in ENTREGABLES if e[0] != 'bp'}
+# What tools/ranman_sync.py and the upload page send: every deliverable (the
+# ones not read yet are logged as received, so the Data tab shows they came).
+ENVIABLES = {e[0] for e in ENTREGABLES}
 
 OMITE_NOMBRE = ('~$', '(previo)', 'previo ---', ' - copia', 'respaldo')
 # Sub-folders that hold backups, scenarios and supporting paperwork, never a

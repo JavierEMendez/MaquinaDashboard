@@ -106,11 +106,15 @@ Ranman uploads a monthly package to OneDrive (`Archivos Ranman/<year>/<n>_<Month
 numbers have drifted over the years) and parses the ones the dashboard reads:
 Flujo y PLP (`ranman_flujo_parser.py`, including the hidden *PLP - Soporte*
 sheet by development), Cuadro de Riesgos (`ranman_deuda_parser.py`),
-Edo. Resultados por Proyecto, Breakeven, Pipeline, the Sábana Operativa and the
+Edo. Resultados por Proyecto, Breakeven, Pipeline, the Sábana Operativa, the
 AAA scorecard PDF (`ranman_aaa.py`, which rebuilds page 1's tables from the
-positioned text). Each file is checked against its own totals before anything is stored.
+positioned text) and the BP models (`ranman_bp.py`: each etapa's signed
+proforma, expected close and cash-flow result from the *Supuestos* sheet, plus
+month-end cash from *Saldos Finales*; one stored cut per model and month, shown
+on the Projects tab's Unit economics). Each file is checked against its own
+totals before anything is stored.
 
-Three ways in, all through `POST /api/ranman/package`:
+Three ways in, all through `POST /api/ranman/package` (one file per request, up to 32 MB — the BP models reach 15 MB):
 
 - **Data tab** (admin) on the Ranman page: pick a whole month folder; files go one per request.
 - The older upload cards on the Cashflow & PLP and Finance tabs (same import underneath).
@@ -120,6 +124,7 @@ Three ways in, all through `POST /api/ranman/package`:
 # on that computer: RANMAN_SYNC_URL=https://<app>/api/ranman/package, RANMAN_SYNC_TOKEN=<same as Railway>
 python tools/ranman_sync.py --dry-run     # what it would send
 python tools/ranman_sync.py               # send new or changed files from the last 3 month folders
+python tools/ranman_sync.py --months 14 --only bp   # a year of BPs, for Unit economics' month-by-month view
 ```
 
 It remembers what it sent (`%LOCALAPPDATA%\ranman_sync\state.json`), so a

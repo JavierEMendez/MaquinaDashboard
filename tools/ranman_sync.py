@@ -24,6 +24,7 @@ and Python with `requests` and `openpyxl` (pip install -r requirements.txt).
     python tools/ranman_sync.py --force           # resend even if unchanged
     python tools/ranman_sync.py --retry error     # resend files rejected last time, even if unchanged
     python tools/ranman_sync.py --months 34 --only aaa,sabana   # load those reports' history
+    python tools/ranman_sync.py --months 14 --only bp           # a year of business plans (~1 GB)
     python tools/ranman_sync.py --root "D:\\OneDrive\\Archivos Ranman"
 
 Exit code 1 when a file was rejected or the server couldn't be reached, so a
@@ -39,7 +40,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import ranman_package  # noqa: E402  (the dashboard's own name rules)
 
-MAX_BYTES = 8 * 1024 * 1024          # the dashboard's upload cap
+MAX_BYTES = 32 * 1024 * 1024         # the dashboard's per-file cap on /api/ranman/package
 MESES = {'january': 1, 'february': 2, 'march': 3, 'april': 4, 'may': 5, 'june': 6, 'july': 7,
          'august': 8, 'september': 9, 'october': 10, 'november': 11, 'december': 12}
 STATE = Path(os.environ.get('LOCALAPPDATA') or Path.home()) / 'ranman_sync' / 'state.json'
@@ -175,13 +176,13 @@ def main():
     fallos = 0
     for p, rel, kind, periodo in pendientes:
         if p.stat().st_size > MAX_BYTES:
-            print('  SKIP   %s — over 8 MB' % rel)
+            print('  SKIP   %s — over 32 MB' % rel)
             continue
         try:
             with p.open('rb') as fh:
                 r = requests.post(a.url, headers={'Authorization': 'Bearer ' + a.token},
                                   files={'files': (p.name, fh)}, data={'periodo': periodo, 'ruta': rel},
-                                  timeout=180)
+                                  timeout=300)
             res = (r.json().get('results') or [{}])[0] if r.headers.get('content-type', '').startswith('application/json') else {}
         except (OSError, ValueError, requests.RequestException) as e:
             print('  FAIL   %s — %s' % (rel, e))

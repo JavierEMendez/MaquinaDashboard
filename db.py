@@ -490,6 +490,37 @@ def ranman_reports_all(kind: str) -> list:
     return rows
 
 
+def ranman_bp_stamp():
+    """(count, last upload) over the stored BP cuts: changes whenever one is saved."""
+    conn = get_db(); cur = conn.cursor()
+    cur.execute("SELECT COUNT(*) AS n, MAX(uploaded_at) AS t FROM ranman_reports WHERE kind LIKE 'bp:%%'")
+    r = cur.fetchone()
+    cur.close(); conn.close()
+    return (r["n"], str(r["t"])) if r else (0, None)
+
+
+def ranman_bp_cortes(meses: int = 14) -> list:
+    """Every BP cut of the last `meses` months (before the newest), oldest first,
+    without its month-end cash: [{kind, as_of, archivo, uploaded_at, data}]."""
+    conn = get_db(); cur = conn.cursor()
+    cur.execute("SELECT kind, as_of, archivo, uploaded_at, data - 'saldos' AS data FROM ranman_reports "
+                "WHERE kind LIKE 'bp:%%' AND as_of >= (SELECT MAX(as_of) FROM ranman_reports WHERE kind LIKE 'bp:%%') "
+                "- make_interval(months => %s) ORDER BY as_of, kind", (meses,))
+    rows = cur.fetchall()
+    cur.close(); conn.close()
+    return rows
+
+
+def ranman_bp_saldos() -> dict:
+    """kind -> the month-end cash by etapa of that model's newest cut."""
+    conn = get_db(); cur = conn.cursor()
+    cur.execute("SELECT DISTINCT ON (kind) kind, data->'saldos' AS saldos FROM ranman_reports "
+                "WHERE kind LIKE 'bp:%%' ORDER BY kind, as_of DESC")
+    rows = cur.fetchall()
+    cur.close(); conn.close()
+    return {r["kind"]: r["saldos"] for r in rows}
+
+
 def ranman_reports_index() -> list:
     """Every stored cut without its payload: [{kind, as_of, archivo, uploaded_at}]."""
     conn = get_db(); cur = conn.cursor()
