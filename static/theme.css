@@ -65,6 +65,9 @@
   --mq-c4: #C98A00;
   --mq-c5: #8A9199;
   --mq-c6: #6F4FB0;
+  /* Extra slots for many-series charts (static/mq_charts.js orders them). */
+  --mq-c7: #C2477A;
+  --mq-c8: #0F8AA0;
 }
 
 /* ---------- Dark · Deep Charcoal ---------- */
@@ -96,6 +99,8 @@
   --mq-c4: #E6B23C;
   --mq-c5: #9AA2AA;
   --mq-c6: #9B82DB;
+  --mq-c7: #D9628F;
+  --mq-c8: #2AA3B8;
 }
 
 /* ============================================================
@@ -298,6 +303,7 @@ body.sb-collapsed .main { margin-left: 0; }
    ============================================================ */
 .chart-wrap { position: relative; width: 100%; }
 .chart-wrap canvas { display: block; width: 100% !important; }
+.chart-wrap .mqc-overlay { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; pointer-events: none; }
 .legend-row { display: flex; align-items: center; justify-content: space-between; font-size: 13px; padding: 5px 0; }
 .legend-left { display: flex; align-items: center; gap: 8px; color: var(--mq-ink); }
 .legend-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }

@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% block title %}{{ c.name }} — Maquina{% endblock %}
+{% block head %}{% if c.slug == 'ranman' %}<script src="{{ url_for('static', filename='mq_charts.js') }}"></script>{% endif %}{% endblock %}
 {% set flags = {'US': '🇺🇸', 'MX': '🇲🇽'} %}
 {% import "_partials/_avatars.html" as av %}
 
