@@ -132,7 +132,10 @@ python tools/ranman_sync.py --months 14 --only bp   # a year of BPs, for Unit ec
 ```
 
 It remembers what it sent (`%LOCALAPPDATA%\ranman_sync\state.json`), so a
-scheduled run only sends what Ranman added since.
+scheduled run only sends what Ranman added since. On Javier's PC it runs every
+Monday at 9:00 as the Windows scheduled task «Ranman sync», through
+`tools/ranman_sync_weekly.ps1`, which appends each run to
+`%LOCALAPPDATA%\ranman_sync\sync.log`.
 
 ---
 
