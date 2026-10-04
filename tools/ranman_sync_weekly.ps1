@@ -13,6 +13,8 @@ foreach ($v in 'RANMAN_SYNC_URL', 'RANMAN_SYNC_TOKEN') {
     }
 }
 $env:PYTHONIOENCODING = 'utf-8'
+# read the sync's output as UTF-8 too, or the log gets «┬╖» for «·»
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $dir = Join-Path $env:LOCALAPPDATA 'ranman_sync'
 New-Item -ItemType Directory -Force $dir | Out-Null
 $log = Join-Path $dir 'sync.log'
