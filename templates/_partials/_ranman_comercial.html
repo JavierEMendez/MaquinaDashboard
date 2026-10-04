@@ -193,8 +193,8 @@ if (PLP && ASOF) (function(){
   const be0m = conBe ? BE.be0.total.ut/12 : null;
   const varTxt = (r, p) => p ? `${r-p>=0?'+':''}${f0(r-p)} contra el plan (${f0(p)})` : 'sin plan de arranque cargado';
   const k = [
-    {lab: real.length ? `Firmas ${MES[0]}–${MES[+ULT.slice(5)-1]}` : 'Firmas en el año', val:f0(fYtd), cls:'blue', sub:varTxt(fYtd, pF)},
-    ap ? {lab: real.length ? `Apartados ${MES[0]}–${MES[+ULT.slice(5)-1]}` : 'Apartados en el año', val:f0(aYtd), sub:varTxt(aYtd, pA)} : null,
+    {lab: real.length ? `Firmas ${MES[0]}–${MES[+ULT.slice(5)-1]}` : 'Firmas en el año', val:f0(fYtd), cls:'blue', sub:varTxt(fYtd, pF) + ' · según el PLP'},
+    ap ? {lab: real.length ? `Apartados ${MES[0]}–${MES[+ULT.slice(5)-1]}` : 'Apartados en el año', val:f0(aYtd), sub:varTxt(aYtd, pA) + ' · según el PLP'} : null,
     {lab:'Firmas al mes', val:fx(prom), sub:`promedio de ${real.length} mes${real.length===1?'':'es'} cerrado${real.length===1?'':'s'}` + (finDeMes(ASOF) ? '' : ` · ${MES[+CORTE.slice(5)-1]} va en curso`)},
   ];
   if (conBe) k.push({lab:'Cobertura del breakeven', val:pct(prom/be0m), cls:prom>=be0m?'good':'bad',
@@ -238,15 +238,18 @@ if (SA) (function(){
   const F = T('firmas'), A = T('apartados'), I = T('inicios'), Te = T('terminos');
   const rv = (r, p) => p ? `${r-p>=0?'+':''}${f0(r-p)} contra el plan (${f0(p)}) · ${pct(r/p)}` : 'sin plan para el periodo';
   // the AAA of the same month counts the same firmas: say whether they agree
-  let cuadre = '';
-  if (AAAF && AAAF.asOf && AAAF.asOf.slice(0,7) === SA.asOf.slice(0,7) && AAAF.secciones[0]) {
-    const s = AAAF.secciones[0], f = s.filas.find(r => r.n.toLowerCase().startsWith('firmadas'));
+  // (apartados too: each report restates past months on its own, so they can differ by a few units)
+  const contraAAA = (fila, real) => {
+    if (!(AAAF && AAAF.asOf && AAAF.asOf.slice(0,7) === SA.asOf.slice(0,7) && AAAF.secciones[0])) return '';
+    const s = AAAF.secciones[0], f = s.filas.find(r => r.n.toLowerCase().startsWith(fila));
     const j = s.cols.findIndex(c => /^real acum$/i.test(c.trim()));
-    if (f && j >= 0 && f.v[j] != null) cuadre = Math.abs(f.v[j] - F.real) < 0.5 ? ` · cuadra con el AAA (${f0(f.v[j])})` : ` · el AAA dice ${f0(f.v[j])}`;
-  }
+    if (!f || j < 0 || f.v[j] == null) return '';
+    return Math.abs(f.v[j] - real) < 0.5 ? ` · cuadra con el AAA (${f0(f.v[j])})` : ` · el AAA dice ${f0(f.v[j])}`;
+  };
+  const cuadre = contraAAA('firmadas', F.real);
   $('saKpis').innerHTML = [
     {lab:`Firmas ene–${MESF}`, val:f0(F.real), cls:'blue', sub: rv(F.real, F.plan) + cuadre},
-    {lab:`Apartados ene–${MESF}`, val:f0(A.real), sub: rv(A.real, A.plan)},
+    {lab:`Apartados ene–${MESF}`, val:f0(A.real), sub: rv(A.real, A.plan) + contraAAA('apartad', A.real)},
     {lab:'Inicios de obra', val:f0(I.real), sub: rv(I.real, I.plan)},
     {lab:'Términos de obra', val:f0(Te.real), sub: rv(Te.real, Te.plan)},
     {lab:`Firmas pronosticadas ${SA.anio}`, val:f0(F.anioR), cls: F.anioR >= F.anioP ? 'good' : 'bad', sub:`plan anual ${f0(F.anioP)} · ${pct(F.anioP ? F.anioR/F.anioP : null)}`},

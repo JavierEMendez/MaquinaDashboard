@@ -154,11 +154,14 @@ def parse_ccc(file_bytes: bytes, filename: str, as_of: str):
         # of the payments («Pago al CCC (Ruba)») come from asset sales
         devuelto = sum(abs(m['v']) for m in b['movs'] if m['devolucion'])
         pagos = sum(abs(m['v']) for m in b['movs'] if m['pago'] and not m['devolucion'])
+        # the payments that name the sale behind them («Pago al CCC (Kingfa)»)
+        ventas_act = sum(abs(m['v']) for m in b['movs'] if m['pago'] and not m['devolucion'] and '(' in m['n'])
         reservas = [(k, v) for k, v in b['resumen'] if _norm(k) not in ('dispuesto', 'por disponer', 'disponible')]
         disponible = decl.get('disponible')
         if disponible is None and por_disp is not None:
             disponible = por_disp - sum(v for _, v in reservas)
         b.update(dispuesto=round((draws - devuelto) / 1e6, 6), devuelto=round(devuelto / 1e6, 6), pagado=round(pagos / 1e6, 6),
+                 pagado_ventas=round(ventas_act / 1e6, 6),
                  por_disponer=_mdp(por_disp) if por_disp is not None else (
                      round(b['limite'] - s / 1e6, 6) if b['limite'] else None),
                  reservado=[{'n': k, 'v': round(v / 1e6, 6)} for k, v in reservas],
@@ -166,6 +169,18 @@ def parse_ccc(file_bytes: bytes, filename: str, as_of: str):
                  movs=[dict(m, v=round(m['v'] / 1e6, 6)) for m in b['movs']])
         b['nombre'] = 'Bancrea' if 'bancrea' in _norm(b['titulo']) else ('BBVA' if 'bbva' in _norm(b['titulo']) else b['titulo'])
         del b['resumen']
+
+    # the limit: the ledgers' titles («Ministraciones BBVA CCC 55 MDP») agree with
+    # the Cuadro de Riesgos where the draws table's title does not («… 58 MDP»)
+    for v in (filas[0] if filas else []):
+        t = _norm(v) if isinstance(v, str) else ''
+        m = re.search(r'(\d+(?:\.\d+)?)\s*m', t) if t.startswith('ministraciones') else None
+        for b in lineas:
+            if m and b['nombre'].lower() in t:
+                lim = float(m.group(1))
+                if b['limite'] and abs(b['limite'] - lim) > 0.01:
+                    b['limite_otro'] = b['limite']
+                b['limite'] = lim
 
     tablas = {}
     for clave, pred, ancho in (('plan', lambda t: t.startswith('plan houston'), 2),

@@ -202,13 +202,16 @@ if (ED) (function(){
     return u.mejor==='alto' ? (x>=u.verde?'ok':(x<=u.rojo?'bad':'warn')) : (x<=u.verde?'ok':(x>=u.rojo?'bad':'warn')); };
   const etapas = ED.plazas.flatMap(p => p.etapas);
   const activas = etapas.filter(e => !e.pre);
-  const avP = activas.reduce((a,e)=>a+(e.avance||0)*e.v.ventas,0) / (activas.reduce((a,e)=>a+e.v.ventas,0)||1);
+  // signed units over all units, as the file computes each plaza (cuts parsed
+  // before it carried the counts fall back to a sales-weighted average)
+  const avFile = T.avance != null;
+  const avP = avFile ? T.avance : activas.reduce((a,e)=>a+(e.avance||0)*e.v.ventas,0) / (activas.reduce((a,e)=>a+e.v.ventas,0)||1);
   $('edKpis').innerHTML = [
     {lab:'Ventas de vida', val:fx(T.ventas,0), u:'mdp', cls:'blue', sub:`${activas.length} etapas con ventas`},
     {lab:'Margen bruto', val:pc(r(T,'margen_bruto')), sub:`${fx(T.margen_bruto,0)} mdp`},
     {lab:'EBIT', val:pc(r(T,'ebit')), sub:`${fx(T.ebit,0)} mdp`},
     {lab:'UAIR', val:pc(r(T,'uair')), cls:T.uair<0?'bad':'good', sub:`${fx(T.uair,0)} mdp antes de impuestos`},
-    {lab:'Avance en firmas', val:pc(avP,0), sub:'ponderado por ventas de cada etapa'},
+    {lab:'Avance en firmas', val:pc(avP,0), sub: avFile ? `${Math.round(T.firmas).toLocaleString('es-MX')} de ${Math.round(T.unidades).toLocaleString('es-MX')} unidades firmadas, todas las etapas` : 'ponderado por ventas de las etapas con ventas'},
     {lab:'Etapas bajo el límite rojo', val:String(activas.filter(e => tono('uair', r(e.v,'uair'))==='bad').length), u:`de ${activas.length}`, cls:'bad',
      sub:`UAIR por debajo del ${pc((U.uair||{}).rojo,0)} que Ranman marca en rojo · ${etapas.length-activas.length} preoperativas sin ventas`},
   ].map(kpiHTML).join('');

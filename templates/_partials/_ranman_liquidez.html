@@ -90,6 +90,7 @@
       <div class="card-head" style="padding:22px 22px 0;"><div><div class="card-title">Cada coto</div>
         <div class="card-sub">Cuándo empieza a liberar y cuánto libera a diciembre de 2035 en cada versión. Los de saldo final negativo no liberan.</div></div></div>
       <div class="table-scroll" style="border:none;border-top:1px solid var(--mq-line);border-radius:0;"><table class="data-table lt" id="rl-cotos"></table></div>
+      <div class="rl-note" id="rl-cotoNota" style="padding:10px 22px 0;"></div>
       <div class="rl-note" id="rl-notas" style="padding:0 22px 20px;"></div>
     </section>
   </div>
@@ -129,7 +130,7 @@ if (LN) (function(){
   if (dias > 21) $('stale').innerHTML = `<div class="warnbox"><span>⚑</span><div>La última Necesidad de Capital es del ${fecha(LN.asOf)}, hace ${Math.round(dias/7)} semanas. Ranman la manda cada semana; las de después no han llegado.</div></div>`;
   $('kpis').innerHTML = [
     {lab:'Pagos de la semana', val:fx(pagos), u:'mdp', cls:'blue', sub:`${LN.cubiertos.length + nec.length} proyectos y plazas`},
-    {lab:'Saldo en bancos', val:fx(saldos), u:'mdp', sub:`cubre ${pc(saldos ? Math.min(pagos/saldos, 9.99) : null)} en pagos`},
+    {lab:'Saldo en bancos', val:fx(saldos), u:'mdp', sub:`los pagos de la semana se llevan ${pc(saldos ? Math.min(pagos/saldos, 9.99) : null)}`},
     {lab:'Holgura después de pagar', val:fx(T.despues), u:'mdp', cls:'good', sub:'de los proyectos que se cubren solos'},
     {lab:'Necesidad de préstamo', ...kpiMdp(falta), cls:falta < -0.00005 ? 'bad' : '', sub: nec.length ? `${nec.length} proyecto${nec.length===1?'':'s'}: ${nec.map(x => x.n).slice(0,3).join(', ')}${nec.length>3?'…':''}` : 'ningún proyecto la necesita'},
   ].map(kpiHTML).join('');
@@ -194,7 +195,16 @@ if (LR) (function(){
     MQC.area($('chReP'), 250, idp.map(i => mes(P.meses[i])), filas.map((f,k) => ({name:f.n, color:MQC.CAT[k % 8], vals:idp.map(i => f.v[ver][i])})),
       {total:'Total', yFmt: v => fx(v, 0), xTicks:8, tooltip:{callbacks:{label: c => `${c.dataset.label}: ${fx(c.raw, 1)} mdp`}}});
     $('lgReP').innerHTML = filas.map((f,k) => `<span>${sw(MQC.CAT[k % 8])}${esc(f.n)}</span>`).join('');
-    $('nReP').textContent = `Versión ${ver.slice(1)}: lo que libera cada desarrollo, acumulado.`;
+    // where a version's per-development blocks don't add up to its recoverable
+    // series month by month (V3 shows what is available before the file's
+    // «Excedente 10 MDP»), say so instead of letting the two charts disagree
+    const sumP = idp.map(i => filas.reduce((a,f) => a + (f.v[ver][i]||0), 0));
+    const sv = S.v[ver] || [];
+    const bruto = idp.some((i,k) => S.meses[i] === P.meses[i] && Math.abs(sumP[k] - (sv[i]||0)) > 0.5);
+    $('nReP').textContent = bruto
+      ? `Versión ${ver.slice(1)}: lo disponible en cada desarrollo, acumulado, antes de lo que el archivo cuenta como recuperable («Excedente 10 MDP», la gráfica de la izquierda). Por eso va por encima hasta que las dos coinciden en 2035.`
+      : `Versión ${ver.slice(1)}: lo que libera cada desarrollo, acumulado.`;
+    $('cotoNota').textContent = bruto ? `En la versión ${ver.slice(1)}, «desde» y «libera» son lo disponible por coto, antes del excedente que el archivo cuenta como recuperable.` : '';
 
     // each coto
     const cotos = LR.cotos.slice().sort((a,b) => ((a.v[ver]||{}).desde || '9999') < ((b.v[ver]||{}).desde || '9999') ? -1 : 1);

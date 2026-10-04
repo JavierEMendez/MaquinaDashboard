@@ -70,7 +70,7 @@
       <div class="card-head"><div><div class="card-title">Uso de cada línea</div>
         <div class="card-sub">Lo dispuesto (neto de devoluciones), lo pagado con la venta de activos y lo que queda por disponer, como lo declara el archivo.</div></div></div>
       <div id="rq-lineas"></div>
-      <div class="rq-legend"><span><i class="rq-sw" style="background:var(--mq-c1)"></i>Ocupado</span><span><i class="rq-sw" style="background:var(--mq-c4)"></i>Reservado</span><span><i class="rq-sw" style="background:var(--mq-good)"></i>Disponible</span></div>
+      <div class="rq-legend"><span><i class="rq-sw" style="background:var(--mq-c1)"></i>Ocupado (límite − por disponer)</span><span><i class="rq-sw" style="background:var(--mq-c4)"></i>Reservado</span><span><i class="rq-sw" style="background:var(--mq-good)"></i>Disponible</span></div>
     </section>
     <section class="card rq-col6">
       <div class="card-head"><div><div class="card-title">Disposiciones y pagos por mes</div>
@@ -177,14 +177,14 @@ if (QC) (function(){
     const tot = lim || (l.dispuesto + por) || 1;
     const seg = [[ocup, '--mq-c1', 'Ocupado'], [res, '--mq-c4', 'Reservado'], [disp, '--mq-good', 'Disponible']].filter(s => s[0] > 0.0005);
     const ventas = l.movs.filter(m => m.pago && !m.devolucion).map(m => (m.n.match(/\(([^)]+)\)/) || [])[1]).filter(Boolean);
-    return `<div class="linea"><div class="top"><span class="nm">${esc(l.nombre)}<span>${esc(l.titulo)}</span></span><span class="lim">límite ${lim ? fx(lim, 0)+' mdp' : '—'}</span></div>
+    return `<div class="linea"><div class="top"><span class="nm">${esc(l.nombre)}<span>${esc(l.titulo)}</span></span><span class="lim" ${l.limite_otro ? `title="El título de la tabla de disposiciones dice ${fx(l.limite_otro, 0)} mdp; el de la tabla de ministraciones y el Cuadro de Riesgos, ${fx(lim, 0)}."` : ''}>límite ${lim ? fx(lim, 0)+' mdp' : '—'}${l.limite_otro ? ` <span class="tag">otra tabla dice ${fx(l.limite_otro, 0)}</span>` : ''}</span></div>
       <div class="trk" role="img" aria-label="${esc(l.nombre)}: ${seg.map(s => s[2]+' '+fx(s[0])).join(', ')}">${seg.map(s => `<i style="width:${(s[0]/tot*100).toFixed(2)}%;background:var(${s[1]})" title="${s[2]}: ${fx(s[0])} mdp"></i>`).join('')}</div>
       <dl><div><dt>Dispuesto</dt><dd>${fx(l.dispuesto)}</dd></div>
-        <div><dt>Pagado con ventas</dt><dd>${fx(l.pagado)}</dd></div>
+        <div><dt>Pagado a la línea</dt><dd>${fx(l.pagado)}</dd></div>
         <div><dt>Por disponer</dt><dd>${fx(por)}</dd></div>
         ${res > 0.0005 ? `<div><dt>Reservado</dt><dd title="${esc((l.reservado||[]).map(r => r.n).join(', '))}">${fx(res)}</dd></div>` : ''}
         <div><dt>Disponible</dt><dd style="color:var(--mq-good)">${fx(disp)}</dd></div></dl>
-      ${(l.reservado||[]).length || ventas.length ? `<div class="rq-note">${(l.reservado||[]).map(r => `Reservado para ${esc(r.n)}: ${fx(r.v)} mdp.`).join(' ')} ${ventas.length ? 'Pagos con la venta de ' + esc(ventas.join(', ')) + '.' : ''}</div>` : ''}</div>`;
+      ${(l.reservado||[]).length || ventas.length ? `<div class="rq-note">${(l.reservado||[]).map(r => `Reservado para ${esc(r.n)}: ${fx(r.v)} mdp.`).join(' ')} ${ventas.length ? `De lo pagado, ${l.pagado_ventas != null ? fx(l.pagado_ventas) + ' mdp vinieron' : 'una parte vino'} de la venta de ${esc(ventas.join(', '))}.` : ''}</div>` : ''}</div>`;
   }).join('');
 
   // draws and payments by month, both lines together

@@ -232,6 +232,21 @@ CONCEPTOS = [('ventas', 'Ventas'), ('terreno', 'Terreno'), ('permisos', 'Permiso
              ('uair', 'UAIR')]
 
 
+_COCIENTE = re.compile(r'^=\s*\(?([\d\s+.]+)\)?\s*/\s*\(?([\d\s+.]+)\)?\s*$')
+
+
+def _cociente(formula):
+    """'=84/201' or '=(110+155)/(110+159)' -> (firmas, unidades); None for anything else."""
+    m = _COCIENTE.match(str(formula or '').strip())
+    if not m:
+        return None
+    try:
+        a, b = (sum(float(x) for x in g.split('+') if x.strip()) for g in m.groups())
+    except ValueError:
+        return None
+    return (a, b) if b > 0 else None
+
+
 def parse_edo_resultados(file_bytes: bytes, filename: str, as_of: str):
     wb = openpyxl.load_workbook(io.BytesIO(file_bytes), read_only=True, data_only=True)
     try:
@@ -241,6 +256,15 @@ def parse_edo_resultados(file_bytes: bytes, filename: str, as_of: str):
         filas = list(ws.iter_rows(min_row=1, max_row=120, max_col=60, values_only=True))
     finally:
         wb.close()
+    # «Avance en firmas» is typed as a quotient of counts («=84/201», the plaza
+    # «=(110+155+…)/(110+155+…)»): the formulas give the signed units and the
+    # units of each etapa, so the total can be worked out the file's own way
+    wf = openpyxl.load_workbook(io.BytesIO(file_bytes), read_only=True, data_only=False)
+    try:
+        hf = _hoja(wf, 'edo resultados')
+        formulas = list(hf.iter_rows(min_row=1, max_row=120, max_col=60, values_only=True)) if hf is not None else []
+    finally:
+        wf.close()
     hr = next((i for i, r in enumerate(filas) if len(r) > 1 and _norm(r[1]) == 'estado de resultados'), None)
     if hr is None:
         raise ValueError("%s: no header row with 'Estado de Resultados' in column B" % filename)
@@ -277,6 +301,9 @@ def parse_edo_resultados(file_bytes: bytes, filename: str, as_of: str):
         return {k: round((_num(r[j]) or 0.0) / 1e6, 3) for k, j in col_abs.items()}
 
     plazas, grupo, del_archivo = [], [], None
+    fila_de = {}
+    for i, r in enumerate(filas):
+        fila_de[id(r)] = i
     for r in filas[hr + 1:]:
         nombre = r[1] if len(r) > 1 else None
         if nombre is None or not str(nombre).strip():
@@ -292,6 +319,13 @@ def parse_edo_resultados(file_bytes: bytes, filename: str, as_of: str):
     if del_archivo is None:
         raise ValueError("%s: no grand-total row after the last plaza" % filename)
 
+    def conteo(r):
+        if col_avance is None:
+            return None
+        i = fila_de.get(id(r))
+        f = formulas[i][col_avance] if i is not None and i < len(formulas) and col_avance < len(formulas[i]) else None
+        return _cociente(f)
+
     salida, ok, lines = [], True, []
     for g in plazas:
         sub, etapas = g[-1], g[:-1]
@@ -300,16 +334,25 @@ def parse_edo_resultados(file_bytes: bytes, filename: str, as_of: str):
         for r in etapas:
             v = valores(r)
             av = _num(r[col_avance]) if col_avance is not None else None
+            c = conteo(r)
             items.append({'n': str(r[1]).strip(), 'k': clave_desarrollo(r[1]),
                           'avance': round(av, 4) if av is not None else None,
+                          'firmas': c[0] if c else None, 'unidades': c[1] if c else None,
                           'pre': (str(r[0] or '').strip() == '*') or (v['ventas'] == 0), 'v': v})
         for k in ('ventas', 'uair'):
             dif = abs(sum(e['v'][k] for e in items) - tot[k]) if items else 0.0
             ok &= dif < 0.05
             lines.append('%-22s %-6s etapas vs subtotal: dif %.3f mdp' % (str(sub[1]).strip()[:22], k, dif))
+        cs = conteo(sub)
         salida.append({'n': str(sub[1]).strip(), 'v': tot, 'etapas': items,
-                       'avance': round(_num(sub[col_avance]) or 0, 4) if col_avance is not None else None})
+                       'avance': round(_num(sub[col_avance]) or 0, 4) if col_avance is not None else None,
+                       'firmas': cs[0] if cs else None, 'unidades': cs[1] if cs else None})
     total = {k: round(sum(p['v'][k] for p in salida), 3) for k, _ in CONCEPTOS}
+    # signed units over all units, over every plaza — the plaza rows' own definition
+    if salida and all(p['unidades'] for p in salida):
+        fi, un = sum(p['firmas'] for p in salida), sum(p['unidades'] for p in salida)
+        total['avance'] = round(fi / un, 4)
+        total['firmas'], total['unidades'] = fi, un
     for k in ('ventas', 'margen_bruto', 'ebit', 'uair'):
         dif = abs(total[k] - del_archivo[k])
         ok &= dif < 0.05

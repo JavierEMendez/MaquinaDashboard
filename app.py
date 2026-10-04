@@ -1046,7 +1046,10 @@ def _ranman_import_file(name, raw, periodo=None, user="admin", ruta=None):
                 # Reservas Territoriales and Reinversión carry no date: the month folder dates them
                 as_of = _fin_mes(periodo)
                 res["as_of"] = as_of
-            if not as_of:
+            if not as_of and ranman_package.ENTREGABLE[kind][4] is None:
+                res["message"] = ("This file carries no date in its name; it is dated by its month folder. "
+                                  "Upload it by choosing the whole month folder on the Data tab, or let the sync send it.")
+            elif not as_of:
                 res["message"] = "Could not read the cut date from the file name."
             else:
                 data, ok, lines = _RANMAN_PARSERS[kind](raw, name, as_of)

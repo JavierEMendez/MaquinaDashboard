@@ -240,6 +240,8 @@ function portafolio(){
     return {k, D, es, p: suma(es, e => e.esc.proforma), c: suma(es, e => e.esc.cierre)}; }).filter(r => r.es.length && r.c);
   // a project under study (a model in a folder of its own) is listed, not added up
   const filas = todasF.filter(r => !r.D.estudio), estudios = todasF.filter(r => r.D.estudio);
+  // the open development has no etapas left under this filter: open the first one that does
+  if (todasF.length && !todasF.some(r => r.k === sel.k)) { sel.k = (filas[0] || estudios[0]).k; sel.etapa = ''; }
   const tot = (pick) => { const v = {}; let u = 0, conU = true;
     filas.forEach(r => { const a = pick(r); if (!a) return; CK.forEach(k => v[k] = (v[k]||0) + (a.v[k]||0)); if (a.u == null) conU = false; else u += a.u; });
     return {v, u: conU ? u : null}; };
@@ -299,8 +301,10 @@ const sel = {k: null, etapa: '', a: recall('a') || 'proforma', b: recall('b') ||
 // and at last year's close, and any other current model with the development
 function columnas(){
   const D = BP.desarrollos[sel.k], porN = estatusPorNombre(D);
-  const mismo = e => sel.etapa ? compacto(e.n) === compacto(sel.etapa) : pasa(porN[compacto(e.n)] || {estatus: null});
-  const hoy = D.etapas.filter(e => sel.etapa ? e.n === sel.etapa : pasa(e));
+  // with no etapa left under the filter (no development has one), all of them
+  const vacio = !sel.etapa && !D.etapas.some(pasa);
+  const mismo = e => sel.etapa ? compacto(e.n) === compacto(sel.etapa) : (vacio || pasa(porN[compacto(e.n)] || {estatus: null}));
+  const hoy = D.etapas.filter(e => sel.etapa ? e.n === sel.etapa : (vacio || pasa(e)));
   const fechas = (es, cual) => { const i = es.map(e => e.fechas[cual][0]).filter(Boolean).sort(), t = es.map(e => e.fechas[cual][1]).filter(Boolean).sort();
     return {ini: i[0] || null, fin: t[t.length-1] || null, todas: es.every(e => e.fechas[cual][1])}; };
   // one etapa of today's BP -> its statement in an earlier cut or another model (matched by name)
