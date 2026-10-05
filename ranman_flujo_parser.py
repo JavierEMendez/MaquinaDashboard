@@ -42,7 +42,7 @@ GRUPOS = [('op', 'Operativos', 'operativos'),
           ('in', 'Inversión', 'inversion'),
           ('or', 'Origen', 'origen')]
 MILES = 1000.0
-RENOMBRES = {'Crédito Valoran': 'Crédito VRM'}   # how each line is called in the tablero
+RENOMBRES = {'Crédito Valoran': 'Crédito VRM', 'Creedito Valoran': 'Crédito VRM'}   # how each line is called in the tablero
 
 PLP_R0, PLP_R1 = 4, 82
 COLS_MES = range(3, 147)      # C .. EP
@@ -96,11 +96,15 @@ def _es_bandera(v):
 
 def estructura(sv):
     """Where the blocks of this month's Resumen are: {'grupos': {cod: [rows]},
-    'aplic', 'origen', 'flujo', 'deuda': [rows], 'saldo'}. Raises ValueError
-    when a block the tablero needs is not there."""
+    'aplic', 'origen', 'flujo', 'deuda': [rows], 'saldo', 'fijas': {rows}}.
+    `fijas` are rows inside a group with nothing in column A: before mid-2025 a
+    line with no switch is always on (MAQUINA, Vento); they also catch the
+    group's sub-headers, which lee_resumen drops for carrying no amounts.
+    Raises ValueError when a block the tablero needs is not there."""
     abre = {clave: cod for cod, _, clave in GRUPOS}
     grupos = {cod: [] for cod, _, _ in GRUPOS}
-    out = {'grupos': grupos, 'aplic': None, 'origen': None, 'flujo': None, 'deuda': [], 'saldo': None}
+    out = {'grupos': grupos, 'aplic': None, 'origen': None, 'flujo': None, 'deuda': [], 'saldo': None,
+           'fijas': set()}
     actual, en_deuda = None, False
     for r in range(1, (sv.max_row or 0) + 1):
         t = _norm(_etiqueta(sv, r))
@@ -109,6 +113,8 @@ def estructura(sv):
         if en_deuda:
             if t.startswith('saldo (necesidades)'):
                 out['saldo'], en_deuda = r, False
+            elif t == 'deuda total':          # before mid-2025 the block closes with its total
+                en_deuda = False
             else:
                 out['deuda'].append(r)
             continue
@@ -133,6 +139,10 @@ def estructura(sv):
             continue
         if actual and _es_bandera(sv.cell(r, 1).value):
             grupos[actual].append(r)
+        elif actual and sv.cell(r, 1).value in (None, '') and not out['origen']:
+            # (a later «Origen» block, Aug-2025 rows 91+, is not the tablero's)
+            grupos[actual].append(r)
+            out['fijas'].add(r)
     falta = [n for n, k in (('Total Aplicación', 'aplic'), ('Total Origen', 'origen'),
                             ('Flujo Ranman / Saldo (Necesidades)', 'flujo')) if not out[k]]
     falta += [n for cod, n, _ in GRUPOS if not grupos[cod]]
@@ -145,8 +155,10 @@ def lee_resumen(wf, wv, as_of: str) -> dict:
     sf, sv, flv = hoja(wf, 'Resumen'), hoja(wv, 'Resumen'), hoja(wv, 'Flujo')
     E = estructura(sv)
 
-    # row 1 carries the monthly block and then yearly columns: cut where dates go back
-    hdr = list(sv.iter_rows(min_row=1, max_row=1, max_col=133, values_only=True))[0]
+    # row 1 (row 2 in Jan-2025, under the scenario switch) carries the monthly
+    # block and then yearly columns: cut where dates go back
+    hdr = max(sv.iter_rows(min_row=1, max_row=4, max_col=133, values_only=True),
+              key=lambda f: sum(isinstance(c, dt.datetime) for c in f))
     fe = [(j, c) for j, c in enumerate(hdr) if isinstance(c, dt.datetime)]
     for k in range(1, len(fe)):
         if fe[k][1] < fe[k - 1][1]:
@@ -154,6 +166,8 @@ def lee_resumen(wf, wv, as_of: str) -> dict:
             break
     COLS = [j + 1 for j, _ in fe]
     MESES = [c.strftime('%Y-%m') for _, c in fe]
+    if not COLS:
+        raise ValueError('Resumen: no encuentro los meses (fechas en las primeras filas) — ¿cambió el formato de la hoja?')
 
     # the series starts at the corte's month: earlier columns come as zeros
     corte = as_of[:7]
@@ -224,9 +238,15 @@ def lee_resumen(wf, wv, as_of: str) -> dict:
             lab = _etiqueta(sv, r)
             if not lab:
                 continue
-            serie = [round(base(r, c) / MILES, 2) for c in COLS]
+            fija = r in E['fijas']
+            if fija and not any(fila(r)):      # a sub-header, or an always-on line with nothing
+                continue
+            # switched off, but the file counts it anyway (Jan-2025 Azhala at 0 is in
+            # its total, in some months or all): on, with the file's own values
+            suelto = sv.cell(r, 1).value == 0 and any(fila(r))
+            serie = fila(r) if suelto else [round(base(r, c) / MILES, 2) for c in COLS]
             lineas.append({'r': r, 'g': cod, 'n': lab,
-                           'on': bool(sv.cell(r, 1).value not in (0, None)),
+                           'on': fija or suelto or sv.cell(r, 1).value != 0,
                            'v': serie,
                            'hay': any(abs(x) > 0.005 for x in serie)})
 
@@ -242,11 +262,20 @@ def lee_resumen(wf, wv, as_of: str) -> dict:
                     'flujo': fila(E['flujo'])}}
 
 
+def _cols_plp(ws):
+    """(label column, month columns, year columns) of the PLP sheet: B, C..EP and
+    KG..KR, one further right in Mar–Apr 2025, which inserted a column before
+    the labels (months from D)."""
+    d = next((d for d in (0, 1, 2) if isinstance(ws.cell(3, 3 + d).value, dt.datetime)), 0)
+    return 2 + d, [c + d for c in COLS_MES], [c + d for c in COLS_ANIO]
+
+
 # ── sheet «PLP»: income statement and cash flow, rows 4 to 82 ───────────────
 def lee_plp(wv, as_of: str) -> dict:
     ws = hoja(wv, 'PLP')
-    meses = [ws.cell(3, c).value for c in COLS_MES]
-    anios = [ws.cell(3, c).value for c in COLS_ANIO]
+    CE, CM, CA = _cols_plp(ws)
+    meses = [ws.cell(3, c).value for c in CM]
+    anios = [ws.cell(3, c).value for c in CA]
     if not all(isinstance(m, dt.datetime) for m in meses):
         raise ValueError('La hoja PLP no trae fechas en C3:EP3. ¿Se movieron las columnas?')
 
@@ -257,11 +286,11 @@ def lee_plp(wv, as_of: str) -> dict:
 
     filas = []
     for r in range(PLP_R0, PLP_R1 + 1):
-        et = ws.cell(r, 2).value
+        et = ws.cell(r, CE).value
         if et is None:
             filas.append({'r': r, 'sep': 1})
             continue
-        fmt = ws.cell(r, 3).number_format or ''
+        fmt = ws.cell(r, CE + 1).number_format or ''
         t = 'pct' if '%' in fmt else ('cuenta' if r in FILAS_CUENTA else 'mdp')
 
         def val(c, t=t, r=r):
@@ -270,8 +299,8 @@ def lee_plp(wv, as_of: str) -> dict:
                 return None
             return round(v / 1000, 2) if t == 'mdp' else (round(v, 4) if t == 'pct' else round(v))
         f = {'r': r, 'n': str(et).strip(), 'niv': ws.row_dimensions[r].outline_level or 0, 't': t,
-             'a': [val(c) for c in COLS_ANIO],
-             'm': [val(list(COLS_MES)[i]) for i in idx]}
+             'a': [val(c) for c in CA],
+             'm': [val(CM[i]) for i in idx]}
         if ws.row_dimensions[r].hidden:
             f['plg'] = 1
         filas.append(f)
@@ -469,27 +498,28 @@ def lee_proyectos(wv, as_of: str) -> dict:
     # the PLP sheet's per-development rows: sales under «Ventas Totales» (row 7)
     # and the «UAIR por Proyecto» block below the cash flow
     ws = hoja(wv, 'PLP')
-    meses_plp = [ws.cell(3, c).value for c in COLS_MES]
+    CE, CM, CA = _cols_plp(ws)
+    meses_plp = [ws.cell(3, c).value for c in CM]
     imp = [i for i, m in enumerate(meses_plp) if isinstance(m, dt.datetime) and m.year == a0]
     num = lambda v: v if isinstance(v, (int, float)) else None
 
     def fila(r):
         f = lambda c: None if num(ws.cell(r, c).value) is None else round(num(ws.cell(r, c).value) / MILES, 2)
-        et = str(ws.cell(r, 2).value).strip()
-        return {'n': et, 'k': clave_desarrollo(et), 'a': [f(c) for c in COLS_ANIO],
-                'm': [f(list(COLS_MES)[i]) for i in imp]}
+        et = str(ws.cell(r, CE).value).strip()
+        return {'n': et, 'k': clave_desarrollo(et), 'a': [f(c) for c in CA],
+                'm': [f(CM[i]) for i in imp]}
     ventas, uair, r = [], [], 8
-    while r < 30 and str(ws.cell(r, 2).value or '').strip() not in ('', 'Costo de Ventas'):
+    while r < 30 and str(ws.cell(r, CE).value or '').strip() not in ('', 'Costo de Ventas'):
         ventas.append(fila(r)); r += 1
-    r0 = next((r for r in range(83, 130) if str(ws.cell(r, 2).value or '').strip() == 'UAIR por Proyecto'), None)
+    r0 = next((r for r in range(83, 130) if str(ws.cell(r, CE).value or '').strip() == 'UAIR por Proyecto'), None)
     total_uair = None
     if r0:
         total_uair = fila(r0 + 1)
         r = r0 + 2
-        while r < r0 + 40 and str(ws.cell(r, 2).value or '').strip() not in ('', 'Validación'):
+        while r < r0 + 40 and str(ws.cell(r, CE).value or '').strip() not in ('', 'Validación'):
             uair.append(fila(r)); r += 1
     return {'asOf': as_of, 'anios': anios, 'meses': [meses[i] for i in im], 'proyectos': proyectos,
-            'plp': {'anios': [int(ws.cell(3, c).value) for c in COLS_ANIO], 'ventas': ventas, 'uair': uair,
+            'plp': {'anios': [int(ws.cell(3, c).value) for c in CA], 'ventas': ventas, 'uair': uair,
                     'uair_total': total_uair}}
 
 
