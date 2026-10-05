@@ -97,7 +97,8 @@
             {% if valuation.model == 'sponsor' %}
               Sponsor model · FRE {{ fin.fre | num }} {{ c.value_unit }} × {{ '%.0f'|format(fin.fre_multiple) }} = {{ valuation.fre_value | num }} {{ c.value_unit }} + promote PV {{ valuation.promote_pv | money }}{% if fre_basis %}<br><span style="font-size:11px;">FRE derived from the Operating Budget — {{ fre_basis }}. Not editable.</span>{% endif %}
             {% else %}
-              {{ valuation.equity | num }} {{ c.value_unit }} equity · EV {{ valuation.ev | num }} {{ c.value_unit }} ({{ '%.1f'|format(fin.ebitda_multiple) }}× EBITDA) − debt {{ fin.total_debt | num }} {{ c.value_unit }}
+              {{ valuation.equity | num }} {{ c.value_unit }} equity · EV {{ valuation.ev | num }} {{ c.value_unit }} ({{ '%.1f'|format(fin.ebitda_multiple) }}× EBITDA) − {{ 'net debt' if ebitda_basis else 'debt' }} {{ fin.total_debt | num }} {{ c.value_unit }}
+              {% if ebitda_basis %}<br><span style="font-size:11px;">EBITDA {{ ebitda_basis.ebitda | num }} {{ c.value_unit }} ({{ ebitda_basis.base }}) and net debt = debt {{ ebitda_basis.deuda | num }} − cash {{ (ebitda_basis.caja or 0) | num }}, from Ranman's AAA report, {{ ebitda_basis.as_of_label }}. Only the multiple is an input.</span>{% endif %}
             {% endif %}
           </div>
         </div>
@@ -120,10 +121,11 @@
         <form class="editor-body" method="POST" action="{{ url_for('update_financials', slug=c.slug) }}">
           <div class="grid grid-3" style="gap:10px;">
             <div><label class="fld-label">Valuation model</label><select class="input" name="valuation_model"><option value="ebitda" {{ 'selected' if fin.valuation_model != 'sponsor' }}>EV / EBITDA</option><option value="sponsor" {{ 'selected' if fin.valuation_model == 'sponsor' }}>Sponsor (FRE + carry)</option></select></div>
-            <div><label class="fld-label">EBITDA ({{ c.value_unit }})</label><input class="input" type="number" step="any" name="ebitda" value="{{ fin.ebitda }}"></div>
-            <div><label class="fld-label">EBITDA margin (%)</label><input class="input" type="number" step="any" name="ebitda_margin" value="{{ fin.ebitda_margin }}"></div>
+            {% set ro = ' readonly title="From the AAA report"' if ebitda_basis else '' %}
+            <div><label class="fld-label">EBITDA ({{ c.value_unit }}){{ ' · from the AAA' if ebitda_basis }}</label><input class="input" type="number" step="any" name="ebitda" value="{{ fin.ebitda }}"{{ ro | safe }}></div>
+            <div><label class="fld-label">EBITDA margin (%){{ ' · from the AAA' if ebitda_basis }}</label><input class="input" type="number" step="any" name="ebitda_margin" value="{{ fin.ebitda_margin }}"{{ ro | safe }}></div>
             <div><label class="fld-label">EBITDA multiple (x)</label><input class="input" type="number" step="any" name="ebitda_multiple" value="{{ fin.ebitda_multiple }}"></div>
-            <div><label class="fld-label">Total debt ({{ c.value_unit }})</label><input class="input" type="number" step="any" name="total_debt" value="{{ fin.total_debt }}"></div>
+            <div><label class="fld-label">{{ 'Net debt' if ebitda_basis else 'Total debt' }} ({{ c.value_unit }}){{ ' · from the AAA' if ebitda_basis }}</label><input class="input" type="number" step="any" name="total_debt" value="{{ fin.total_debt }}"{{ ro | safe }}></div>
             {% if fre_basis %}
             <div><label class="fld-label">FRE ({{ c.value_unit }})</label>
               <input class="input" type="number" value="{{ fin.fre | round(1) }}" disabled title="Derived from the Operating Budget — {{ fre_basis }}">
@@ -612,9 +614,10 @@
         <div class="kpi"><div class="kpi-top"><span class="kpi-label">EBITDA</span></div><div class="kpi-value {{ 'neg' if fin.ebitda < 0 }}">{{ fin.ebitda | num }} <span style="font-size:13px;color:var(--mq-subtle);">{{ c.value_unit }}</span></div></div>
         <div class="kpi"><div class="kpi-top"><span class="kpi-label">EBITDA Margin</span></div><div class="kpi-value {{ 'neg' if fin.ebitda_margin < 0 }}">{{ '%.1f'|format(fin.ebitda_margin) }}%</div></div>
         <div class="kpi"><div class="kpi-top"><span class="kpi-label">EBITDA Multiple</span></div><div class="kpi-value">{{ '%.1f'|format(fin.ebitda_multiple) }}x</div></div>
-        <div class="kpi"><div class="kpi-top"><span class="kpi-label">Total Debt</span></div><div class="kpi-value">{{ fin.total_debt | num }} <span style="font-size:13px;color:var(--mq-subtle);">{{ c.value_unit }}</span></div></div>
+        <div class="kpi"><div class="kpi-top"><span class="kpi-label">{{ 'Net Debt' if ebitda_basis else 'Total Debt' }}</span></div><div class="kpi-value">{{ fin.total_debt | num }} <span style="font-size:13px;color:var(--mq-subtle);">{{ c.value_unit }}</span></div>{% if ebitda_basis %}<div class="kpi-foot"><span class="kpi-sub">debt {{ ebitda_basis.deuda | num }} − cash {{ (ebitda_basis.caja or 0) | num }}</span></div>{% endif %}</div>
         {% endif %}
       </div>
+      {% if ebitda_basis %}<p class="subtle" style="font-size:12px;margin:10px 0 0;">EBITDA ({{ ebitda_basis.base }}), its margin over sales of the same months, and net debt come from Ranman's AAA report, {{ ebitda_basis.as_of_label }}{% if ebitda_basis.nd_aaa is not none %}. The AAA's own net debt / EBITDA ({{ '%.2f'|format(ebitda_basis.nd_aaa) }}×) annualises the year to date instead{% endif %}.</p>{% endif %}
       {% if valuation %}
       <div class="divider"></div>
       {% if valuation.model == 'sponsor' %}
@@ -628,7 +631,7 @@
         <div><div style="font-size:11px;text-transform:uppercase;letter-spacing:0.12em;color:var(--mq-subtle);font-weight:700;">Equity Value</div>
           <div style="font-family:var(--font-num);font-size:21px;font-weight:600;color:var(--mq-ink-2);">{{ valuation.equity | num }} {{ c.value_unit }}</div>
           <div class="subtle" style="font-size:12px;">≈ {{ valuation.value_usd | money }} USD</div></div>
-        <div class="subtle" style="font-size:12px;text-align:right;">EV {{ valuation.ev | num }} {{ c.value_unit }} ({{ '%.1f'|format(fin.ebitda_multiple) }}× EBITDA)<br>− debt {{ fin.total_debt | num }} {{ c.value_unit }}</div>
+        <div class="subtle" style="font-size:12px;text-align:right;">EV {{ valuation.ev | num }} {{ c.value_unit }} ({{ '%.1f'|format(fin.ebitda_multiple) }}× EBITDA)<br>− {{ 'net debt' if ebitda_basis else 'debt' }} {{ fin.total_debt | num }} {{ c.value_unit }}</div>
       </div>
       {% endif %}
       {% endif %}
@@ -638,10 +641,11 @@
         <form class="editor-body" method="POST" action="{{ url_for('update_financials', slug=c.slug) }}">
           <div class="grid grid-3" style="gap:10px;">
             <div><label class="fld-label">Valuation model</label><select class="input" name="valuation_model"><option value="ebitda" {{ 'selected' if fin.valuation_model != 'sponsor' }}>EV / EBITDA</option><option value="sponsor" {{ 'selected' if fin.valuation_model == 'sponsor' }}>Sponsor (FRE + carry)</option></select></div>
-            <div><label class="fld-label">EBITDA ({{ c.value_unit }})</label><input class="input" type="number" step="any" name="ebitda" value="{{ fin.ebitda }}"></div>
-            <div><label class="fld-label">EBITDA margin (%)</label><input class="input" type="number" step="any" name="ebitda_margin" value="{{ fin.ebitda_margin }}"></div>
+            {% set ro = ' readonly title="From the AAA report"' if ebitda_basis else '' %}
+            <div><label class="fld-label">EBITDA ({{ c.value_unit }}){{ ' · from the AAA' if ebitda_basis }}</label><input class="input" type="number" step="any" name="ebitda" value="{{ fin.ebitda }}"{{ ro | safe }}></div>
+            <div><label class="fld-label">EBITDA margin (%){{ ' · from the AAA' if ebitda_basis }}</label><input class="input" type="number" step="any" name="ebitda_margin" value="{{ fin.ebitda_margin }}"{{ ro | safe }}></div>
             <div><label class="fld-label">EBITDA multiple (x)</label><input class="input" type="number" step="any" name="ebitda_multiple" value="{{ fin.ebitda_multiple }}"></div>
-            <div><label class="fld-label">Total debt ({{ c.value_unit }})</label><input class="input" type="number" step="any" name="total_debt" value="{{ fin.total_debt }}"></div>
+            <div><label class="fld-label">{{ 'Net debt' if ebitda_basis else 'Total debt' }} ({{ c.value_unit }}){{ ' · from the AAA' if ebitda_basis }}</label><input class="input" type="number" step="any" name="total_debt" value="{{ fin.total_debt }}"{{ ro | safe }}></div>
             <div><label class="fld-label">FRE ({{ c.value_unit }})</label><input class="input" type="number" step="any" name="fre" value="{{ fin.fre }}"></div>
             <div><label class="fld-label">FRE multiple (x)</label><input class="input" type="number" step="any" name="fre_multiple" value="{{ fin.fre_multiple }}"></div>
             <div><label class="fld-label">Carry discount (0–1)</label><input class="input" type="number" step="0.01" name="carry_discount" value="{{ fin.carry_discount }}"></div>

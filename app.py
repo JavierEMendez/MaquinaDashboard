@@ -1115,6 +1115,80 @@ def load_ranman_aaa_historia():
     return ranman_aaa.historia(cortes) if cortes else None
 
 
+def _aaa_valor(data, seccion, fila, columna):
+    """One figure of an AAA cut: section id, row label prefix, column header (normalised)."""
+    s = next((x for x in (data or {}).get("secciones") or [] if x.get("id") == seccion), None)
+    if not s:
+        return None
+    f = next((r for r in s["filas"] if ranman_package._norm(r["n"]).startswith(ranman_package._norm(fila))), None)
+    cols = [ranman_package._norm(c) for c in s["cols"]]
+    j = cols.index(ranman_package._norm(columna)) if ranman_package._norm(columna) in cols else -1
+    return f["v"][j] if f and j >= 0 and j < len(f["v"]) else None
+
+
+def load_ranman_valuacion():
+    """Ranman's valuation inputs from the Reporte AAA, replacing typed placeholders:
+    EBITDA and sales over the last twelve months (this year to date + last year −
+    last year to the same month, from the cuts of that month and of December;
+    the year to date annualised when those cuts are missing), and net debt = the
+    debt table's total − the cash at the close, the same rows the Dashboard tiles
+    show. None when no AAA is loaded."""
+    try:
+        rows = db.ranman_reports_all("aaa")
+    except Exception as e:
+        app.logger.warning("ranman AAA load for valuation failed: %s", e)
+        return None
+    cortes = {str(r["as_of"])[:7]: _jl(r["data"]) for r in rows if isinstance(_jl(r["data"]), dict)}
+    if not cortes:
+        return None
+    ym = max(cortes)
+    d, y, m = cortes[ym], int(ym[:4]), int(ym[5:7])
+    ytd_e = _aaa_valor(d, "flujo", "ebitda", "acum")
+    ytd_v = _aaa_valor(d, "resultados", "ventas netas", "real acum")
+    deuda = _aaa_valor(d, "deuda", "total", "real")
+    caja = _aaa_valor(d, "flujo", "saldo ranman vivienda", "real mes")
+    if caja is None:
+        caja = _aaa_valor(d, "balance", "efectivo", "real mes")
+    if ytd_e is None or deuda is None:
+        return None
+    prev, dic = cortes.get("%d-%02d" % (y - 1, m)), cortes.get("%d-12" % (y - 1))
+    fy_e = _aaa_valor(d, "flujo", "ebitda", str(y - 1))          # the report carries last year's total
+    if fy_e is None and dic:
+        fy_e = _aaa_valor(dic, "flujo", "ebitda", "acum")
+    fy_v = _aaa_valor(dic, "resultados", "ventas netas", "real acum") if dic else None
+    pe = _aaa_valor(prev, "flujo", "ebitda", "acum") if prev else None
+    pv = _aaa_valor(prev, "resultados", "ventas netas", "real acum") if prev else None
+    mes = lambda mm, yy: "%s %02d" % (calendar.month_abbr[mm], yy % 100)
+    if m == 12:
+        ebitda, ventas, base = ytd_e, ytd_v, "full year %d" % y
+    elif fy_e is not None and pe is not None:
+        ebitda = fy_e - pe + ytd_e
+        ventas = (fy_v - pv + ytd_v) if None not in (fy_v, pv, ytd_v) else None
+        base = "last 12 months, %s–%s" % (mes(m % 12 + 1, y - 1), mes(m, y))
+    else:
+        ebitda = ytd_e * 12.0 / m
+        ventas = ytd_v * 12.0 / m if ytd_v is not None else None
+        base = "Jan–%s %d annualised" % (calendar.month_abbr[m], y)
+    neta = deuda - (caja or 0.0)
+    return {"ebitda": round(ebitda, 1), "margen": round(ebitda / ventas * 100, 1) if ventas else None,
+            "deuda": deuda, "caja": caja, "deuda_neta": round(neta, 1), "base": base,
+            "as_of": ym, "as_of_label": "%s %d" % (calendar.month_name[m], y),
+            "nd_aaa": _aaa_valor(d, "razones_deuda", "net debt", "real")}
+
+
+def _fin_ranman(fin, slug):
+    """Ranman's EBITDA, margin and debt come from its monthly AAA report; only the
+    multiple stays a typed input. total_debt carries NET debt then. Returns
+    (fin, basis); basis is None when the typed inputs stand."""
+    if not fin or slug != "ranman" or fin["valuation_model"] == "sponsor":
+        return fin, None
+    va = load_ranman_valuacion()
+    if not va:
+        return fin, None
+    return dict(fin, ebitda=va["ebitda"], total_debt=va["deuda_neta"],
+                ebitda_margin=va["margen"] if va["margen"] is not None else fin["ebitda_margin"]), va
+
+
 def load_ranman_capital_historia():
     """Week by week, for the liquidity and credit-line charts: the Necesidad de
     Capital totals and what each CCC line still had to draw. {} when neither is loaded."""
@@ -1602,7 +1676,8 @@ def portfolio():
     cur.execute("SELECT cf.*, c.value_unit, c.slug FROM company_financials cf "
                 "JOIN companies c ON c.id = cf.company_id WHERE c.archived = FALSE")
     fins = cur.fetchall(); cur.close(); conn.close()
-    nav = sum((company_valuation(fr, promote_total if fr["slug"] == "ember" else 0, rate, fr["value_unit"]) or {}).get("value_usd", 0)
+    nav = sum((company_valuation(_fin_ranman(fr, fr["slug"])[0], promote_total if fr["slug"] == "ember" else 0,
+                                 rate, fr["value_unit"]) or {}).get("value_usd", 0)
               for fr in fins)
 
     return render_template(
@@ -2031,7 +2106,7 @@ def strategy():
         hold_years = _period_years(c["hold_start_year"], c["hold_start_month"])
         target = c["target_hold_years"]
         # projected exit returns — exit at current valuation, on the target date
-        fin = load_financials(c["id"])
+        fin = _fin_ranman(load_financials(c["id"]), c["slug"])[0]
         val = company_valuation(fin, ember_promote if c["slug"] == "ember" else 0,
                                 rate, c["value_unit"])
         xr = _exit_calc(series_by_co.get(c["id"], {}), c["hold_start_year"],
@@ -2744,6 +2819,7 @@ def company(slug):
         if _f:
             fre_usd, fre_basis = _f
             fin = dict(fin, fre=_to_display(fre_usd, c["value_unit"], usd_mxn_rate()))
+    fin, ebitda_basis = _fin_ranman(fin, c["slug"])
     leverage = (fin["total_debt"] / fin["ebitda"]) if (fin and fin["ebitda"] and fin["ebitda"] > 0) else None
     valuation = company_valuation(
         fin, (ember_returns["totals"]["promote"] if ember_returns else 0),
@@ -2798,7 +2874,7 @@ def company(slug):
         valuation=valuation, cap=cap, hold=hold, exitr=exitr, fre_basis=fre_basis,
         verticals=verticals, sales=sales, ember_budget=ember_budget, polaris=polaris, ranman_debt=ranman_debt,
         ranman_flujo=ranman_flujo, ue=ue, ranman_rep=ranman_rep, ranman_pkg=ranman_pkg, ranman_hist=ranman_hist,
-        ranman_bp=ranman_bp, ranman_caphist=ranman_caphist,
+        ranman_bp=ranman_bp, ranman_caphist=ranman_caphist, ebitda_basis=ebitda_basis,
         ranman_patrones=ranman_package.patrones_js() if c["slug"] == "ranman" else None,
         ranman_enviables=sorted(ranman_package.ENVIABLES) if c["slug"] == "ranman" else None,
         ranman_omite=dict(carpeta=list(ranman_package.OMITE_CARPETA), nombre=list(ranman_package.OMITE_NOMBRE)),
