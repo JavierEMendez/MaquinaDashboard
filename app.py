@@ -182,7 +182,8 @@ def login_required(f):
 
 @app.route("/health")
 def health():
-    return "ok", 200
+    # X-Version: the commit Railway deployed, so a sync can tell the new parser is live
+    return "ok", 200, {"X-Version": (os.environ.get("RAILWAY_GIT_COMMIT_SHA") or "")[:7]}
 
 
 @app.route("/login", methods=["GET", "POST"])
@@ -1176,6 +1177,23 @@ def load_ranman_valuacion():
             "nd_aaa": _aaa_valor(d, "razones_deuda", "net debt", "real")}
 
 
+def _fin_vivo(fin, slug, value_unit, ember_budget=False):
+    """The valuation inputs that come from live reports instead of typed ones:
+    Ember's FRE from its Operating Budget, Ranman's EBITDA, margin and net debt
+    from its AAA report. The company page, the portfolio NAV and the exit returns
+    all go through here, so they show the same value. `ember_budget` is the budget
+    the caller already loaded (None if it couldn't be); False loads it here.
+    Returns (fin, fre_basis, ebitda_basis)."""
+    fre_basis = None
+    if fin and slug == "ember":
+        _f = _ember_fre(load_ember_budget() if ember_budget is False else ember_budget)
+        if _f:
+            fre_usd, fre_basis = _f
+            fin = dict(fin, fre=_to_display(fre_usd, value_unit, usd_mxn_rate()))
+    fin, ebitda_basis = _fin_ranman(fin, slug)
+    return fin, fre_basis, ebitda_basis
+
+
 def _fin_ranman(fin, slug):
     """Ranman's EBITDA, margin and debt come from its monthly AAA report; only the
     multiple stays a typed input. total_debt carries NET debt then. Returns
@@ -1676,7 +1694,7 @@ def portfolio():
     cur.execute("SELECT cf.*, c.value_unit, c.slug FROM company_financials cf "
                 "JOIN companies c ON c.id = cf.company_id WHERE c.archived = FALSE")
     fins = cur.fetchall(); cur.close(); conn.close()
-    nav = sum((company_valuation(_fin_ranman(fr, fr["slug"])[0], promote_total if fr["slug"] == "ember" else 0,
+    nav = sum((company_valuation(_fin_vivo(fr, fr["slug"], fr["value_unit"])[0], promote_total if fr["slug"] == "ember" else 0,
                                  rate, fr["value_unit"]) or {}).get("value_usd", 0)
               for fr in fins)
 
@@ -2106,7 +2124,7 @@ def strategy():
         hold_years = _period_years(c["hold_start_year"], c["hold_start_month"])
         target = c["target_hold_years"]
         # projected exit returns — exit at current valuation, on the target date
-        fin = _fin_ranman(load_financials(c["id"]), c["slug"])[0]
+        fin = _fin_vivo(load_financials(c["id"]), c["slug"], c["value_unit"])[0]
         val = company_valuation(fin, ember_promote if c["slug"] == "ember" else 0,
                                 rate, c["value_unit"])
         xr = _exit_calc(series_by_co.get(c["id"], {}), c["hold_start_year"],
@@ -2301,6 +2319,24 @@ def _ops_revenue_axis(ops):
     if not by_year and not by_month:
         return None
     return {"by_year": by_year, "by_month": by_month, "lines": lines}
+
+
+def load_ember_budget(op=None):
+    """Ember's Operating Budget as its company page shows it: EmberApps' published
+    view (the exact object Ember's /budget page renders), else the raw report with
+    the operating revenues laid over it. `op` is fetch_ember_operations(), when the
+    caller already has it. None when Ember is unreachable."""
+    _bv = fetch_ember_view("budget")
+    if _bv:
+        budget, asof = _bv
+        return dict(budget, _src="view", _src_asof=asof)
+    budget = fetch_ember_budget()
+    if budget:
+        op = op if op is not None else fetch_ember_operations()
+        if op:
+            budget = _apply_ops_revenue(budget, op.get('raw'))
+        budget["_src"] = "local"
+    return budget
 
 
 def _ember_fre(budget):
@@ -2760,16 +2796,7 @@ def company(slug):
         # exact object Ember's /budget page renders, so the two can't drift.
         # Fall back to reading the raw report + re-applying the overlay locally
         # only if the view hasn't been published (see cross-app view contract).
-        _bv = fetch_ember_view("budget")
-        if _bv:
-            ember_budget, _bv_asof = _bv
-            ember_budget = dict(ember_budget, _src="view", _src_asof=_bv_asof)
-        else:
-            ember_budget = fetch_ember_budget()
-            if ember_budget and op:
-                ember_budget = _apply_ops_revenue(ember_budget, op.get('raw'))
-            if ember_budget:
-                ember_budget["_src"] = "local"
+        ember_budget = load_ember_budget(op or {})
         # Real net from the Ember Operating Budget (firm P&L) when uploaded;
         # else fall back to the Project-Personnel ×1.10 overhead proxy.
         budget_net, budget_net_label = None, None
@@ -2811,15 +2838,7 @@ def company(slug):
                        "wrate": (ember_loans["totals"]["wrate"] if ember_loans else None)}
 
     # financial inputs (EBITDA/FRE) + leverage + two-model equity valuation
-    fin = load_financials(c["id"])
-    # Ember's FRE comes from the live Operating Budget, not a typed input.
-    fre_basis = None
-    if fin and c["slug"] == "ember":
-        _f = _ember_fre(ember_budget)
-        if _f:
-            fre_usd, fre_basis = _f
-            fin = dict(fin, fre=_to_display(fre_usd, c["value_unit"], usd_mxn_rate()))
-    fin, ebitda_basis = _fin_ranman(fin, c["slug"])
+    fin, fre_basis, ebitda_basis = _fin_vivo(load_financials(c["id"]), c["slug"], c["value_unit"], ember_budget)
     leverage = (fin["total_debt"] / fin["ebitda"]) if (fin and fin["ebitda"] and fin["ebitda"] > 0) else None
     valuation = company_valuation(
         fin, (ember_returns["totals"]["promote"] if ember_returns else 0),
