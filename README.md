@@ -129,6 +129,7 @@ Three ways in, all through `POST /api/ranman/package` (one file per request, up 
 python tools/ranman_sync.py --dry-run     # what it would send
 python tools/ranman_sync.py               # send new or changed files from the last 3 month folders
 python tools/ranman_sync.py --months 14 --only bp   # a year of BPs, for Unit economics' month-by-month view
+python tools/ranman_sync.py --months 13 --only flujo --force --match 14-10-25,15-10-25   # resend a few cuts after a parser fix
 ```
 
 It remembers what it sent (`%LOCALAPPDATA%\ranman_sync\state.json`), so a

@@ -25,6 +25,7 @@ and Python with `requests` and `openpyxl` (pip install -r requirements.txt).
     python tools/ranman_sync.py --retry error     # resend files rejected last time, even if unchanged
     python tools/ranman_sync.py --months 34 --only aaa,sabana   # load those reports' history
     python tools/ranman_sync.py --months 14 --only bp           # a year of business plans (~1 GB)
+    python tools/ranman_sync.py --months 13 --only flujo --force --match 14-10-25,15-10-25   # just those
     python tools/ranman_sync.py --root "D:\\OneDrive\\Archivos Ranman"
 
 Exit code 1 when a file was rejected or the server couldn't be reached, so a
@@ -132,6 +133,8 @@ def main():
     ap.add_argument('--state', default=str(STATE), help='where to remember what was sent (default %(default)s)')
     ap.add_argument('--only', help='send only these deliverables, comma-separated (e.g. aaa,sabana) — '
                                    'for loading one report\'s history without resending the rest')
+    ap.add_argument('--match', help='send only files whose path contains one of these texts, comma-separated '
+                                    '(e.g. 14-10-25,15-10-25) — with --force, to resend a few cuts after a parser fix')
     ap.add_argument('--retry', help='resend unchanged files whose last answer was one of these statuses, '
                                     'comma-separated: error, received (e.g. after the dashboard learns to read one)')
     a = ap.parse_args()
@@ -141,6 +144,7 @@ def main():
         sys.exit('--only: unknown deliverable(s) %s; use any of %s'
                  % (', '.join(sorted(solo - set(ranman_package.ENTREGABLE))), ', '.join(ranman_package.ENTREGABLE)))
     reintenta = {s.strip() for s in a.retry.split(',')} if a.retry else set()
+    busca = [t.strip().lower() for t in a.match.split(',') if t.strip()] if a.match else None
     if reintenta - {'error', 'received', 'imported'}:
         sys.exit('--retry: use error, received or imported')
 
@@ -157,6 +161,8 @@ def main():
     pendientes, rechazados = [], 0
     for p, rel, kind, periodo in candidatos(raiz, a.months):
         if solo and kind not in solo:
+            continue
+        if busca and not any(t in rel.lower() for t in busca):
             continue
         h, ultimo = recuerdo(estado.get(rel))
         if not a.force and h == huella(p) and ultimo not in reintenta:
