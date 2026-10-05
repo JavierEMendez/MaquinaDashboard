@@ -50,6 +50,11 @@ COLS_ANIO = range(293, 305)   # KG .. KR
 FILAS_CUENTA = {4, 5}         # apartados y firmas: units, not thousands
 
 
+def _si(cond, a, b=0.0):
+    """Excel's IF for the evaluator (both branches are already numbers)."""
+    return a if cond else b
+
+
 def hoja(wb, nombre):
     """The sheet called `nombre`, ignoring case and surrounding spaces (Feb-2026
     names it «Resumen »); None when there is none. «Resumen Base» is not «Resumen»."""
@@ -180,15 +185,16 @@ def lee_resumen(wf, wv, as_of: str) -> dict:
             v = float(f)
         else:
             s = str(f).strip().lstrip('=').lstrip('+')
-            m = re.match(r'^IF\(\$A\$\d+=1,([^,]+),', s)      # the flag as a mode selector
-            if m:
-                s = m.group(1)
+            m = re.match(r'^IF\(\$A\$(\d+)=1,([^,]+),', s)    # its own flag as a mode selector
+            if m and int(m.group(1)) == r:
+                s = m.group(2)
             s = re.sub(r'Flujo!\$?([A-Z]{1,3})\$?(\d+)',
                        lambda m: repr(num(flv['%s%s' % (m.group(1), m.group(2))].value)), s)
-            # $A$n is a line's switch (taken as on) or, if it holds anything
-            # else, a parameter such as the sale percentages (taken as it is)
+            # $A$n is the line's own switch (taken as on), another line's switch
+            # (as the file has it: Oct-2025 «Capital Valoran» is keyed to row 22's)
+            # or a parameter such as the sale percentages (taken as it is)
             s = re.sub(r'\$A\$(\d+)',
-                       lambda m: '1' if _es_bandera(sv.cell(int(m.group(1)), 1).value)
+                       lambda m: '1' if int(m.group(1)) == r and _es_bandera(sv.cell(r, 1).value)
                        else repr(num(sv.cell(int(m.group(1)), 1).value)), s)
 
             # the line's own earlier months recompute too (running sums); any other
@@ -202,8 +208,9 @@ def lee_resumen(wf, wv, as_of: str) -> dict:
                 return repr(base(row, col, prof + 1) if row == r
                             else num(sv.cell(row, col).value))
             s = re.sub(r'\$?([A-Z]{1,3})\$?(\d+)', ref, s).replace('%', '/100')
+            s = re.sub(r'(?<![<>!=])=(?!=)', '==', s.replace('<>', '!='))     # Excel comparisons
             try:
-                v = float(eval(s, {'__builtins__': {}}, {}))
+                v = float(eval(s, {'__builtins__': {}}, {'IF': _si}))
             except Exception:
                 v = num(sv.cell(r, c).value)
         memo[k] = v
