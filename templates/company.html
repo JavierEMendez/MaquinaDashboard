@@ -913,7 +913,7 @@
             · lifetime {{ '%.1f'|format(h.lifetime / 1e9) }} bn</span>
         </div>
         <div style="display:grid;grid-template-columns:repeat({{ 3 if h.in_development else 2 }}, 1fr);gap:14px;">
-          <div style="display:grid;grid-template-columns:1fr 60px;gap:8px;align-items:center;"><span><span style="{{ K }}">Aforo Δ</span><span class="subtle" style="display:block;font-size:10.5px;">growth vs model, pp/yr, compounding from opening</span>
+          <div style="display:grid;grid-template-columns:1fr 60px;gap:8px;align-items:center;"><span><span style="{{ K }}">Aforo Δ</span><span class="subtle" style="display:block;font-size:10.5px;">growth vs model, %/yr, compounding from opening</span>
             <input type="range" id="ev-g-{{ h.key }}" min="-3" max="3" step="0.25" value="0" style="accent-color:var(--mq-accent);width:100%;"></span><span style="{{ SV }}" id="lbl-g-{{ h.key }}">+0.00</span></div>
           <div style="display:grid;grid-template-columns:1fr 60px;gap:8px;align-items:center;"><span><span style="{{ K }}">Tarifa level</span><span class="subtle" style="display:block;font-size:10.5px;">average toll vs model</span>
             <input type="range" id="ev-t-{{ h.key }}" min="70" max="130" step="1" value="100" style="accent-color:var(--mq-accent);width:100%;"></span><span style="{{ SV }}" id="lbl-t-{{ h.key }}">100%</span></div>

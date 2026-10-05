@@ -255,13 +255,13 @@ function portafolio(){
   $('kpis').innerHTML = [
     {lab:'Ventas de vida en el BP', val:fx(C.v.ventas,0), u:'mdp', cls:'blue', sub:`${todas.length} etapas · ${f0(C.u)} unidades · firmado ${fx(P.v.ventas,0)} mdp`},
     {lab:'UAIR prevista', val:fx(C.v.uair,0), u:'mdp', cls:C.v.uair<0?'bad':'good', sub:`${pc(margen(C))} de las ventas · firmado ${pc(margen(P))}`},
-    {lab:'Contra lo firmado', val:`${sg(dU)}${fx(Math.abs(dU),0)}`, u:'mdp', cls:dU<0?'bad':'good', sub:`UAIR ${sg(dM)}${fx(Math.abs(dM*100),1)} pp de margen`},
-    {lab:'Etapas que perdieron margen', val:String(perdieron), u:`de ${todas.length}`, cls:perdieron?'bad':'', sub:'su margen previsto quedó más de 2 pp debajo del firmado'},
+    {lab:'Contra lo firmado', val:`${sg(dU)}${fx(Math.abs(dU),0)}`, u:'mdp', cls:dU<0?'bad':'good', sub:`margen ${sg(dM)}${fx(Math.abs(dM*100),1)}%`},
+    {lab:'Etapas que perdieron margen', val:String(perdieron), u:`de ${todas.length}`, cls:perdieron?'bad':'', sub:'su margen previsto quedó más de 2% debajo del firmado'},
     {lab:'Atraso en el término', val:atraso==null?'—':fx(atraso,1), u:'meses', sub:`promedio de ${curso.length} etapas en curso · término del flujo contra el firmado`},
   ].map(kpiHTML).join('');
 
   const td = (v, cls) => `<td class="${cls||''}">${v}</td>`;
-  const dpp = (a, b) => (a==null||b==null) ? '—' : `${sg(a-b)}${fx(Math.abs((a-b)*100),1)} pp`;
+  const dpp = (a, b) => (a==null||b==null) ? '—' : `${sg(a-b)}${fx(Math.abs((a-b)*100),1)}%`;
   const cl = d => d==null ? '' : (d < -0.0005 ? 'neg' : (d > 0.0005 ? 'pos' : 'zero'));
   let h = '', ultP = null;
   const renglon = r => {
@@ -337,7 +337,7 @@ const enBase = (a, k) => { if (!a || a.v[k] == null) return null;
   return a.v[k]; };
 const fmtB = v => sel.basis === 'pct' ? pc(v) : (sel.basis === 'unidad' ? f0(v) : fx(v));
 const fmtD = d => !ok(d) ? '—' : (Math.abs(d) < (sel.basis==='pct' ? 0.0005 : (sel.basis==='unidad' ? 0.5 : 0.05)) ? '—' :
-  sg(d) + (sel.basis === 'pct' ? fx(Math.abs(d*100),1)+' pp' : (sel.basis === 'unidad' ? f0(Math.abs(d)) : fx(Math.abs(d)))));
+  sg(d) + (sel.basis === 'pct' ? fx(Math.abs(d*100),1)+'%' : (sel.basis === 'unidad' ? f0(Math.abs(d)) : fx(Math.abs(d)))));
 const tonoD = (k, d) => !ok(d) || Math.abs(d) < 1e-6 ? '' : ((COSTO.has(k) ? d < 0 : d > 0) ? 'pos' : 'neg');
 
 function controles(){
@@ -389,7 +389,7 @@ function pinta(){
     (E ? `<span class="badge">${esc(E.estatus || '—')}</span>` + (E.u ? `<span class="badge">${f0(E.u)} ${esc(E.u_tipo || 'unidades')}</span>` : '') : '') +
     (E && E.esc.cierre.ventas === 0 && E.esc.proforma.ventas ? '<span class="badge" style="color:var(--mq-warn)">el cierre previsto de esta etapa no trae ventas</span>' : '');
   $('title').textContent = `Estado de resultados de vida · ${E ? E.n : nombreDe(sel.k)}`;
-  $('basisNote').textContent = (sel.basis === 'pct' ? 'Cada renglón como % de las ventas de su columna; las diferencias, en puntos porcentuales.'
+  $('basisNote').textContent = (sel.basis === 'pct' ? 'Cada renglón como % de las ventas de su columna; la diferencia, también en %.'
     : sel.basis === 'unidad' ? 'Miles de pesos por unidad, cada columna sobre sus propias unidades (lotes o departamentos).'
     : 'Millones de pesos, de vida de la etapa (real a la fecha más lo que falta).') + ' La diferencia es B − A.';
 
@@ -407,7 +407,7 @@ function pinta(){
     `<div class="kpi ru-sc is-d"><div class="kpi-top"><span class="kpi-label"><span class="ru-ab">B − A</span>Diferencia</span></div>
       <span class="ru-sc-cap">${A.a.n !== B.a.n ? `ojo: A suma ${A.a.n} etapa${A.a.n===1?'':'s'} y B ${B.a.n}` : `las mismas ${A.a.n} etapa${A.a.n===1?'':'s'}`}</span>
       <span class="ru-sc-line">Ventas ${dif(A.a.v.ventas, B.a.v.ventas, fx, ' mdp')}${ok(dVp) ? ` (${sg(dVp)}${fx(Math.abs(dVp*100),1)}%)` : ''}</span>
-      <span class="ru-sc-line">UAIR ${dif(A.a.v.uair, B.a.v.uair, fx, ' mdp')} · margen ${dif(mA, mB, d => fx(d*100, 1), ' pp')}</span>
+      <span class="ru-sc-line">UAIR ${dif(A.a.v.uair, B.a.v.uair, fx, ' mdp')} · margen ${dif(mA, mB, d => fx(d*100, 1), '%')}</span>
       <span class="ru-sc-line">UAIR por unidad ${dif(uA, uB, f0, ' mil $')}</span></div>`;
 
   // statement
@@ -462,7 +462,7 @@ function etapasTabla(D, A, B){
         td(esc(e.n) + (sinV(a, b) ? '<span class="tag warn">B sin ventas</span>' : (sinV(b, a) ? '<span class="tag warn">A sin ventas</span>' : '')), 'l') + td(esc(e.estatus || '—'), 'l') +
         td(e.u == null ? '—' : (e.u % 1 ? fx(e.u, 1) : f0(e.u))) + td(a ? fx(a.ventas) : '—', a ? '' : 'zero') + td(b ? fx(b.ventas) : '—', b ? '' : 'zero') +
         td(pc(ma), ma<0?'neg':'') + td(pc(mb), mb<0?'neg':'') +
-        td(d==null ? '—' : `${sg(d)}${fx(Math.abs(d*100),1)} pp`, d==null ? '' : (d < -0.0005 ? 'neg' : (d > 0.0005 ? 'pos' : 'zero'))) +
+        td(d==null ? '—' : `${sg(d)}${fx(Math.abs(d*100),1)}%`, d==null ? '' : (d < -0.0005 ? 'neg' : (d > 0.0005 ? 'pos' : 'zero'))) +
         td(b ? fx(b.uair) : '—', b && b.uair<0?'neg':'') + td(b && e.u ? f0(b.uair/e.u*1000) : '—', b && b.uair<0?'neg':'') +
         td(mes(e.fechas.proforma[1])) + td(mes(e.fechas.flujos[1])) + td(at==null ? '—' : (at > 0 ? '+'+at : String(at)), at > 0 ? 'neg' : (at < 0 ? 'pos' : 'zero')) + '</tr>'; }).join('') + '</tbody>';
 }
