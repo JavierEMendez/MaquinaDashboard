@@ -240,12 +240,16 @@ if (ED) (function(){
   const CORTO = {terreno:'Terreno', permisos:'Permisos', estudios:'Estudios', urbanizacion:'Urbaniz.', infraestructura:'Infra', edificacion:'Edificación',
     admin_plaza:'Admin plaza', admin_corp:'Admin corp', comercial:'Comercial', comisiones:'Comisiones', fin_operativos:'Fin. oper.', fin_lp:'Fin. LP'};
   const lim = k => { const u = U[k]; if (!u || u.verde==null) return ''; return u.mejor==='alto' ? `≥${pc(u.verde,0)} · ≤${pc(u.rojo,0)}` : `≤${pc(u.verde,1)} · ≥${pc(u.rojo,1)}`; };
+  // under a header, what its colours mean: Ranman's own limits (rows 1 and 2 of the file)
+  const pLim = v => (Math.round(v * 1000) / 10).toLocaleString('es-MX') + '%';
+  const limH = k => { const u = U[k]; if (!u || u.verde==null || u.rojo==null) return '';
+    return `<span class="sub2">${u.mejor==='alto' ? `verde ≥${pLim(u.verde)} · rojo ≤${pLim(u.rojo)}` : `verde ≤${pLim(u.verde)} · rojo ≥${pLim(u.rojo)}`}</span>`; };
   let vista = recall('vista') || 'res';
   const cerradas = {};
   const avance = a => a==null ? '<span class="zero">—</span>' : `<span class="av">${pc(a,0)}<span class="trk"><span class="fil" style="width:${Math.max(0,Math.min(1,a))*100}%"></span></span></span>`;
   const celda = (v, k) => { const x = r(v,k); return `<td class="${tono(k,x)}">${v.ventas?pc(x):'<span class="zero">—</span>'}</td>`; };
   const cols = () => vista==='res'
-    ? `<th class="l">Etapa</th><th>Avance en firmas</th><th>Ventas<span class="sub2">mdp</span></th><th>Margen bruto</th><th>EBIT</th><th>UAIR</th><th>UAIR<span class="sub2">mdp</span></th><th></th>`
+    ? `<th class="l">Etapa</th><th>Avance en firmas</th><th>Ventas<span class="sub2">mdp</span></th><th>Margen bruto${limH('margen_bruto')}</th><th>EBIT${limH('ebit')}</th><th>UAIR${limH('uair')}</th><th>UAIR<span class="sub2">mdp</span></th><th></th>`
     : `<th class="l">Etapa</th><th>Ventas<span class="sub2">mdp</span></th>` + COSTOS.map(k => `<th title="${esc(NOM[k]||k)}">${CORTO[k]}</th>`).join('') + `<th>UAIR</th>`;
   const fila = (n, v, extra, cls, attrs) => {
     if (vista==='res') return `<tr class="${cls||''}"${attrs||''}><td class="l ${extra.ind?'h1':''}">${n}</td><td>${avance(extra.avance)}</td><td>${fx(v.ventas)}</td>${celda(v,'margen_bruto')}${celda(v,'ebit')}${celda(v,'uair')}<td class="${v.uair<0?'neg':''}">${fx(v.uair)}</td><td>${extra.ver||''}</td></tr>`;
@@ -266,7 +270,8 @@ if (ED) (function(){
     });
     $('tblEd').innerHTML = `<thead><tr>${cols()}</tr>` + (vista==='pct' ? `<tr class="lim"><th class="l">Límite verde · rojo</th><th></th>${COSTOS.map(k=>`<th>${lim(k)}</th>`).join('')}<th>${lim('uair')}</th></tr>` : '') +
       `</thead><tbody>${h}</tbody><tfoot>${fila('Total Ranman', T, {avance:avP}).replace(/^<tr[^>]*>/, '<tr>')}</tfoot>`;
-    $('edNota').textContent = vista==='res' ? 'Margen, EBIT y UAIR como % de las ventas de vida.' : (vista==='pct' ? 'Cada costo como % de las ventas de vida.' : 'Cada costo en mdp.');
+    $('edNota').textContent = (vista==='res' ? 'Margen, EBIT y UAIR como % de las ventas de vida.' : (vista==='pct' ? 'Cada costo como % de las ventas de vida.' : 'Cada costo en mdp.')) +
+      (vista==='mdp' ? '' : ' Verde: dentro del límite verde de Ranman; rojo: pasado su límite rojo; ámbar: entre los dos.');
   }
   const t = $('tblEd');
   const flip = tr => { cerradas[tr.dataset.g] = !cerradas[tr.dataset.g]; tabla(); const nv = t.querySelector(`tr.grp[data-g="${tr.dataset.g}"]`); if (nv) nv.focus(); };

@@ -6,21 +6,28 @@ bytes so the workbook can be uploaded through the app. Also validates a
 flujo_plp.json produced by the original script.
 
 Where each thing comes from (sheet «Resumen» is in thousands of pesos; the
-tablero shows mdp):
-    Resumen  rows  7-13    aplicación · operativos
-                   17-24   aplicación · deuda y proyectos no operativos
-                   29-41   aplicación · inversión
-                   47-57   origen
-                   44,58,60 control totals (aplicación, origen, Flujo Ranman)
-                   79-86   corporate debt balances
-             col A        1/0 flag that switches each row on or off
+tablero shows mdp). Ranman adds and drops Resumen rows from month to month
+(Jun-2026 still had «Intereses Valoran» and «Capital Valoran», Sep-2026 added
+three land lines and «Flujo Ranman»), so every block is found by its label:
+    Resumen  «Operativos» … «Total Operativos»                   aplicación · operativos
+             «Deuda y Proyectos no Operativos» … «Total …»        aplicación · deuda y no operativos
+             «Inversión» … «Total Inversión»                      aplicación · inversión
+             «Origen» … «Total Origen»                            origen
+             «Total Aplicación», «Total Origen», and «Flujo Ranman»
+             (earlier: the «Saldo (Necesidades)» right after Total Origen)   control totals
+             «Deuda Total DRA» … «Saldo (Necesidades)»             corporate debt balances
+             col A   on a line: 0/1 flag (2+ picks a mode); elsewhere a parameter
+                     (the sale percentages under «Porcentajes de Venta de ML»)
     PLP      rows  4-82    income statement and cash flow
              cols  C:EP    monthly block (144 months)
                    KG:KR   yearly block (12 years)
 
-Every Resumen line is re-computed as if its flag were 1 ("base" amount) so the
-tablero can switch on lines the file has off. The validation then checks that,
-with the flags as they come, the recomputed totals match the file's own.
+Every Resumen line is re-computed as if its own flag were 1 (its "base"
+amount), with every other row as the file has it, so the tablero can switch on
+lines the file has off; a line whose flag picks a scenario other than 1
+(«1 Conservador - 2 Pesimista») is taken as the file worked it out. The
+validation then checks that, with the flags as they come, the recomputed totals
+match the file's own.
 """
 import datetime as dt
 import io
@@ -29,13 +36,11 @@ import re
 
 import openpyxl
 
-GRUPOS = [('op', 'Operativos',                      range(7, 14)),
-          ('de', 'Deuda y proyectos no operativos', range(17, 25)),
-          ('in', 'Inversión',                       range(29, 42)),
-          ('or', 'Origen',                          range(47, 58))]
-FILA_APLICACION, FILA_ORIGEN, FILA_FLUJO = 44, 58, 60
-FILAS_DEUDA, FILA_SALDO = range(79, 86), 86
-PARAM = {89, 90}          # $A$89 / $A$90 are sale percentages, not flags
+# the four groups of lines, by the label that opens each one on the Resumen sheet
+GRUPOS = [('op', 'Operativos', 'operativos'),
+          ('de', 'Deuda y proyectos no operativos', 'deuda y proyectos no operativos'),
+          ('in', 'Inversión', 'inversion'),
+          ('or', 'Origen', 'origen')]
 MILES = 1000.0
 RENOMBRES = {'Crédito Valoran': 'Crédito VRM'}   # how each line is called in the tablero
 
@@ -43,6 +48,15 @@ PLP_R0, PLP_R1 = 4, 82
 COLS_MES = range(3, 147)      # C .. EP
 COLS_ANIO = range(293, 305)   # KG .. KR
 FILAS_CUENTA = {4, 5}         # apartados y firmas: units, not thousands
+
+
+def hoja(wb, nombre):
+    """The sheet called `nombre`, ignoring case and surrounding spaces (Feb-2026
+    names it «Resumen »); None when there is none. «Resumen Base» is not «Resumen»."""
+    for s in wb.sheetnames:
+        if s.strip().lower() == nombre.lower():
+            return wb[s]
+    return None
 
 
 def fecha_de_nombre(nombre: str):
@@ -58,8 +72,73 @@ def fecha_de_nombre(nombre: str):
 
 
 # ── sheet «Resumen»: origen, aplicación y deuda ─────────────────────────────
+def _norm(t):
+    import unicodedata
+    t = unicodedata.normalize('NFKD', str(t or '')).encode('ascii', 'ignore').decode()
+    return re.sub(r'\s+', ' ', t).strip().lower()
+
+
+def _etiqueta(sv, r):
+    """The row's label: the text in columns B-F (the amounts start further right)."""
+    return ' '.join(str(v).strip() for v in (sv.cell(r, c).value for c in range(2, 7))
+                    if isinstance(v, str) and v.strip())
+
+
+def _es_bandera(v):
+    """A line's on/off switch (0/1, or 2+ for a mode): a small whole number in column A."""
+    return isinstance(v, (int, float)) and not isinstance(v, bool) and float(v).is_integer() and 0 <= v <= 9
+
+
+def estructura(sv):
+    """Where the blocks of this month's Resumen are: {'grupos': {cod: [rows]},
+    'aplic', 'origen', 'flujo', 'deuda': [rows], 'saldo'}. Raises ValueError
+    when a block the tablero needs is not there."""
+    abre = {clave: cod for cod, _, clave in GRUPOS}
+    grupos = {cod: [] for cod, _, _ in GRUPOS}
+    out = {'grupos': grupos, 'aplic': None, 'origen': None, 'flujo': None, 'deuda': [], 'saldo': None}
+    actual, en_deuda = None, False
+    for r in range(1, (sv.max_row or 0) + 1):
+        t = _norm(_etiqueta(sv, r))
+        if not t:
+            continue
+        if en_deuda:
+            if t.startswith('saldo (necesidades)'):
+                out['saldo'], en_deuda = r, False
+            else:
+                out['deuda'].append(r)
+            continue
+        if t in abre:
+            actual = abre[t]
+            continue
+        if t.startswith('total'):
+            if t == 'total aplicacion':
+                out['aplic'] = r
+            elif t == 'total origen':
+                out['origen'] = r
+            actual = None
+            continue
+        if t == 'deuda total dra':
+            en_deuda, actual = True, None
+            continue
+        if out['origen'] and out['flujo'] is None and (t == 'flujo ranman' or t.startswith('saldo (necesidades)')):
+            out['flujo'] = r          # «Flujo Ranman», or before Sep-2026 the Saldo right after Total Origen
+            continue
+        if t == 'flujo ranman':
+            out['flujo'] = r
+            continue
+        if actual and _es_bandera(sv.cell(r, 1).value):
+            grupos[actual].append(r)
+    falta = [n for n, k in (('Total Aplicación', 'aplic'), ('Total Origen', 'origen'),
+                            ('Flujo Ranman / Saldo (Necesidades)', 'flujo')) if not out[k]]
+    falta += [n for cod, n, _ in GRUPOS if not grupos[cod]]
+    if falta:
+        raise ValueError("Resumen: no encuentro %s — ¿cambió el formato de la hoja?" % ', '.join(falta))
+    return out
+
+
 def lee_resumen(wf, wv, as_of: str) -> dict:
-    sf, sv, flv = wf['Resumen'], wv['Resumen'], wv['Flujo']
+    sf, sv, flv = hoja(wf, 'Resumen'), hoja(wv, 'Resumen'), hoja(wv, 'Flujo')
+    E = estructura(sv)
 
     # row 1 carries the monthly block and then yearly columns: cut where dates go back
     hdr = list(sv.iter_rows(min_row=1, max_row=1, max_col=133, values_only=True))[0]
@@ -77,12 +156,12 @@ def lee_resumen(wf, wv, as_of: str) -> dict:
         k = MESES.index(corte)
         COLS, MESES = COLS[k:], MESES[k:]
 
-    LINEAS = [r for _, _, rs in GRUPOS for r in rs]
+    LINEAS = {r for rs in E['grupos'].values() for r in rs}
     memo = {}
     num = lambda v: v if isinstance(v, (int, float)) else 0.0
 
     def base(r, c, prof=0):
-        """The row's value as if its flag were 1."""
+        """The row's value as if its own flag were 1 (every other row as the file has it)."""
         if prof > 12:
             return 0.0
         k = (r, c)
@@ -90,7 +169,12 @@ def lee_resumen(wf, wv, as_of: str) -> dict:
             return memo[k]
         memo[k] = 0.0
         f = sf.cell(r, c).value
-        if f is None:
+        flag = sv.cell(r, 1).value
+        if r in LINEAS and _es_bandera(flag) and flag >= 2:
+            # the switch picks a scenario other than 1 («1 Conservador - 2 Pesimista»):
+            # the line is on, in that scenario, and the file already worked it out
+            v = num(sv.cell(r, c).value)
+        elif f is None:
             v = num(sv.cell(r, c).value)
         elif isinstance(f, (int, float)):
             v = float(f)
@@ -101,14 +185,21 @@ def lee_resumen(wf, wv, as_of: str) -> dict:
                 s = m.group(1)
             s = re.sub(r'Flujo!\$?([A-Z]{1,3})\$?(\d+)',
                        lambda m: repr(num(flv['%s%s' % (m.group(1), m.group(2))].value)), s)
+            # $A$n is a line's switch (taken as on) or, if it holds anything
+            # else, a parameter such as the sale percentages (taken as it is)
             s = re.sub(r'\$A\$(\d+)',
-                       lambda m: repr(num(sv.cell(int(m.group(1)), 1).value))
-                       if int(m.group(1)) in PARAM else '1', s)
+                       lambda m: '1' if _es_bandera(sv.cell(int(m.group(1)), 1).value)
+                       else repr(num(sv.cell(int(m.group(1)), 1).value)), s)
 
+            # the line's own earlier months recompute too (running sums); any other
+            # row is taken as the file has it — a line that reads another line
+            # (Bancrea «por operar» = 7,152.5 − the commercial-area sale) must see
+            # that line switched as it comes, or a line that is on stops
+            # matching the file
             def ref(m):
                 col = openpyxl.utils.column_index_from_string(m.group(1))
                 row = int(m.group(2))
-                return repr(base(row, col, prof + 1) if row in LINEAS
+                return repr(base(row, col, prof + 1) if row == r
                             else num(sv.cell(row, col).value))
             s = re.sub(r'\$?([A-Z]{1,3})\$?(\d+)', ref, s).replace('%', '/100')
             try:
@@ -121,10 +212,9 @@ def lee_resumen(wf, wv, as_of: str) -> dict:
     fila = lambda r: [round(num(sv.cell(r, c).value) / MILES, 2) for c in COLS]
 
     lineas = []
-    for cod, _, rs in GRUPOS:
-        for r in rs:
-            lab = ' '.join(str(sv.cell(r, c).value) for c in range(2, 7)
-                           if sv.cell(r, c).value is not None).strip()
+    for cod, _, _ in GRUPOS:
+        for r in E['grupos'][cod]:
+            lab = _etiqueta(sv, r)
             if not lab:
                 continue
             serie = [round(base(r, c) / MILES, 2) for c in COLS]
@@ -134,21 +224,20 @@ def lee_resumen(wf, wv, as_of: str) -> dict:
                            'hay': any(abs(x) > 0.005 for x in serie)})
 
     deuda = {}
-    for r in FILAS_DEUDA:
-        nom = sv.cell(r, 2).value or sv.cell(r, 3).value or sv.cell(r, 4).value
+    for r in E['deuda']:
+        nom = _etiqueta(sv, r)
         if nom:
-            nom = str(nom).strip()
             deuda[RENOMBRES.get(nom, nom)] = fila(r)
 
     return {'meses': MESES, 'lineas': lineas, 'deuda': deuda,
-            'saldoNec': fila(FILA_SALDO),
-            'ref': {'aplic': fila(FILA_APLICACION), 'origen': fila(FILA_ORIGEN),
-                    'flujo': fila(FILA_FLUJO)}}
+            'saldoNec': fila(E['saldo']) if E['saldo'] else [0.0] * len(COLS),
+            'ref': {'aplic': fila(E['aplic']), 'origen': fila(E['origen']),
+                    'flujo': fila(E['flujo'])}}
 
 
 # ── sheet «PLP»: income statement and cash flow, rows 4 to 82 ───────────────
 def lee_plp(wv, as_of: str) -> dict:
-    ws = wv['PLP']
+    ws = hoja(wv, 'PLP')
     meses = [ws.cell(3, c).value for c in COLS_MES]
     anios = [ws.cell(3, c).value for c in COLS_ANIO]
     if not all(isinstance(m, dt.datetime) for m in meses):
@@ -236,9 +325,9 @@ def parse_base_workbook(file_bytes: bytes, filename: str) -> dict:
         raise ValueError("%s: could not read the date from the file name (expected '... dd-mm-aa.xlsx')" % filename)
     wb = openpyxl.load_workbook(io.BytesIO(file_bytes), data_only=True, read_only=True)
     try:
-        if 'PLP' not in wb.sheetnames:
+        if hoja(wb, 'PLP') is None:
             raise ValueError("%s has no 'PLP' sheet" % filename)
-        filas = list(wb['PLP'].iter_rows(min_row=1, max_row=max(BASE_FILAS) + 1, max_col=340, values_only=True))
+        filas = list(hoja(wb, 'PLP').iter_rows(min_row=1, max_row=max(BASE_FILAS) + 1, max_col=340, values_only=True))
     finally:
         wb.close()
     cab = filas[2]
@@ -372,7 +461,7 @@ def lee_proyectos(wv, as_of: str) -> dict:
 
     # the PLP sheet's per-development rows: sales under «Ventas Totales» (row 7)
     # and the «UAIR por Proyecto» block below the cash flow
-    ws = wv['PLP']
+    ws = hoja(wv, 'PLP')
     meses_plp = [ws.cell(3, c).value for c in COLS_MES]
     imp = [i for i, m in enumerate(meses_plp) if isinstance(m, dt.datetime) and m.year == a0]
     num = lambda v: v if isinstance(v, (int, float)) else None
@@ -409,9 +498,9 @@ def parse_workbook(file_bytes: bytes, filename: str):
     wf = openpyxl.load_workbook(io.BytesIO(file_bytes), data_only=False)   # formulas
     wv = openpyxl.load_workbook(io.BytesIO(file_bytes), data_only=True)    # cached values
     try:
-        for hoja in ('Resumen', 'Flujo', 'PLP'):
-            if hoja not in wv.sheetnames:
-                raise ValueError("%s has no '%s' sheet — is it a Flujo y PLP DRA workbook?" % (filename, hoja))
+        for nombre in ('Resumen', 'Flujo', 'PLP'):
+            if hoja(wv, nombre) is None:
+                raise ValueError("%s has no '%s' sheet — is it a Flujo y PLP DRA workbook?" % (filename, nombre))
         fl = lee_resumen(wf, wv, as_of)
         plp = lee_plp(wv, as_of)
         # by development: optional — a change in the support sheet must not block the corte
